@@ -1,38 +1,40 @@
-#include "Player.h"
-#include "Level.h"
+#include "GAME1_Player.h"
+#include "GAME1_Level.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace
 {
+	// These helper functions convert the player's world-space rectangle
+	// into tile indices. That keeps the collision code cleaner.
 	int GetLeftTile(const sf::FloatRect& bounds)
 	{
-		return static_cast<int>(std::floor(bounds.position.x / Level::TileSize));
+		return static_cast<int>(std::floor(bounds.position.x / GAME1_Level::TileSize));
 	}
 
 	int GetRightTile(const sf::FloatRect& bounds)
 	{
-		return static_cast<int>(std::floor((bounds.position.x + bounds.size.x - 0.1f) / Level::TileSize));
+		return static_cast<int>(std::floor((bounds.position.x + bounds.size.x - 0.1f) / GAME1_Level::TileSize));
 	}
 
 	int GetTopTile(const sf::FloatRect& bounds)
 	{
-		return static_cast<int>(std::floor(bounds.position.y / Level::TileSize));
+		return static_cast<int>(std::floor(bounds.position.y / GAME1_Level::TileSize));
 	}
 
 	int GetBottomTile(const sf::FloatRect& bounds)
 	{
-		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y - 0.1f) / Level::TileSize));
+		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y - 0.1f) / GAME1_Level::TileSize));
 	}
 
 	int GetSupportRow(const sf::FloatRect& bounds)
 	{
-		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y + 0.1f) / Level::TileSize));
+		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y + 0.1f) / GAME1_Level::TileSize));
 	}
 }
 
-bool Player::load(const std::string& texturePath, sf::Vector2f startPosition)
+bool GAME1_Player::load(const std::string& texturePath, sf::Vector2f startPosition)
 {
 	m_lastError.clear();
 
@@ -51,6 +53,7 @@ bool Player::load(const std::string& texturePath, sf::Vector2f startPosition)
 		return false;
 	}
 
+	// Scale the player sprite to a fixed 48x48 footprint.
 	m_sprite->setScale({
 		48.f / localBounds.size.x,
 		48.f / localBounds.size.y
@@ -61,21 +64,25 @@ bool Player::load(const std::string& texturePath, sf::Vector2f startPosition)
 	return true;
 }
 
-void Player::update(float deltaTime, Level& level, unsigned int windowWidth)
+void GAME1_Player::update(float deltaTime, GAME1_Level& level, unsigned int windowWidth)
 {
 	if (!m_sprite.has_value())
 		return;
 
+	// Read input first so the movement state is fresh for this frame.
 	handleInput(deltaTime);
 
+	// Apply gravity every update.
 	m_velocity.y += m_gravity * deltaTime;
 
+	// Horizontal and vertical collision are separated on purpose.
+	// This is a very common platformer technique because it simplifies resolution.
 	moveHorizontal(deltaTime, level, windowWidth);
 	moveVertical(deltaTime, level);
 	updateBreakBlockTimer(level, deltaTime);
 }
 
-void Player::handleInput(float deltaTime)
+void GAME1_Player::handleInput(float deltaTime)
 {
 	m_velocity.x = 0.f;
 
@@ -91,20 +98,24 @@ void Player::handleInput(float deltaTime)
 		m_velocity.x += m_moveSpeed;
 	}
 
+	// Coyote time lets the player still jump for a tiny moment after leaving ground.
 	if (m_onGround)
 		m_coyoteTimer = m_coyoteTime;
 	else
 		m_coyoteTimer = std::max(0.f, m_coyoteTimer - deltaTime);
 
+	// Jump buffer stores a jump press briefly so jumps feel more forgiving.
 	m_jumpBufferTimer = std::max(0.f, m_jumpBufferTimer - deltaTime);
 
 	const bool jumpHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 
+	// Only refresh the jump buffer on the press edge, not while held continuously.
 	if (jumpHeld && !m_jumpHeldLastFrame)
 	{
 		m_jumpBufferTimer = m_jumpBufferTime;
 	}
 
+	// If both forgiveness systems overlap, perform the jump.
 	if (m_jumpBufferTimer > 0.f && m_coyoteTimer > 0.f)
 	{
 		m_velocity.y = -m_jumpSpeed;
@@ -116,7 +127,7 @@ void Player::handleInput(float deltaTime)
 	m_jumpHeldLastFrame = jumpHeld;
 }
 
-void Player::moveHorizontal(float deltaTime, Level& level, unsigned int windowWidth)
+void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level, unsigned int windowWidth)
 {
 	m_sprite->move({ m_velocity.x * deltaTime, 0.f });
 
@@ -134,7 +145,7 @@ void Player::moveHorizontal(float deltaTime, Level& level, unsigned int windowWi
 			if (level.isSolidTile(rightTile, row))
 			{
 				m_sprite->setPosition({
-					static_cast<float>(rightTile * Level::TileSize) - bounds.size.x,
+					static_cast<float>(rightTile * GAME1_Level::TileSize) - bounds.size.x,
 					m_sprite->getPosition().y
 					});
 
@@ -152,7 +163,7 @@ void Player::moveHorizontal(float deltaTime, Level& level, unsigned int windowWi
 			if (level.isSolidTile(leftTile, row))
 			{
 				m_sprite->setPosition({
-					static_cast<float>((leftTile + 1) * Level::TileSize),
+					static_cast<float>((leftTile + 1) * GAME1_Level::TileSize),
 					m_sprite->getPosition().y
 					});
 
@@ -164,6 +175,7 @@ void Player::moveHorizontal(float deltaTime, Level& level, unsigned int windowWi
 
 	bounds = m_sprite->getGlobalBounds();
 
+	// Screen wrap gives the small arcade level a more classic feel.
 	if (bounds.position.x < 0.f)
 	{
 		m_sprite->setPosition({
@@ -180,7 +192,7 @@ void Player::moveHorizontal(float deltaTime, Level& level, unsigned int windowWi
 	}
 }
 
-void Player::moveVertical(float deltaTime, Level& level)
+void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 {
 	m_onGround = false;
 
@@ -201,7 +213,7 @@ void Player::moveVertical(float deltaTime, Level& level)
 			{
 				m_sprite->setPosition({
 					m_sprite->getPosition().x,
-					static_cast<float>(bottomTile * Level::TileSize) - bounds.size.y
+					static_cast<float>(bottomTile * GAME1_Level::TileSize) - bounds.size.y
 					});
 
 				m_velocity.y = 0.f;
@@ -220,11 +232,12 @@ void Player::moveVertical(float deltaTime, Level& level)
 			{
 				m_sprite->setPosition({
 					m_sprite->getPosition().x,
-					static_cast<float>((topTile + 1) * Level::TileSize)
+					static_cast<float>((topTile + 1) * GAME1_Level::TileSize)
 					});
 
 				m_velocity.y = 0.f;
 
+				// Breakable blocks also shatter when hit from underneath.
 				if (level.isBreakTile(col, topTile))
 				{
 					level.breakTile(col, topTile);
@@ -236,11 +249,12 @@ void Player::moveVertical(float deltaTime, Level& level)
 	}
 }
 
-void Player::updateBreakBlockTimer(Level& level, float deltaTime)
+void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 {
 	if (!m_sprite.has_value())
 		return;
 
+	// The stand-to-break mechanic only matters when standing on the ground.
 	if (!m_onGround)
 	{
 		m_standingBreakCol = -1;
@@ -258,6 +272,7 @@ void Player::updateBreakBlockTimer(Level& level, float deltaTime)
 	int foundBreakCol = -1;
 	int foundBreakRow = -1;
 
+	// Search only the row directly under the player's feet.
 	for (int col = leftTile; col <= rightTile; ++col)
 	{
 		if (level.isBreakTile(col, supportRow))
@@ -276,6 +291,7 @@ void Player::updateBreakBlockTimer(Level& level, float deltaTime)
 		return;
 	}
 
+	// If still standing on the same break block, count up the timer.
 	if (foundBreakCol == m_standingBreakCol && foundBreakRow == m_standingBreakRow)
 	{
 		m_breakStandTimer += deltaTime;
@@ -292,13 +308,14 @@ void Player::updateBreakBlockTimer(Level& level, float deltaTime)
 	}
 	else
 	{
+		// New break block under the player, so restart the countdown.
 		m_standingBreakCol = foundBreakCol;
 		m_standingBreakRow = foundBreakRow;
 		m_breakStandTimer = 0.f;
 	}
 }
 
-void Player::draw(sf::RenderWindow& window) const
+void GAME1_Player::draw(sf::RenderWindow& window) const
 {
 	if (m_sprite.has_value())
 	{
@@ -306,7 +323,7 @@ void Player::draw(sf::RenderWindow& window) const
 	}
 }
 
-sf::FloatRect Player::getBounds() const
+sf::FloatRect GAME1_Player::getBounds() const
 {
 	if (m_sprite.has_value())
 		return m_sprite->getGlobalBounds();
@@ -314,7 +331,7 @@ sf::FloatRect Player::getBounds() const
 	return sf::FloatRect();
 }
 
-const std::string& Player::getLastError() const
+const std::string& GAME1_Player::getLastError() const
 {
 	return m_lastError;
 }

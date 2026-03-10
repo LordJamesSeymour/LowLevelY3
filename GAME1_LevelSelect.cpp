@@ -1,8 +1,8 @@
-#include "LevelSelect.h"
+#include "GAME1_LevelSelect.h"
 
 #include <filesystem>
 
-bool LevelSelect::load(const std::string& fontPath)
+bool GAME1_LevelSelect::load(const std::string& fontPath)
 {
 	m_lastError.clear();
 
@@ -12,6 +12,7 @@ bool LevelSelect::load(const std::string& fontPath)
 		return false;
 	}
 
+	// Create the title once.
 	m_titleText.emplace(m_font);
 	m_titleText->setString("Select Level");
 	m_titleText->setCharacterSize(42);
@@ -19,6 +20,7 @@ bool LevelSelect::load(const std::string& fontPath)
 	m_titleText->setOutlineColor(sf::Color::Black);
 	m_titleText->setOutlineThickness(2.f);
 
+	// Create the 5 selectable slot texts.
 	for (int i = 0; i < SlotCount; ++i)
 	{
 		m_slotTexts[i].emplace(m_font);
@@ -30,8 +32,9 @@ bool LevelSelect::load(const std::string& fontPath)
 	return true;
 }
 
-void LevelSelect::setLevels(const std::vector<std::string>& levelPaths)
+void GAME1_LevelSelect::setLevels(const std::vector<std::string>& levelPaths)
 {
+	// Reset all slots to an inactive state first.
 	for (int i = 0; i < SlotCount; ++i)
 	{
 		m_levelPaths[i].clear();
@@ -45,8 +48,11 @@ void LevelSelect::setLevels(const std::vector<std::string>& levelPaths)
 		}
 	}
 
-	const int count = static_cast<int>(levelPaths.size()) < SlotCount ? static_cast<int>(levelPaths.size()) : SlotCount;
+	const int count = static_cast<int>(levelPaths.size()) < SlotCount
+		? static_cast<int>(levelPaths.size())
+		: SlotCount;
 
+	// Copy real map paths into the visible slots.
 	for (int i = 0; i < count; ++i)
 	{
 		m_levelPaths[i] = levelPaths[i];
@@ -63,15 +69,14 @@ void LevelSelect::setLevels(const std::vector<std::string>& levelPaths)
 	}
 }
 
-void LevelSelect::layout(const sf::RenderWindow& window)
+void GAME1_LevelSelect::layout(const sf::RenderWindow& window)
 {
 	if (!m_titleText)
 		return;
 
-	const sf::Vector2u windowSize = window.getSize();
-	const float windowWidth = static_cast<float>(windowSize.x);
-	const float windowHeight = static_cast<float>(windowSize.y);
+	const float windowWidth = static_cast<float>(window.getSize().x);
 
+	// Center the title near the top.
 	const sf::FloatRect titleBounds = m_titleText->getLocalBounds();
 
 	m_titleText->setPosition({
@@ -79,6 +84,7 @@ void LevelSelect::layout(const sf::RenderWindow& window)
 		100.f - titleBounds.position.y
 		});
 
+	// Stack level entries underneath the title.
 	const float startY = 200.f;
 	const float spacing = 65.f;
 
@@ -96,7 +102,7 @@ void LevelSelect::layout(const sf::RenderWindow& window)
 	}
 }
 
-int LevelSelect::handleClick(sf::Vector2f mousePosition) const
+int GAME1_LevelSelect::handleClick(sf::Vector2f mousePosition) const
 {
 	for (int i = 0; i < SlotCount; ++i)
 	{
@@ -110,7 +116,7 @@ int LevelSelect::handleClick(sf::Vector2f mousePosition) const
 	return -1;
 }
 
-void LevelSelect::draw(sf::RenderWindow& window) const
+void GAME1_LevelSelect::draw(sf::RenderWindow& window) const
 {
 	if (m_titleText)
 		window.draw(*m_titleText);
@@ -122,7 +128,7 @@ void LevelSelect::draw(sf::RenderWindow& window) const
 	}
 }
 
-bool LevelSelect::hasLevelAt(int slotIndex) const
+bool GAME1_LevelSelect::hasLevelAt(int slotIndex) const
 {
 	if (slotIndex < 0 || slotIndex >= SlotCount)
 		return false;
@@ -130,17 +136,17 @@ bool LevelSelect::hasLevelAt(int slotIndex) const
 	return m_slotActive[slotIndex];
 }
 
-const std::string& LevelSelect::getLevelPathAt(int slotIndex) const
+const std::string& GAME1_LevelSelect::getLevelPathAt(int slotIndex) const
 {
 	return m_levelPaths[slotIndex];
 }
 
-const std::string& LevelSelect::getLastError() const
+const std::string& GAME1_LevelSelect::getLastError() const
 {
 	return m_lastError;
 }
 
-bool LevelSelect::containsPoint(const sf::FloatRect& bounds, sf::Vector2f point)
+bool GAME1_LevelSelect::containsPoint(const sf::FloatRect& bounds, sf::Vector2f point)
 {
 	return point.x >= bounds.position.x &&
 		point.x <= bounds.position.x + bounds.size.x &&

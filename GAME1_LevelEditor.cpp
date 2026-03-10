@@ -1,4 +1,4 @@
-#include "LevelEditor.h"
+#include "GAME1_LevelEditor.h"
 
 #include <cctype>
 #include <filesystem>
@@ -8,12 +8,15 @@
 
 namespace
 {
+	// All Game 1 maps now live in the new standardized folder.
+	const std::filesystem::path kGame1MapsDirectory = "Assets/Game#1/Maps";
+
 	bool IsValidLevelFile(const std::filesystem::path& path)
 	{
 		if (!path.has_filename() || path.extension() != ".txt")
 			return false;
 
-		const std::string stem = path.stem().string(); // example: level01
+		const std::string stem = path.stem().string(); // Example: level01
 
 		if (stem.rfind("level", 0) != 0)
 			return false;
@@ -31,7 +34,7 @@ namespace
 	}
 }
 
-bool LevelEditor::load(const std::string& floorTexturePath, const std::string& breakTexturePath)
+bool GAME1_LevelEditor::load(const std::string& floorTexturePath, const std::string& breakTexturePath)
 {
 	m_lastError.clear();
 	m_lastSavedPath.clear();
@@ -48,11 +51,12 @@ bool LevelEditor::load(const std::string& floorTexturePath, const std::string& b
 		return false;
 	}
 
+	// After textures are ready, build a clean empty map.
 	resetEmpty();
 	return true;
 }
 
-void LevelEditor::resetEmpty()
+void GAME1_LevelEditor::resetEmpty()
 {
 	m_rows.assign(Rows, std::string(Cols, 'O'));
 	m_activeBrush = Brush::None;
@@ -60,7 +64,7 @@ void LevelEditor::resetEmpty()
 	m_lastSavedPath.clear();
 }
 
-void LevelEditor::toggleFloorBrush()
+void GAME1_LevelEditor::toggleFloorBrush()
 {
 	if (m_activeBrush == Brush::Floor)
 		m_activeBrush = Brush::None;
@@ -68,7 +72,7 @@ void LevelEditor::toggleFloorBrush()
 		m_activeBrush = Brush::Floor;
 }
 
-void LevelEditor::toggleBreakBrush()
+void GAME1_LevelEditor::toggleBreakBrush()
 {
 	if (m_activeBrush == Brush::Breakable)
 		m_activeBrush = Brush::None;
@@ -76,7 +80,7 @@ void LevelEditor::toggleBreakBrush()
 		m_activeBrush = Brush::Breakable;
 }
 
-void LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
+void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 {
 	if (m_activeBrush == Brush::None)
 		return;
@@ -84,12 +88,14 @@ void LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 	if (mousePixelPosition.x < 0 || mousePixelPosition.y < 0)
 		return;
 
+	// Convert from mouse coordinates into grid coordinates.
 	const int col = mousePixelPosition.x / TileSize;
 	const int row = mousePixelPosition.y / TileSize;
 
 	if (col < 0 || col >= Cols || row < 0 || row >= Rows)
 		return;
 
+	// This simple version only paints into empty tiles.
 	if (m_rows[row][col] != 'O')
 		return;
 
@@ -99,7 +105,7 @@ void LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		m_rows[row][col] = 'B';
 }
 
-bool LevelEditor::saveToNextLevelFile()
+bool GAME1_LevelEditor::saveToNextLevelFile()
 {
 	namespace fs = std::filesystem;
 
@@ -108,11 +114,13 @@ bool LevelEditor::saveToNextLevelFile()
 
 	try
 	{
-		fs::create_directories("maps");
+		// Make sure the new Game 1 map directory exists.
+		fs::create_directories(kGame1MapsDirectory);
 
 		int levelCount = 0;
 
-		for (const auto& entry : fs::directory_iterator("maps"))
+		// Count existing valid level files so the next one gets the next number.
+		for (const auto& entry : fs::directory_iterator(kGame1MapsDirectory))
 		{
 			if (entry.is_regular_file() && IsValidLevelFile(entry.path()))
 			{
@@ -125,7 +133,7 @@ bool LevelEditor::saveToNextLevelFile()
 		std::ostringstream fileNameStream;
 		fileNameStream << "level" << std::setw(2) << std::setfill('0') << nextNumber << ".txt";
 
-		const fs::path savePath = fs::path("maps") / fileNameStream.str();
+		const fs::path savePath = kGame1MapsDirectory / fileNameStream.str();
 
 		std::ofstream file(savePath);
 		if (!file.is_open())
@@ -134,6 +142,7 @@ bool LevelEditor::saveToNextLevelFile()
 			return false;
 		}
 
+		// Write the text map out line by line.
 		for (std::size_t row = 0; row < m_rows.size(); ++row)
 		{
 			file << m_rows[row];
@@ -158,8 +167,9 @@ bool LevelEditor::saveToNextLevelFile()
 	}
 }
 
-void LevelEditor::draw(sf::RenderWindow& window) const
+void GAME1_LevelEditor::draw(sf::RenderWindow& window) const
 {
+	// Draw placed tiles in the editor.
 	for (int row = 0; row < Rows; ++row)
 	{
 		for (int col = 0; col < Cols; ++col)
@@ -194,6 +204,7 @@ void LevelEditor::draw(sf::RenderWindow& window) const
 		}
 	}
 
+	// Red border so the editable region is visually obvious.
 	sf::RectangleShape border;
 	border.setPosition({ 2.f, 2.f });
 	border.setSize({
@@ -207,12 +218,12 @@ void LevelEditor::draw(sf::RenderWindow& window) const
 	window.draw(border);
 }
 
-const std::string& LevelEditor::getLastError() const
+const std::string& GAME1_LevelEditor::getLastError() const
 {
 	return m_lastError;
 }
 
-const std::string& LevelEditor::getLastSavedPath() const
+const std::string& GAME1_LevelEditor::getLastSavedPath() const
 {
 	return m_lastSavedPath;
 }

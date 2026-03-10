@@ -4,7 +4,8 @@
 #include <optional>
 #include <string>
 
-enum class MenuAction
+// These are the three outcomes of clicking on the Game 1 menu.
+enum class GAME1_MenuAction
 {
 	None,
 	Play,
@@ -12,7 +13,9 @@ enum class MenuAction
 	Quit
 };
 
-class Menu
+// Game 1's internal front menu.
+// This is separate from the new arcade hub, which now sits above all games.
+class GAME1_Menu
 {
 public:
 	bool load(const std::string& closeButtonPath,
@@ -21,7 +24,7 @@ public:
 		const std::string& levelEditorPath);
 
 	void layout(const sf::RenderWindow& window);
-	MenuAction handleClick(sf::Vector2f mousePosition) const;
+	GAME1_MenuAction handleClick(sf::Vector2f mousePosition) const;
 	void draw(sf::RenderWindow& window) const;
 
 	const std::string& getLastError() const;

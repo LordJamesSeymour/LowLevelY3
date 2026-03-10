@@ -144,19 +144,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="level.h" />
-    <ClInclude Include="LevelEditor.h" />
-    <ClInclude Include="LevelSelect.h" />
-    <ClInclude Include="Menu.h" />
-    <ClInclude Include="player.h" />
+    <ClInclude Include="ArcadeHub.h" />
+    <ClInclude Include="GAME1_Level.h" />
+    <ClInclude Include="GAME1_LevelEditor.h" />
+    <ClInclude Include="GAME1_LevelSelect.h" />
+    <ClInclude Include="GAME1_Menu.h" />
+    <ClInclude Include="GAME1_Player.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Level.cpp" />
-    <ClCompile Include="LevelEditor.cpp" />
-    <ClCompile Include="LevelSelect.cpp" />
+    <ClCompile Include="ArcadeHub.cpp" />
+    <ClCompile Include="GAME1_Level.cpp" />
+    <ClCompile Include="GAME1_LevelEditor.cpp" />
+    <ClCompile Include="GAME1_LevelSelect.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Menu.cpp" />
-    <ClCompile Include="Player.cpp" />
+    <ClCompile Include="GAME1_Menu.cpp" />
+    <ClCompile Include="GAME1_Player.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

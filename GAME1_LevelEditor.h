@@ -1,11 +1,12 @@
 #pragma once
-#pragma once
 
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
 
-class LevelEditor
+// The level editor lets the user paint a 10x16 tile map and save it
+// into Assets/Game#1/Maps as level01.txt, level02.txt, and so on.
+class GAME1_LevelEditor
 {
 public:
 	static constexpr int Rows = 10;

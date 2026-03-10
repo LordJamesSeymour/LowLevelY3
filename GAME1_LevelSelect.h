@@ -1,5 +1,4 @@
 #pragma once
-#pragma once
 
 #include <SFML/Graphics.hpp>
 #include <array>
@@ -7,7 +6,9 @@
 #include <string>
 #include <vector>
 
-class LevelSelect
+// Simple level selection screen for Game 1.
+// It displays up to five available map files.
+class GAME1_LevelSelect
 {
 public:
 	static constexpr int SlotCount = 5;
