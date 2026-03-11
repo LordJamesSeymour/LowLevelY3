@@ -66,7 +66,7 @@ void GAME1_LevelEditor::resetEmpty()
 {
 	m_rows.assign(Rows, std::string(TotalCols, 'O'));
 
-	// Toolbar slot 1 starts selected by default, similar to many inventory UIs.
+	// Slot 1 starts selected by default.
 	m_selectedToolbarSlot = 0;
 	m_activeBrush = m_toolbarBrushes[m_selectedToolbarSlot];
 
@@ -80,7 +80,17 @@ void GAME1_LevelEditor::selectToolbarSlot(int oneBasedSlot)
 	if (oneBasedSlot < 1 || oneBasedSlot > ToolbarSlotCount)
 		return;
 
-	m_selectedToolbarSlot = oneBasedSlot - 1;
+	const int requestedSlot = oneBasedSlot - 1;
+
+	// If the same slot is pressed again, deselect everything.
+	if (m_selectedToolbarSlot == requestedSlot)
+	{
+		m_selectedToolbarSlot = -1;
+		m_activeBrush = Brush::None;
+		return;
+	}
+
+	m_selectedToolbarSlot = requestedSlot;
 	m_activeBrush = m_toolbarBrushes[m_selectedToolbarSlot];
 }
 
@@ -160,7 +170,6 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 	if (mousePixelPosition.x < 0 || mousePixelPosition.y < 0)
 		return;
 
-	// Side handles move the visible 16-column window through the wider map.
 	if (isInsideLeftHandle(mousePixelPosition))
 	{
 		scrollLeft();
@@ -189,6 +198,17 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		m_rows[row][worldCol] = 'X';
 	else if (m_activeBrush == Brush::Breakable)
 		m_rows[row][worldCol] = 'B';
+}
+
+void GAME1_LevelEditor::eraseAtPixel(sf::Vector2i mousePixelPosition)
+{
+	int worldCol = 0;
+	int row = 0;
+
+	if (!tryGetHoveredCell(mousePixelPosition, worldCol, row))
+		return;
+
+	m_rows[row][worldCol] = 'O';
 }
 
 bool GAME1_LevelEditor::saveToNextLevelFile()
@@ -252,9 +272,7 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 
 void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPosition) const
 {
-	// -------------------------------------------------------------------------
-	// 1) Draw the currently visible slice of the level
-	// -------------------------------------------------------------------------
+	// 1) Visible slice of the level.
 	for (int row = 0; row < Rows; ++row)
 	{
 		for (int screenCol = 0; screenCol < VisibleCols; ++screenCol)
@@ -291,9 +309,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		}
 	}
 
-	// -------------------------------------------------------------------------
-	// 2) Draw a red cell grid so buildable cells are visually obvious
-	// -------------------------------------------------------------------------
+	// 2) Red placement grid.
 	for (int row = 0; row < Rows; ++row)
 	{
 		for (int screenCol = 0; screenCol < VisibleCols; ++screenCol)
@@ -315,9 +331,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		}
 	}
 
-	// -------------------------------------------------------------------------
-	// 3) Draw a block preview that snaps to the hovered grid cell
-	// -------------------------------------------------------------------------
+	// 3) Preview block snapped to hovered cell.
 	if (m_activeBrush != Brush::None)
 	{
 		int worldCol = 0;
@@ -346,7 +360,6 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 						static_cast<float>(row * TileSize)
 						});
 
-					// If the tile is already occupied, tint the preview redder.
 					if (m_rows[row][worldCol] == 'O')
 						previewSprite.setColor(sf::Color(255, 255, 255, 170));
 					else
@@ -358,9 +371,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		}
 	}
 
-	// -------------------------------------------------------------------------
-	// 4) Draw editor border
-	// -------------------------------------------------------------------------
+	// 4) Border.
 	sf::RectangleShape border;
 	border.setPosition({ 2.f, 2.f });
 	border.setSize({
@@ -372,9 +383,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	border.setOutlineThickness(4.f);
 	window.draw(border);
 
-	// -------------------------------------------------------------------------
-	// 5) Draw the left/right scroll handles
-	// -------------------------------------------------------------------------
+	// 5) Scroll handles.
 	sf::RectangleShape leftHandle;
 	leftHandle.setPosition({ 0.f, 0.f });
 	leftHandle.setSize({
@@ -415,10 +424,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	rightArrow.setFillColor(sf::Color::White);
 	window.draw(rightArrow);
 
-	// -------------------------------------------------------------------------
-	// 6) Draw a small slice indicator so the user knows which portion
-	//    of the larger map they are editing
-	// -------------------------------------------------------------------------
+	// 6) Slice indicator.
 	{
 		const int visibleStart = m_viewStartCol + 1;
 		const int visibleEnd = m_viewStartCol + VisibleCols;
@@ -443,9 +449,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		window.draw(sliceText);
 	}
 
-	// -------------------------------------------------------------------------
-	// 7) Draw the hotbar-style inventory toolbar
-	// -------------------------------------------------------------------------
+	// 7) Hotbar.
 	const float slotSize = 56.f;
 	const float slotGap = 8.f;
 	const float toolbarWidth = ToolbarSlotCount * slotSize + (ToolbarSlotCount - 1) * slotGap;

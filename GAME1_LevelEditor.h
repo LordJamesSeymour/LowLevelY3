@@ -40,8 +40,11 @@ public:
 
 	void resetEmpty();
 
+	// Pressing the currently selected slot again will deselect everything.
 	void selectToolbarSlot(int oneBasedSlot);
+
 	void paintAtPixel(sf::Vector2i mousePixelPosition);
+	void eraseAtPixel(sf::Vector2i mousePixelPosition);
 
 	bool saveToNextLevelFile();
 
@@ -81,8 +84,9 @@ private:
 		Brush::None
 	};
 
-	int m_selectedToolbarSlot = 0;
-	Brush m_activeBrush = Brush::Floor;
+	// -1 means nothing is selected.
+	int m_selectedToolbarSlot = -1;
+	Brush m_activeBrush = Brush::None;
 
 	int m_viewStartCol = 0;
 

@@ -67,9 +67,12 @@ bool ArcadeHub::load(const std::string& fontPath,
 
 	m_lastError.clear();
 	m_games.clear();
+
 	m_selectedIndex = 0;
-	m_currentFrameIndex = 0;
-	m_animationTimer = 0.f;
+	m_previousIndex = 0;
+	m_isSwiping = false;
+	m_swipeTimer = 0.f;
+	m_swipeDirection = 1;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -100,22 +103,6 @@ bool ArcadeHub::load(const std::string& fontPath,
 	m_creditText->setOutlineColor(sf::Color::Black);
 	m_creditText->setOutlineThickness(2.f);
 
-	m_gameLabelText.emplace(m_font);
-	m_gameLabelText->setCharacterSize(54);
-	m_gameLabelText->setOutlineColor(sf::Color::Black);
-	m_gameLabelText->setOutlineThickness(2.f);
-
-	m_gameNameText.emplace(m_font);
-	m_gameNameText->setCharacterSize(28);
-	m_gameNameText->setOutlineColor(sf::Color::Black);
-	m_gameNameText->setOutlineThickness(2.f);
-
-	m_launchHintText.emplace(m_font);
-	m_launchHintText->setString("[ CLICK IMAGE OR PRESS ENTER TO LAUNCH ]");
-	m_launchHintText->setCharacterSize(22);
-	m_launchHintText->setOutlineColor(sf::Color::Black);
-	m_launchHintText->setOutlineThickness(1.f);
-
 	m_leftArrowText.emplace(m_font);
 	m_leftArrowText->setString("<");
 	m_leftArrowText->setCharacterSize(120);
@@ -135,54 +122,70 @@ bool ArcadeHub::load(const std::string& fontPath,
 		LoadedGameCard card;
 		card.data = entry;
 
-		const fs::path framesDirectory = entry.splashFramesDirectory;
+		bool loadedAnyTexture = false;
 
-		if (!fs::exists(framesDirectory) || !fs::is_directory(framesDirectory))
+		// Option 1: animated PNG folder
+		if (!entry.splashFramesDirectory.empty())
 		{
-			m_lastError = "Failed to open splash frames directory: " + framesDirectory.string();
-			return false;
-		}
+			const fs::path framesDirectory = entry.splashFramesDirectory;
 
-		std::vector<fs::path> framePaths;
-
-		for (const auto& fileEntry : fs::directory_iterator(framesDirectory))
-		{
-			if (fileEntry.is_regular_file() && IsPngFile(fileEntry.path()))
+			if (fs::exists(framesDirectory) && fs::is_directory(framesDirectory))
 			{
-				framePaths.push_back(fileEntry.path());
+				std::vector<fs::path> framePaths;
+
+				for (const auto& fileEntry : fs::directory_iterator(framesDirectory))
+				{
+					if (fileEntry.is_regular_file() && IsPngFile(fileEntry.path()))
+					{
+						framePaths.push_back(fileEntry.path());
+					}
+				}
+
+				std::sort(framePaths.begin(), framePaths.end(),
+					[](const fs::path& a, const fs::path& b)
+					{
+						return a.filename().string() < b.filename().string();
+					});
+
+				for (const fs::path& framePath : framePaths)
+				{
+					sf::Texture texture;
+					if (!texture.loadFromFile(framePath.string()))
+					{
+						m_lastError = "Failed to load splash frame: " + framePath.string();
+						return false;
+					}
+
+					card.splashFrames.push_back(std::move(texture));
+				}
+
+				loadedAnyTexture = !card.splashFrames.empty();
 			}
 		}
 
-		std::sort(framePaths.begin(), framePaths.end(),
-			[](const fs::path& a, const fs::path& b)
-			{
-				return a.filename().string() < b.filename().string();
-			});
-
-		if (framePaths.empty())
-		{
-			m_lastError = "No PNG splash frames found in: " + framesDirectory.string();
-			return false;
-		}
-
-		card.splashFrames.reserve(framePaths.size());
-
-		for (const fs::path& framePath : framePaths)
+		// Option 2: single still image
+		if (!loadedAnyTexture && !entry.splashStillImagePath.empty())
 		{
 			sf::Texture texture;
-			if (!texture.loadFromFile(framePath.string()))
+			if (!texture.loadFromFile(entry.splashStillImagePath))
 			{
-				m_lastError = "Failed to load splash frame: " + framePath.string();
+				m_lastError = "Failed to load splash image: " + entry.splashStillImagePath;
 				return false;
 			}
 
 			card.splashFrames.push_back(std::move(texture));
+			loadedAnyTexture = true;
+		}
+
+		if (!loadedAnyTexture)
+		{
+			m_lastError = "No valid splash asset found for hub entry: " + entry.displayName;
+			return false;
 		}
 
 		m_games.push_back(std::move(card));
 	}
 
-	updateDisplayedTexts();
 	updateClockText();
 	updateVisualTheme(0.f);
 	return true;
@@ -198,20 +201,31 @@ void ArcadeHub::updateClockText()
 
 void ArcadeHub::updateAnimation(float deltaTime)
 {
-	if (m_games.empty())
-		return;
-
-	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-
-	if (selectedCard.splashFrames.size() <= 1)
-		return;
-
-	m_animationTimer += deltaTime;
-
-	while (m_animationTimer >= m_animationFrameDuration)
+	// Advance animated splash frames for every loaded game.
+	for (LoadedGameCard& card : m_games)
 	{
-		m_animationTimer -= m_animationFrameDuration;
-		m_currentFrameIndex = (m_currentFrameIndex + 1) % selectedCard.splashFrames.size();
+		if (card.splashFrames.size() <= 1)
+			continue;
+
+		card.animationTimer += deltaTime;
+
+		while (card.animationTimer >= m_animationFrameDuration)
+		{
+			card.animationTimer -= m_animationFrameDuration;
+			card.currentFrameIndex = (card.currentFrameIndex + 1) % card.splashFrames.size();
+		}
+	}
+
+	// Advance the hub swipe animation.
+	if (m_isSwiping)
+	{
+		m_swipeTimer += deltaTime;
+
+		if (m_swipeTimer >= m_swipeDuration)
+		{
+			m_swipeTimer = 0.f;
+			m_isSwiping = false;
+		}
 	}
 }
 
@@ -227,9 +241,6 @@ void ArcadeHub::updateVisualTheme(float totalTimeSeconds)
 	if (m_projectNameText) m_projectNameText->setFillColor(m_themeBright);
 	if (m_clockText) m_clockText->setFillColor(m_themeBright);
 	if (m_creditText) m_creditText->setFillColor(m_themeBright);
-	if (m_gameLabelText) m_gameLabelText->setFillColor(m_themeBright);
-	if (m_gameNameText) m_gameNameText->setFillColor(m_themeMid);
-	if (m_launchHintText) m_launchHintText->setFillColor(m_themeMid);
 
 	if (m_leftArrowText && m_rightArrowText)
 	{
@@ -254,8 +265,7 @@ void ArcadeHub::updateVisualTheme(float totalTimeSeconds)
 
 void ArcadeHub::layout(const sf::RenderWindow& window)
 {
-	if (m_games.empty() || !m_projectNameText || !m_clockText || !m_creditText ||
-		!m_gameLabelText || !m_gameNameText || !m_launchHintText ||
+	if (!m_projectNameText || !m_clockText || !m_creditText ||
 		!m_leftArrowText || !m_rightArrowText)
 	{
 		return;
@@ -290,54 +300,36 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 			});
 	}
 
-	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-	const sf::Texture& currentTexture = selectedCard.splashFrames[m_currentFrameIndex % selectedCard.splashFrames.size()];
-	const sf::Vector2u textureSize = currentTexture.getSize();
+	// Bring back the old "fit neatly to the image" behavior instead of forcing
+	// every splash into one fixed rectangle.
+	const sf::Texture* selectedTexture = getCurrentTextureForGame(m_selectedIndex);
 
-	const float targetWidth = 560.f;
-	const float targetHeight = 320.f;
+	const float maxSplashWidth = 560.f;
+	const float maxSplashHeight = 340.f;
+	const float splashTopY = 138.f; // moved slightly upward to make room for the dots
 
-	float scaledWidth = targetWidth;
-	float scaledHeight = targetHeight;
+	float scaledWidth = maxSplashWidth;
+	float scaledHeight = maxSplashHeight;
 
-	if (textureSize.x > 0 && textureSize.y > 0)
+	if (selectedTexture != nullptr)
 	{
-		const float widthScale = targetWidth / static_cast<float>(textureSize.x);
-		const float heightScale = targetHeight / static_cast<float>(textureSize.y);
-		const float chosenScale = std::min(widthScale, heightScale);
+		const sf::Vector2u textureSize = selectedTexture->getSize();
 
-		scaledWidth = static_cast<float>(textureSize.x) * chosenScale;
-		scaledHeight = static_cast<float>(textureSize.y) * chosenScale;
+		if (textureSize.x > 0 && textureSize.y > 0)
+		{
+			const float widthScale = maxSplashWidth / static_cast<float>(textureSize.x);
+			const float heightScale = maxSplashHeight / static_cast<float>(textureSize.y);
+			const float chosenScale = std::min(widthScale, heightScale);
+
+			scaledWidth = static_cast<float>(textureSize.x) * chosenScale;
+			scaledHeight = static_cast<float>(textureSize.y) * chosenScale;
+		}
 	}
 
 	m_splashButtonBounds = sf::FloatRect(
-		{ (windowWidth - scaledWidth) * 0.5f, (windowHeight - scaledHeight) * 0.5f - 10.f },
+		{ (windowWidth - scaledWidth) * 0.5f, splashTopY },
 		{ scaledWidth, scaledHeight }
 	);
-
-	{
-		const sf::FloatRect bounds = m_gameLabelText->getLocalBounds();
-		m_gameLabelText->setPosition({
-			(windowWidth - bounds.size.x) * 0.5f - bounds.position.x,
-			m_splashButtonBounds.position.y - 62.f - bounds.position.y
-			});
-	}
-
-	{
-		const sf::FloatRect bounds = m_gameNameText->getLocalBounds();
-		m_gameNameText->setPosition({
-			(windowWidth - bounds.size.x) * 0.5f - bounds.position.x,
-			m_splashButtonBounds.position.y + m_splashButtonBounds.size.y + 18.f - bounds.position.y
-			});
-	}
-
-	{
-		const sf::FloatRect bounds = m_launchHintText->getLocalBounds();
-		m_launchHintText->setPosition({
-			(windowWidth - bounds.size.x) * 0.5f - bounds.position.x,
-			m_splashButtonBounds.position.y + m_splashButtonBounds.size.y + 54.f - bounds.position.y
-			});
-	}
 
 	const float splashCenterY = m_splashButtonBounds.position.y + m_splashButtonBounds.size.y * 0.5f;
 
@@ -361,31 +353,41 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 		m_rightButtonBounds = ExpandRect(m_rightArrowText->getGlobalBounds(), 20.f);
 	}
 }
-
 void ArcadeHub::navigateLeft()
 {
-	if (m_games.empty())
+	if (m_games.size() <= 1 || m_isSwiping)
 		return;
+
+	m_previousIndex = m_selectedIndex;
 
 	if (m_selectedIndex == 0)
 		m_selectedIndex = m_games.size() - 1;
 	else
 		--m_selectedIndex;
 
-	updateDisplayedTexts();
+	m_swipeDirection = -1;
+	m_swipeTimer = 0.f;
+	m_isSwiping = true;
 }
 
 void ArcadeHub::navigateRight()
 {
-	if (m_games.empty())
+	if (m_games.size() <= 1 || m_isSwiping)
 		return;
 
+	m_previousIndex = m_selectedIndex;
 	m_selectedIndex = (m_selectedIndex + 1) % m_games.size();
-	updateDisplayedTexts();
+
+	m_swipeDirection = 1;
+	m_swipeTimer = 0.f;
+	m_isSwiping = true;
 }
 
 ArcadeHubAction ArcadeHub::handleClick(sf::Vector2f mousePosition) const
 {
+	if (m_isSwiping)
+		return ArcadeHubAction::None;
+
 	if (containsPoint(m_leftButtonBounds, mousePosition))
 		return ArcadeHubAction::PreviousGame;
 
@@ -398,52 +400,104 @@ ArcadeHubAction ArcadeHub::handleClick(sf::Vector2f mousePosition) const
 	return ArcadeHubAction::None;
 }
 
-void ArcadeHub::draw(sf::RenderTarget& target) const
+void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, float offsetX) const
 {
-	if (m_games.empty() || !m_projectNameText || !m_clockText || !m_creditText ||
-		!m_gameLabelText || !m_gameNameText || !m_launchHintText ||
-		!m_leftArrowText || !m_rightArrowText)
-	{
+	if (gameIndex >= m_games.size())
 		return;
+
+	const LoadedGameCard& card = m_games[gameIndex];
+	const sf::Texture* texture = getCurrentTextureForGame(gameIndex);
+
+	const float windowWidth = static_cast<float>(m_lastLayoutSize.x);
+
+	// Keep the same layout rules used by layout():
+	// the card fits inside a max area, but preserves the texture aspect ratio.
+	const float maxSplashWidth = 560.f;
+	const float maxSplashHeight = 340.f;
+	const float splashTopY = m_splashButtonBounds.position.y;
+
+	float scaledWidth = maxSplashWidth;
+	float scaledHeight = maxSplashHeight;
+
+	if (texture != nullptr)
+	{
+		const sf::Vector2u textureSize = texture->getSize();
+
+		if (textureSize.x > 0 && textureSize.y > 0)
+		{
+			const float widthScale = maxSplashWidth / static_cast<float>(textureSize.x);
+			const float heightScale = maxSplashHeight / static_cast<float>(textureSize.y);
+			const float chosenScale = std::min(widthScale, heightScale);
+
+			scaledWidth = static_cast<float>(textureSize.x) * chosenScale;
+			scaledHeight = static_cast<float>(textureSize.y) * chosenScale;
+		}
 	}
 
-	const float width = static_cast<float>(m_lastLayoutSize.x);
-	const float height = static_cast<float>(m_lastLayoutSize.y);
+	const float panelCenterX = windowWidth * 0.5f + offsetX;
 
-	sf::RectangleShape background;
-	background.setPosition({ 0.f, 0.f });
-	background.setSize({ width, height });
-	background.setFillColor(m_themeBackground);
-	target.draw(background);
+	const sf::FloatRect panelBounds(
+		{ panelCenterX - scaledWidth * 0.5f, splashTopY },
+		{ scaledWidth, scaledHeight }
+	);
 
-	sf::RectangleShape screenFrame;
-	screenFrame.setPosition({ 8.f, 8.f });
-	screenFrame.setSize({ width - 16.f, height - 16.f });
-	screenFrame.setFillColor(sf::Color::Transparent);
-	screenFrame.setOutlineColor(m_themeMid);
-	screenFrame.setOutlineThickness(3.f);
-	target.draw(screenFrame);
+	// Title above the card.
+	sf::Text labelText(m_font);
+	labelText.setString(card.data.label);
+	labelText.setCharacterSize(54);
+	labelText.setFillColor(m_themeBright);
+	labelText.setOutlineColor(sf::Color::Black);
+	labelText.setOutlineThickness(2.f);
 
-	sf::RectangleShape innerFrame;
-	innerFrame.setPosition({ 18.f, 18.f });
-	innerFrame.setSize({ width - 36.f, height - 36.f });
-	innerFrame.setFillColor(sf::Color::Transparent);
-	innerFrame.setOutlineColor(sf::Color(
-		FloatToByte(m_themeBright.r * 0.55f),
-		FloatToByte(m_themeBright.g * 0.55f),
-		FloatToByte(m_themeBright.b * 0.55f)
-	));
-	innerFrame.setOutlineThickness(1.f);
-	target.draw(innerFrame);
+	{
+		const sf::FloatRect bounds = labelText.getLocalBounds();
+		labelText.setPosition({
+			panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+			panelBounds.position.y - 62.f - bounds.position.y
+			});
+	}
 
+	// Subtitle below the card.
+	sf::Text nameText(m_font);
+	nameText.setString(card.data.displayName);
+	nameText.setCharacterSize(28);
+	nameText.setFillColor(m_themeMid);
+	nameText.setOutlineColor(sf::Color::Black);
+	nameText.setOutlineThickness(2.f);
+
+	{
+		const sf::FloatRect bounds = nameText.getLocalBounds();
+		nameText.setPosition({
+			panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+			panelBounds.position.y + panelBounds.size.y + 18.f - bounds.position.y
+			});
+	}
+
+	// Launch hint.
+	sf::Text launchHintText(m_font);
+	launchHintText.setString("[ CLICK IMAGE OR PRESS ENTER TO LAUNCH ]");
+	launchHintText.setCharacterSize(22);
+	launchHintText.setFillColor(m_themeMid);
+	launchHintText.setOutlineColor(sf::Color::Black);
+	launchHintText.setOutlineThickness(1.f);
+
+	{
+		const sf::FloatRect bounds = launchHintText.getLocalBounds();
+		launchHintText.setPosition({
+			panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+			panelBounds.position.y + panelBounds.size.y + 50.f - bounds.position.y
+			});
+	}
+
+	// Main splash panel.
 	sf::RectangleShape splashPanel;
 	splashPanel.setPosition({
-		m_splashButtonBounds.position.x - 12.f,
-		m_splashButtonBounds.position.y - 12.f
+		panelBounds.position.x - 12.f,
+		panelBounds.position.y - 12.f
 		});
 	splashPanel.setSize({
-		m_splashButtonBounds.size.x + 24.f,
-		m_splashButtonBounds.size.y + 24.f
+		panelBounds.size.x + 24.f,
+		panelBounds.size.y + 24.f
 		});
 	splashPanel.setFillColor(m_themeDark);
 	splashPanel.setOutlineColor(m_themeBright);
@@ -462,29 +516,142 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	splashHeaderLine.setFillColor(m_themeMid);
 	target.draw(splashHeaderLine);
 
-	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-	const sf::Texture& currentTexture = selectedCard.splashFrames[m_currentFrameIndex % selectedCard.splashFrames.size()];
-
-	sf::Sprite splashSprite(currentTexture);
-
-	const sf::FloatRect localBounds = splashSprite.getLocalBounds();
-	if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+	if (texture != nullptr)
 	{
-		splashSprite.setScale({
-			m_splashButtonBounds.size.x / localBounds.size.x,
-			m_splashButtonBounds.size.y / localBounds.size.y
+		sf::Sprite splashSprite(*texture);
+
+		const sf::FloatRect localBounds = splashSprite.getLocalBounds();
+		if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+		{
+			const float widthScale = panelBounds.size.x / localBounds.size.x;
+			const float heightScale = panelBounds.size.y / localBounds.size.y;
+			const float chosenScale = std::min(widthScale, heightScale);
+
+			const float drawWidth = localBounds.size.x * chosenScale;
+			const float drawHeight = localBounds.size.y * chosenScale;
+
+			splashSprite.setScale({ chosenScale, chosenScale });
+			splashSprite.setPosition({
+				panelBounds.position.x + (panelBounds.size.x - drawWidth) * 0.5f,
+				panelBounds.position.y + (panelBounds.size.y - drawHeight) * 0.5f
+				});
+
+			target.draw(splashSprite);
+		}
+	}
+
+	target.draw(labelText);
+	target.draw(nameText);
+	target.draw(launchHintText);
+}
+
+const sf::Texture* ArcadeHub::getCurrentTextureForGame(std::size_t gameIndex) const
+{
+	if (gameIndex >= m_games.size())
+		return nullptr;
+
+	const LoadedGameCard& card = m_games[gameIndex];
+
+	if (card.splashFrames.empty())
+		return nullptr;
+
+	return &card.splashFrames[card.currentFrameIndex % card.splashFrames.size()];
+}
+
+void ArcadeHub::draw(sf::RenderTarget& target) const
+{
+	if (!m_projectNameText || !m_clockText || !m_creditText ||
+		!m_leftArrowText || !m_rightArrowText)
+	{
+		return;
+	}
+
+	const float width = static_cast<float>(m_lastLayoutSize.x);
+	const float height = static_cast<float>(m_lastLayoutSize.y);
+
+	// Background
+	sf::RectangleShape background;
+	background.setPosition({ 0.f, 0.f });
+	background.setSize({ width, height });
+	background.setFillColor(m_themeBackground);
+	target.draw(background);
+
+	// Outer frame
+	sf::RectangleShape screenFrame;
+	screenFrame.setPosition({ 8.f, 8.f });
+	screenFrame.setSize({ width - 16.f, height - 16.f });
+	screenFrame.setFillColor(sf::Color::Transparent);
+	screenFrame.setOutlineColor(m_themeMid);
+	screenFrame.setOutlineThickness(3.f);
+	target.draw(screenFrame);
+
+	// Inner frame
+	sf::RectangleShape innerFrame;
+	innerFrame.setPosition({ 18.f, 18.f });
+	innerFrame.setSize({ width - 36.f, height - 36.f });
+	innerFrame.setFillColor(sf::Color::Transparent);
+	innerFrame.setOutlineColor(ColorFromHSV(
+		0.f,
+		0.f,
+		0.f
+	));
+	innerFrame.setOutlineColor(sf::Color(
+		static_cast<std::uint8_t>(std::clamp(m_themeBright.r * 0.55f, 0.f, 255.f)),
+		static_cast<std::uint8_t>(std::clamp(m_themeBright.g * 0.55f, 0.f, 255.f)),
+		static_cast<std::uint8_t>(std::clamp(m_themeBright.b * 0.55f, 0.f, 255.f))
+	));
+	innerFrame.setOutlineThickness(1.f);
+	target.draw(innerFrame);
+
+	// Card drawing:
+	// - if not swiping, draw only the selected card
+	// - if swiping, draw both old and new cards with a side-swipe animation
+	if (!m_isSwiping)
+	{
+		drawGameCard(target, m_selectedIndex, 0.f);
+	}
+	else
+	{
+		const float linearT = std::clamp(m_swipeTimer / m_swipeDuration, 0.f, 1.f);
+		const float curvedT = ApplySwipeCurve(linearT);
+
+		const float travelDistance = width;
+		const float outgoingOffset = -static_cast<float>(m_swipeDirection) * curvedT * travelDistance;
+		const float incomingOffset = static_cast<float>(m_swipeDirection) * (1.f - curvedT) * travelDistance;
+
+		drawGameCard(target, m_previousIndex, outgoingOffset);
+		drawGameCard(target, m_selectedIndex, incomingOffset);
+	}
+
+	// Page dots similar to social media page indicators.
+	const float dotRadius = 7.f;
+	const float dotGap = 16.f;
+	const float totalDotsWidth = m_games.empty()
+		? 0.f
+		: static_cast<float>(m_games.size()) * (dotRadius * 2.f) + static_cast<float>(m_games.size() - 1) * dotGap;
+
+	const float dotsStartX = (width - totalDotsWidth) * 0.5f;
+	const float dotsY = m_splashButtonBounds.position.y + m_splashButtonBounds.size.y + 108.f;
+
+	for (std::size_t i = 0; i < m_games.size(); ++i)
+	{
+		sf::CircleShape dot(dotRadius);
+		dot.setPosition({
+			dotsStartX + static_cast<float>(i) * (dotRadius * 2.f + dotGap),
+			dotsY
 			});
 
-		splashSprite.setPosition(m_splashButtonBounds.position);
-		target.draw(splashSprite);
+		if (i == m_selectedIndex)
+			dot.setFillColor(m_themeBright);
+		else
+			dot.setFillColor(sf::Color(110, 110, 110));
+
+		target.draw(dot);
 	}
 
 	target.draw(*m_projectNameText);
 	target.draw(*m_clockText);
 	target.draw(*m_creditText);
-	target.draw(*m_gameLabelText);
-	target.draw(*m_gameNameText);
-	target.draw(*m_launchHintText);
 	target.draw(*m_leftArrowText);
 	target.draw(*m_rightArrowText);
 }
@@ -497,6 +664,11 @@ std::size_t ArcadeHub::getSelectedIndex() const
 const ArcadeHubGameEntry& ArcadeHub::getSelectedGame() const
 {
 	return m_games[m_selectedIndex].data;
+}
+
+bool ArcadeHub::isTransitioning() const
+{
+	return m_isSwiping;
 }
 
 const std::string& ArcadeHub::getLastError() const
@@ -556,22 +728,32 @@ sf::Color ArcadeHub::ColorFromHSV(float hueDegrees, float saturation, float valu
 	}
 
 	return sf::Color(
-		FloatToByte((r1 + m) * 255.f),
-		FloatToByte((g1 + m) * 255.f),
-		FloatToByte((b1 + m) * 255.f)
+		static_cast<std::uint8_t>(std::clamp((r1 + m) * 255.f, 0.f, 255.f)),
+		static_cast<std::uint8_t>(std::clamp((g1 + m) * 255.f, 0.f, 255.f)),
+		static_cast<std::uint8_t>(std::clamp((b1 + m) * 255.f, 0.f, 255.f))
 	);
 }
 
-void ArcadeHub::updateDisplayedTexts()
+float ArcadeHub::ApplySwipeCurve(float t)
 {
-	if (m_games.empty() || !m_gameLabelText || !m_gameNameText)
-		return;
+	// Inverted feel:
+	// starts slower, accelerates through the middle,
+	// then eases off a bit near the end.
+	t = std::clamp(t, 0.f, 1.f);
 
-	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-
-	m_gameLabelText->setString(selectedCard.data.label);
-	m_gameNameText->setString(selectedCard.data.displayName);
-
-	m_currentFrameIndex = 0;
-	m_animationTimer = 0.f;
+	if (t < 0.22f)
+	{
+		const float local = t / 0.22f;
+		return local * local * 0.18f;
+	}
+	else if (t < 0.72f)
+	{
+		const float local = (t - 0.22f) / 0.50f;
+		return 0.18f + local * 0.62f;
+	}
+	else
+	{
+		const float local = (t - 0.72f) / 0.28f;
+		return 0.80f + (1.f - (1.f - local) * (1.f - local)) * 0.20f;
+	}
 }

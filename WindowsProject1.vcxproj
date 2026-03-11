@@ -150,12 +150,22 @@
     <ClInclude Include="GAME1_LevelSelect.h" />
     <ClInclude Include="GAME1_Menu.h" />
     <ClInclude Include="GAME1_Player.h" />
+    <ClInclude Include="GAME2_BackgroundLayer.h" />
+    <ClInclude Include="GAME2_Enemy.h" />
+    <ClInclude Include="GAME2_Game.h" />
+    <ClInclude Include="GAME2_Menu.h" />
+    <ClInclude Include="GAME2_Player.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ArcadeHub.cpp" />
     <ClCompile Include="GAME1_Level.cpp" />
     <ClCompile Include="GAME1_LevelEditor.cpp" />
     <ClCompile Include="GAME1_LevelSelect.cpp" />
+    <ClCompile Include="GAME2_BackgroundLayer.cpp" />
+    <ClCompile Include="GAME2_Enemy.cpp" />
+    <ClCompile Include="GAME2_Game.cpp" />
+    <ClCompile Include="GAME2_Menu.cpp" />
+    <ClCompile Include="GAME2_Player.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GAME1_Menu.cpp" />
     <ClCompile Include="GAME1_Player.cpp" />

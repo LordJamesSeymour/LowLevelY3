@@ -14,17 +14,26 @@
 #include "GAME1_Menu.h"
 #include "GAME1_LevelEditor.h"
 #include "GAME1_LevelSelect.h"
+#include "GAME2_Menu.h"
+#include "GAME2_Game.h"
 
 namespace
 {
 	const std::filesystem::path kGlobalFontPath = "Assets/menu.ttf";
 	const std::filesystem::path kHubShaderPath = "Assets/Shaders/ArcadeHubCRT.frag";
 
+	// -------------------------------------------------------------------------
+	// Game 1 paths
+	// -------------------------------------------------------------------------
 	const std::filesystem::path kGame1ResourcesDirectory = "Assets/Game#1/Resources";
 	const std::filesystem::path kGame1MapsDirectory = "Assets/Game#1/Maps";
-
-	// Changed from single image path to frame directory.
 	const std::filesystem::path kGame1SplashFramesDirectory = "Assets/Game#1/GIFs/SplashScreen";
+
+	// -------------------------------------------------------------------------
+	// Game 2 paths
+	// -------------------------------------------------------------------------
+	const std::filesystem::path kGame2ResourcesDirectory = "Assets/Game#2/Resources";
+	const std::filesystem::path kGame2SplashStillImagePath = "Assets/Game#2/SplashScreen/Game2SplashScreen.png";
 
 	enum class AppState
 	{
@@ -32,7 +41,9 @@ namespace
 		GAME1_Menu,
 		GAME1_LevelSelect,
 		GAME1_Game,
-		GAME1_Editor
+		GAME1_Editor,
+		GAME2_Menu,
+		GAME2_Game
 	};
 
 	void ShowError(const std::string& message)
@@ -231,6 +242,9 @@ int main()
 	sf::RenderWindow window(sf::VideoMode({ 1024, 640 }), "Arcade Collection");
 	window.setFramerateLimit(60);
 
+	// -------------------------------------------------------------------------
+	// Hub post-processing setup
+	// -------------------------------------------------------------------------
 	sf::RenderTexture hubRenderTexture;
 	if (!hubRenderTexture.resize(window.getSize()))
 	{
@@ -253,13 +267,24 @@ int main()
 
 	float totalAppTime = 0.f;
 
+	// -------------------------------------------------------------------------
+	// Top-level hub setup
+	// -------------------------------------------------------------------------
 	ArcadeHub hub;
 
 	std::vector<ArcadeHubGameEntry> hubGames;
 	hubGames.push_back({
 		"GAME #1",
 		"Sidescroller Platformer",
-		kGame1SplashFramesDirectory.string()
+		kGame1SplashFramesDirectory.string(),
+		""
+		});
+
+	hubGames.push_back({
+		"GAME #2",
+		"Second Arcade Game",
+		"",
+		kGame2SplashStillImagePath.string()
 		});
 
 	if (!hub.load(kGlobalFontPath.string(), GetProjectNameFromSolution(), hubGames))
@@ -274,6 +299,9 @@ int main()
 		return -1;
 	}
 
+	// -------------------------------------------------------------------------
+	// Shared Game 1 UI font
+	// -------------------------------------------------------------------------
 	sf::Font game1UiFont;
 	if (!game1UiFont.openFromFile(kGlobalFontPath.string()))
 	{
@@ -293,6 +321,9 @@ int main()
 	respawnText.setOutlineColor(sf::Color::Black);
 	respawnText.setOutlineThickness(2.f);
 
+	// -------------------------------------------------------------------------
+	// Game 1 setup
+	// -------------------------------------------------------------------------
 	GAME1_Menu game1Menu;
 	if (!game1Menu.load((kGame1ResourcesDirectory / "xbutton.png").string(),
 		(kGame1ResourcesDirectory / "logo.png").string(),
@@ -338,10 +369,41 @@ int main()
 		return -1;
 	}
 
-	AppState appState = AppState::Hub;
-
 	GAME1_Level game1Level;
 	GAME1_Player game1Player;
+
+	// -------------------------------------------------------------------------
+	// Game 2 setup
+	// -------------------------------------------------------------------------
+	GAME2_Menu game2Menu;
+	if (!game2Menu.load(
+		(kGame2ResourcesDirectory / "logo.png").string(),
+		(kGame2ResourcesDirectory / "play.png").string()))
+	{
+		std::string msg =
+			"Game 2 menu failed to load.\n\n" +
+			game2Menu.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	GAME2_Game game2Game;
+	if (!game2Game.load(kGame2ResourcesDirectory.string(), window.getSize()))
+	{
+		std::string msg =
+			"Game 2 failed to load.\n\n" +
+			game2Game.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	AppState appState = AppState::Hub;
 
 	sf::Clock clock;
 
@@ -357,6 +419,9 @@ int main()
 				window.close();
 			}
 
+			// -----------------------------------------------------------------
+			// Arcade hub input
+			// -----------------------------------------------------------------
 			if (appState == AppState::Hub)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -371,9 +436,12 @@ int main()
 					}
 					else if (keyReleased->code == sf::Keyboard::Key::Enter)
 					{
-						if (hub.getSelectedIndex() == 0)
+						if (!hub.isTransitioning())
 						{
-							appState = AppState::GAME1_Menu;
+							if (hub.getSelectedIndex() == 0)
+								appState = AppState::GAME1_Menu;
+							else if (hub.getSelectedIndex() == 1)
+								appState = AppState::GAME2_Menu;
 						}
 					}
 				}
@@ -399,9 +467,9 @@ int main()
 
 						case ArcadeHubAction::LaunchGame:
 							if (hub.getSelectedIndex() == 0)
-							{
 								appState = AppState::GAME1_Menu;
-							}
+							else if (hub.getSelectedIndex() == 1)
+								appState = AppState::GAME2_Menu;
 							break;
 
 						case ArcadeHubAction::None:
@@ -411,6 +479,10 @@ int main()
 					}
 				}
 			}
+
+			// -----------------------------------------------------------------
+			// Game 1 menu input
+			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Menu)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -433,7 +505,7 @@ int main()
 						switch (game1Menu.handleClick(mousePosition))
 						{
 						case GAME1_MenuAction::Quit:
-							window.close();
+							appState = AppState::Hub;
 							break;
 
 						case GAME1_MenuAction::Play:
@@ -453,6 +525,10 @@ int main()
 					}
 				}
 			}
+
+			// -----------------------------------------------------------------
+			// Game 1 level select input
+			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_LevelSelect)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -484,6 +560,10 @@ int main()
 					}
 				}
 			}
+
+			// -----------------------------------------------------------------
+			// Game 1 gameplay input
+			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Game)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -494,6 +574,10 @@ int main()
 					}
 				}
 			}
+
+			// -----------------------------------------------------------------
+			// Game 1 editor input
+			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Editor)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -525,17 +609,77 @@ int main()
 
 				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
 				{
+					const sf::Vector2i mousePixelPosition{
+						mousePressed->position.x,
+						mousePressed->position.y
+					};
+
 					if (mousePressed->button == sf::Mouse::Button::Left)
 					{
-						game1Editor.paintAtPixel({
-							mousePressed->position.x,
-							mousePressed->position.y
-							});
+						game1Editor.paintAtPixel(mousePixelPosition);
+					}
+					else if (mousePressed->button == sf::Mouse::Button::Right)
+					{
+						game1Editor.eraseAtPixel(mousePixelPosition);
+					}
+				}
+			}
+
+			// -----------------------------------------------------------------
+			// Game 2 menu input
+			// -----------------------------------------------------------------
+			else if (appState == AppState::GAME2_Menu)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						appState = AppState::Hub;
+					}
+				}
+
+				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+				{
+					if (mousePressed->button == sf::Mouse::Button::Left)
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mousePressed->position.x),
+							static_cast<float>(mousePressed->position.y)
+						);
+
+						switch (game2Menu.handleClick(mousePosition))
+						{
+						case GAME2_MenuAction::Play:
+							game2Game.reset(window.getSize());
+							appState = AppState::GAME2_Game;
+							break;
+
+						case GAME2_MenuAction::None:
+						default:
+							break;
+						}
+					}
+				}
+			}
+
+			// -----------------------------------------------------------------
+			// Game 2 gameplay input
+			// -----------------------------------------------------------------
+			else if (appState == AppState::GAME2_Game)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						appState = AppState::GAME2_Menu;
 					}
 				}
 			}
 		}
 
+		// ---------------------------------------------------------------------
+		// Per-frame update + drawing
+		// ---------------------------------------------------------------------
 		if (appState == AppState::Hub)
 		{
 			hub.updateClockText();
@@ -636,12 +780,28 @@ int main()
 			game1LevelSelect.draw(window);
 			window.display();
 		}
-		else
+		else if (appState == AppState::GAME1_Menu)
 		{
 			game1Menu.layout(window);
 
 			window.clear(sf::Color(30, 30, 40));
 			game1Menu.draw(window);
+			window.display();
+		}
+		else if (appState == AppState::GAME2_Menu)
+		{
+			game2Menu.layout(window);
+
+			window.clear(sf::Color(24, 24, 34));
+			game2Menu.draw(window);
+			window.display();
+		}
+		else // GAME2_Game
+		{
+			game2Game.update(deltaTime, window.getSize());
+
+			window.clear(sf::Color::Black);
+			game2Game.draw(window);
 			window.display();
 		}
 	}
