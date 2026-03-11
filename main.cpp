@@ -674,6 +674,28 @@ int main()
 						appState = AppState::GAME2_Menu;
 					}
 				}
+
+				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+				{
+					if (mousePressed->button == sf::Mouse::Button::Left)
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mousePressed->position.x),
+							static_cast<float>(mousePressed->position.y)
+						);
+
+						switch (game2Game.handleClick(mousePosition, window.getSize()))
+						{
+						case GAME2_GameAction::BackToMenu:
+							appState = AppState::GAME2_Menu;
+							break;
+
+						case GAME2_GameAction::None:
+						default:
+							break;
+						}
+					}
+				}
 			}
 		}
 

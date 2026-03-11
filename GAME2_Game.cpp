@@ -3,6 +3,42 @@
 #include <algorithm>
 #include <filesystem>
 
+GAME2_Game::GAME2_Game()
+	: m_livesText(m_uiFont),
+	m_gameOverText(m_uiFont),
+	m_tryAgainText(m_uiFont),
+	m_backToMenuText(m_uiFont)
+{
+}
+
+namespace
+{
+	bool RectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)
+	{
+		return a.position.x < b.position.x + b.size.x &&
+			a.position.x + a.size.x > b.position.x &&
+			a.position.y < b.position.y + b.size.y &&
+			a.position.y + a.size.y > b.position.y;
+	}
+
+	bool ContainsPoint(const sf::FloatRect& rect, sf::Vector2f point)
+	{
+		return point.x >= rect.position.x &&
+			point.x <= rect.position.x + rect.size.x &&
+			point.y >= rect.position.y &&
+			point.y <= rect.position.y + rect.size.y;
+	}
+
+	void CenterTextInRect(sf::Text& text, const sf::FloatRect& rect)
+	{
+		const sf::FloatRect bounds = text.getLocalBounds();
+		text.setPosition({
+			rect.position.x + (rect.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+			rect.position.y + (rect.size.y - bounds.size.y) * 0.5f - bounds.position.y
+			});
+	}
+}
+
 bool GAME2_Game::load(const std::string& resourcesDirectory, sf::Vector2u windowSize)
 {
 	namespace fs = std::filesystem;
@@ -13,6 +49,7 @@ bool GAME2_Game::load(const std::string& resourcesDirectory, sf::Vector2u window
 	const fs::path backgroundDirectory = fs::path(resourcesDirectory) / "Background";
 	const fs::path playerDirectory = fs::path(resourcesDirectory) / "Player";
 	const fs::path enemiesDirectory = fs::path(resourcesDirectory) / "Enemies";
+	const fs::path uiFontPath = fs::path(resourcesDirectory).parent_path().parent_path() / "menu.ttf";
 
 	// Faster overall parallax, with stronger separation:
 	// Space = fastest
@@ -43,7 +80,6 @@ bool GAME2_Game::load(const std::string& resourcesDirectory, sf::Vector2u window
 		return false;
 	}
 
-	// The gameplay area is defined by the visible width of the main background.
 	const sf::FloatRect playBounds = m_spaceBackgroundLayer.getContentBounds();
 
 	if (!m_player.load(playerDirectory.generic_string(), playBounds))
@@ -56,6 +92,45 @@ bool GAME2_Game::load(const std::string& resourcesDirectory, sf::Vector2u window
 	{
 		return false;
 	}
+
+	if (!m_uiFont.openFromFile(uiFontPath.string()))
+	{
+		m_lastError = "Failed to load Game 2 UI font: " + uiFontPath.string();
+		return false;
+	}
+
+	m_livesText.setCharacterSize(24);
+	m_livesText.setFillColor(sf::Color::White);
+	m_livesText.setOutlineColor(sf::Color::Black);
+	m_livesText.setOutlineThickness(2.f);
+
+	m_gameOverText.setString("GAME OVER");
+	m_gameOverText.setCharacterSize(60);
+	m_gameOverText.setFillColor(sf::Color::White);
+	m_gameOverText.setOutlineColor(sf::Color::Black);
+	m_gameOverText.setOutlineThickness(3.f);
+
+	m_tryAgainText.setString("TRY AGAIN");
+	m_tryAgainText.setCharacterSize(28);
+	m_tryAgainText.setFillColor(sf::Color::White);
+	m_tryAgainText.setOutlineColor(sf::Color::Black);
+	m_tryAgainText.setOutlineThickness(2.f);
+
+	m_backToMenuText.setString("BACK TO THE MENU");
+	m_backToMenuText.setCharacterSize(28);
+	m_backToMenuText.setFillColor(sf::Color::White);
+	m_backToMenuText.setOutlineColor(sf::Color::Black);
+	m_backToMenuText.setOutlineThickness(2.f);
+
+	m_tryAgainButton.setSize({ 240.f, 62.f });
+	m_tryAgainButton.setFillColor(sf::Color(40, 140, 60));
+	m_tryAgainButton.setOutlineColor(sf::Color::White);
+	m_tryAgainButton.setOutlineThickness(2.f);
+
+	m_backToMenuButton.setSize({ 320.f, 62.f });
+	m_backToMenuButton.setFillColor(sf::Color(130, 60, 60));
+	m_backToMenuButton.setOutlineColor(sf::Color::White);
+	m_backToMenuButton.setOutlineThickness(2.f);
 
 	m_loaded = true;
 	reset(windowSize);
@@ -78,13 +153,18 @@ void GAME2_Game::reset(sf::Vector2u windowSize)
 	m_meteorsLayer.reset();
 	m_planetsLayer.reset();
 
-	const sf::FloatRect playBounds = m_spaceBackgroundLayer.getContentBounds();
-	m_player.reset(playBounds);
+	m_player.reset(getPlayBounds());
 
+	m_bullets.clear();
 	m_enemies.clear();
+
+	m_gameOver = false;
 
 	scheduleNextSpawnDelay();
 	m_spawnTimer = 0.45f;
+
+	m_livesText.setString("LIVES: 3");
+	refreshOverlayLayout(windowSize);
 }
 
 void GAME2_Game::scheduleNextSpawnDelay()
@@ -93,12 +173,12 @@ void GAME2_Game::scheduleNextSpawnDelay()
 	m_nextSpawnDelay = spawnDelayDistribution(m_rng);
 }
 
-void GAME2_Game::trySpawnEnemy(sf::Vector2u windowSize)
+void GAME2_Game::trySpawnEnemy()
 {
 	if (m_enemies.size() >= 10)
 		return;
 
-	const sf::FloatRect playBounds = m_spaceBackgroundLayer.getContentBounds();
+	const sf::FloatRect playBounds = getPlayBounds();
 
 	const float leftMargin = 20.f;
 	const float rightMargin = 100.f;
@@ -114,6 +194,38 @@ void GAME2_Game::trySpawnEnemy(sf::Vector2u windowSize)
 	m_enemies.push_back(std::make_unique<GAME2_BigEnemy>(sf::Vector2f{ spawnX, spawnY }));
 }
 
+void GAME2_Game::refreshOverlayLayout(sf::Vector2u windowSize)
+{
+	const float windowWidth = static_cast<float>(windowSize.x);
+	const float windowHeight = static_cast<float>(windowSize.y);
+
+	m_livesText.setPosition({ 20.f, 18.f });
+
+	const sf::FloatRect gameOverBounds = m_gameOverText.getLocalBounds();
+	m_gameOverText.setPosition({
+		windowWidth * 0.5f - gameOverBounds.size.x * 0.5f - gameOverBounds.position.x,
+		windowHeight * 0.5f - 150.f
+		});
+
+	m_tryAgainButton.setPosition({
+		windowWidth * 0.5f - m_tryAgainButton.getSize().x * 0.5f,
+		windowHeight * 0.5f - 18.f
+		});
+
+	m_backToMenuButton.setPosition({
+		windowWidth * 0.5f - m_backToMenuButton.getSize().x * 0.5f,
+		windowHeight * 0.5f + 68.f
+		});
+
+	CenterTextInRect(m_tryAgainText, m_tryAgainButton.getGlobalBounds());
+	CenterTextInRect(m_backToMenuText, m_backToMenuButton.getGlobalBounds());
+}
+
+sf::FloatRect GAME2_Game::getPlayBounds() const
+{
+	return m_spaceBackgroundLayer.getContentBounds();
+}
+
 void GAME2_Game::update(float deltaTime, sf::Vector2u windowSize)
 {
 	if (!m_loaded)
@@ -124,14 +236,24 @@ void GAME2_Game::update(float deltaTime, sf::Vector2u windowSize)
 	m_meteorsLayer.setViewSize(windowSize);
 	m_planetsLayer.setViewSize(windowSize);
 
-	m_spaceBackgroundLayer.update(deltaTime);
-	m_startsLayer.update(deltaTime);
-	m_meteorsLayer.update(deltaTime);
-	m_planetsLayer.update(deltaTime);
+	const float parallaxDeltaTime = m_gameOver
+		? deltaTime * m_gameOverParallaxMultiplier
+		: deltaTime;
 
-	const sf::FloatRect playBounds = m_spaceBackgroundLayer.getContentBounds();
+	m_spaceBackgroundLayer.update(parallaxDeltaTime);
+	m_startsLayer.update(parallaxDeltaTime);
+	m_meteorsLayer.update(parallaxDeltaTime);
+	m_planetsLayer.update(parallaxDeltaTime);
+
+	refreshOverlayLayout(windowSize);
+
+	if (m_gameOver)
+		return;
+
+	const sf::FloatRect playBounds = getPlayBounds();
 
 	m_player.update(deltaTime, playBounds);
+	m_player.updateShooting(deltaTime, m_bullets);
 
 	if (m_enemies.size() < 10)
 	{
@@ -139,10 +261,15 @@ void GAME2_Game::update(float deltaTime, sf::Vector2u windowSize)
 
 		if (m_spawnTimer <= 0.f)
 		{
-			trySpawnEnemy(windowSize);
+			trySpawnEnemy();
 			scheduleNextSpawnDelay();
 			m_spawnTimer = m_nextSpawnDelay;
 		}
+	}
+
+	for (GAME2_Bullet& bullet : m_bullets)
+	{
+		bullet.update(deltaTime);
 	}
 
 	for (std::unique_ptr<GAME2_Enemy>& enemy : m_enemies)
@@ -150,13 +277,66 @@ void GAME2_Game::update(float deltaTime, sf::Vector2u windowSize)
 		enemy->update(deltaTime, playBounds);
 	}
 
+	// Bullet vs enemy collisions.
+	for (GAME2_Bullet& bullet : m_bullets)
+	{
+		if (!bullet.isAlive())
+			continue;
+
+		for (std::unique_ptr<GAME2_Enemy>& enemy : m_enemies)
+		{
+			if (!enemy->isAlive())
+				continue;
+
+			if (RectsIntersect(bullet.getBounds(), enemy->getCollisionBounds()))
+			{
+				bullet.destroy();
+				enemy->takeDamage(1.f);
+				break;
+			}
+		}
+	}
+
+	// Enemy vs player collisions.
+	for (std::unique_ptr<GAME2_Enemy>& enemy : m_enemies)
+	{
+		if (!enemy->isAlive())
+			continue;
+
+		if (RectsIntersect(enemy->getCollisionBounds(), m_player.getCollisionBounds()))
+		{
+			m_player.takeHit();
+			enemy->destroy();
+
+			if (m_player.isGameOver())
+			{
+				m_gameOver = true;
+				break;
+			}
+		}
+	}
+
+	m_bullets.erase(
+		std::remove_if(
+			m_bullets.begin(),
+			m_bullets.end(),
+			[playBounds](const GAME2_Bullet& bullet)
+			{
+				return !bullet.isAlive() || bullet.isOffScreen(playBounds);
+			}),
+		m_bullets.end());
+
 	m_enemies.erase(
-		std::remove_if(m_enemies.begin(), m_enemies.end(),
+		std::remove_if(
+			m_enemies.begin(),
+			m_enemies.end(),
 			[playBounds](const std::unique_ptr<GAME2_Enemy>& enemy)
 			{
-				return enemy->isOffScreen(playBounds);
+				return !enemy->isAlive() || enemy->isOffScreen(playBounds);
 			}),
 		m_enemies.end());
+
+	m_livesText.setString("LIVES: " + std::to_string(m_player.getLives()));
 }
 
 void GAME2_Game::draw(sf::RenderWindow& window) const
@@ -166,12 +346,57 @@ void GAME2_Game::draw(sf::RenderWindow& window) const
 	m_meteorsLayer.draw(window);
 	m_planetsLayer.draw(window);
 
+	for (const GAME2_Bullet& bullet : m_bullets)
+	{
+		bullet.draw(window);
+	}
+
 	for (const std::unique_ptr<GAME2_Enemy>& enemy : m_enemies)
 	{
 		enemy->draw(window);
 	}
 
 	m_player.draw(window);
+
+	window.draw(m_livesText);
+
+	if (m_gameOver)
+	{
+		sf::RectangleShape overlay;
+		overlay.setSize({
+			static_cast<float>(window.getSize().x),
+			static_cast<float>(window.getSize().y)
+			});
+		overlay.setFillColor(sf::Color(0, 0, 0, 170));
+
+		window.draw(overlay);
+		window.draw(m_gameOverText);
+		window.draw(m_tryAgainButton);
+		window.draw(m_backToMenuButton);
+		window.draw(m_tryAgainText);
+		window.draw(m_backToMenuText);
+	}
+}
+
+GAME2_GameAction GAME2_Game::handleClick(sf::Vector2f mousePosition, sf::Vector2u windowSize)
+{
+	if (!m_loaded || !m_gameOver)
+		return GAME2_GameAction::None;
+
+	refreshOverlayLayout(windowSize);
+
+	if (ContainsPoint(m_tryAgainButton.getGlobalBounds(), mousePosition))
+	{
+		reset(windowSize);
+		return GAME2_GameAction::None;
+	}
+
+	if (ContainsPoint(m_backToMenuButton.getGlobalBounds(), mousePosition))
+	{
+		return GAME2_GameAction::BackToMenu;
+	}
+
+	return GAME2_GameAction::None;
 }
 
 const std::string& GAME2_Game::getLastError() const

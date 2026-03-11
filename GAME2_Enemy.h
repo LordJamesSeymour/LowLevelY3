@@ -17,10 +17,17 @@ public:
 	virtual void draw(sf::RenderWindow& window) const;
 
 	bool isOffScreen(const sf::FloatRect& playBounds) const;
+	bool isAlive() const;
+
+	void takeDamage(float amount);
+	void destroy();
 
 	float getHealth() const;
 	float getDamage() const;
 	float getSpeed() const;
+
+	sf::FloatRect getBounds() const;
+	sf::FloatRect getCollisionBounds() const;
 
 protected:
 	GAME2_Enemy(float health, float damage, float speed);
@@ -32,6 +39,7 @@ protected:
 	float m_health = 0.f;
 	float m_damage = 0.f;
 	float m_speed = 0.f;
+	bool m_alive = true;
 
 	sf::Vector2f m_position{ 0.f, 0.f };
 	float m_spawnOriginX = 0.f;

@@ -14,6 +14,7 @@ void GAME2_Enemy::initialiseFromSharedFrames(const std::vector<sf::Texture>& fra
 	if (frames.empty())
 		return;
 
+	m_alive = true;
 	m_position = startPosition;
 	m_spawnOriginX = startPosition.x;
 	m_currentFrameIndex = 0;
@@ -26,7 +27,7 @@ void GAME2_Enemy::initialiseFromSharedFrames(const std::vector<sf::Texture>& fra
 
 void GAME2_Enemy::update(float deltaTime, const sf::FloatRect& playBounds)
 {
-	if (!m_sprite)
+	if (!m_sprite || !m_alive)
 		return;
 
 	m_age += deltaTime;
@@ -60,7 +61,7 @@ void GAME2_Enemy::update(float deltaTime, const sf::FloatRect& playBounds)
 
 void GAME2_Enemy::draw(sf::RenderWindow& window) const
 {
-	if (m_sprite)
+	if (m_sprite && m_alive)
 		window.draw(*m_sprite);
 }
 
@@ -71,6 +72,30 @@ bool GAME2_Enemy::isOffScreen(const sf::FloatRect& playBounds) const
 
 	const sf::FloatRect bounds = m_sprite->getGlobalBounds();
 	return bounds.position.y > playBounds.position.y + playBounds.size.y;
+}
+
+bool GAME2_Enemy::isAlive() const
+{
+	return m_alive;
+}
+
+void GAME2_Enemy::takeDamage(float amount)
+{
+	if (!m_alive)
+		return;
+
+	m_health -= amount;
+
+	if (m_health <= 0.f)
+	{
+		m_health = 0.f;
+		m_alive = false;
+	}
+}
+
+void GAME2_Enemy::destroy()
+{
+	m_alive = false;
 }
 
 float GAME2_Enemy::getHealth() const
@@ -86,6 +111,19 @@ float GAME2_Enemy::getDamage() const
 float GAME2_Enemy::getSpeed() const
 {
 	return m_speed;
+}
+
+sf::FloatRect GAME2_Enemy::getBounds() const
+{
+	if (m_sprite)
+		return m_sprite->getGlobalBounds();
+
+	return sf::FloatRect();
+}
+
+sf::FloatRect GAME2_Enemy::getCollisionBounds() const
+{
+	return getBounds();
 }
 
 bool GAME2_BigEnemy::loadSharedAssets(const std::string& enemiesDirectory, std::string& outError)
@@ -120,7 +158,7 @@ bool GAME2_BigEnemy::loadSharedAssets(const std::string& enemiesDirectory, std::
 }
 
 GAME2_BigEnemy::GAME2_BigEnemy(sf::Vector2f startPosition)
-	: GAME2_Enemy(20.f, 8.f, 170.f)
+	: GAME2_Enemy(2.f, 1.f, 170.f)
 {
 	initialiseFromSharedFrames(s_sharedFrames, startPosition);
 }

@@ -1,5 +1,7 @@
 #include "GAME2_Player.h"
 
+#include "GAME2_Bullet.h"
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -116,6 +118,11 @@ void GAME2_Player::reset(const sf::FloatRect& playBounds)
 	m_animationState = AnimationState::ForwardLoop;
 	m_frameIndex = 0;
 	m_frameTimer = 0.f;
+
+	m_lives = 3;
+	m_shotCooldown = 0.f;
+	m_invulnerabilityTimer = 0.f;
+
 	applyCurrentTexture();
 
 	const sf::FloatRect bounds = m_sprite->getGlobalBounds();
@@ -130,6 +137,9 @@ void GAME2_Player::update(float deltaTime, const sf::FloatRect& playBounds)
 {
 	if (!m_sprite)
 		return;
+
+	m_shotCooldown = std::max(0.f, m_shotCooldown - deltaTime);
+	m_invulnerabilityTimer = std::max(0.f, m_invulnerabilityTimer - deltaTime);
 
 	sf::Vector2f moveInput{ 0.f, 0.f };
 
@@ -213,6 +223,27 @@ void GAME2_Player::update(float deltaTime, const sf::FloatRect& playBounds)
 	}
 
 	m_sprite->setPosition(m_position);
+}
+
+void GAME2_Player::updateShooting(float deltaTime, std::vector<GAME2_Bullet>& bullets)
+{
+	(void)deltaTime;
+
+	if (!m_sprite || isGameOver())
+		return;
+
+	if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space) && m_shotCooldown <= 0.f)
+	{
+		const sf::FloatRect bounds = m_sprite->getGlobalBounds();
+
+		const sf::Vector2f bulletSpawnPosition{
+			bounds.position.x + bounds.size.x * 0.5f,
+			bounds.position.y + 6.f
+		};
+
+		bullets.emplace_back(bulletSpawnPosition);
+		m_shotCooldown = m_shotInterval;
+	}
 }
 
 void GAME2_Player::setAnimationState(AnimationState newState)
@@ -321,8 +352,18 @@ const sf::Texture& GAME2_Player::getTextureForCurrentStateFrame() const
 
 void GAME2_Player::draw(sf::RenderWindow& window) const
 {
-	if (m_sprite)
-		window.draw(*m_sprite);
+	if (!m_sprite)
+		return;
+
+	// Blink while temporarily invulnerable so the player can read the damage grace period.
+	if (m_invulnerabilityTimer > 0.f)
+	{
+		const int blinkPhase = static_cast<int>(m_invulnerabilityTimer * 18.f);
+		if (blinkPhase % 2 != 0)
+			return;
+	}
+
+	window.draw(*m_sprite);
 }
 
 sf::FloatRect GAME2_Player::getBounds() const
@@ -331,6 +372,30 @@ sf::FloatRect GAME2_Player::getBounds() const
 		return m_sprite->getGlobalBounds();
 
 	return sf::FloatRect();
+}
+
+sf::FloatRect GAME2_Player::getCollisionBounds() const
+{
+	return getBounds();
+}
+
+void GAME2_Player::takeHit()
+{
+	if (m_invulnerabilityTimer > 0.f || m_lives <= 0)
+		return;
+
+	--m_lives;
+	m_invulnerabilityTimer = m_invulnerabilityDuration;
+}
+
+int GAME2_Player::getLives() const
+{
+	return m_lives;
+}
+
+bool GAME2_Player::isGameOver() const
+{
+	return m_lives <= 0;
 }
 
 const std::string& GAME2_Player::getLastError() const
