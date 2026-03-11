@@ -6,8 +6,6 @@
 
 namespace
 {
-	// These helper functions convert the player's world-space rectangle
-	// into tile indices. That keeps the collision code cleaner.
 	int GetLeftTile(const sf::FloatRect& bounds)
 	{
 		return static_cast<int>(std::floor(bounds.position.x / GAME1_Level::TileSize));
@@ -53,36 +51,29 @@ bool GAME1_Player::load(const std::string& texturePath, sf::Vector2f startPositi
 		return false;
 	}
 
-	// Scale the player sprite to a fixed 48x48 footprint.
 	m_sprite->setScale({
 		48.f / localBounds.size.x,
 		48.f / localBounds.size.y
 		});
 
+	m_spawnPosition = startPosition;
 	m_sprite->setPosition(startPosition);
+
+	m_velocity = { 0.f, 0.f };
+	m_onGround = false;
+	m_jumpHeldLastFrame = false;
+	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
+	m_primaryJumpStarted = false;
+	m_usedDoubleJump = false;
+	m_primaryJumpTimer = 0.f;
+	m_isRespawning = false;
+	m_respawnTimer = 0.f;
 
 	return true;
 }
 
-void GAME1_Player::update(float deltaTime, GAME1_Level& level, unsigned int windowWidth)
-{
-	if (!m_sprite.has_value())
-		return;
-
-	// Read input first so the movement state is fresh for this frame.
-	handleInput(deltaTime);
-
-	// Apply gravity every update.
-	m_velocity.y += m_gravity * deltaTime;
-
-	// Horizontal and vertical collision are separated on purpose.
-	// This is a very common platformer technique because it simplifies resolution.
-	moveHorizontal(deltaTime, level, windowWidth);
-	moveVertical(deltaTime, level);
-	updateBreakBlockTimer(level, deltaTime);
-}
-
-void GAME1_Player::handleInput(float deltaTime)
+void GAME1_Player::handleInput()
 {
 	m_velocity.x = 0.f;
 
@@ -98,36 +89,172 @@ void GAME1_Player::handleInput(float deltaTime)
 		m_velocity.x += m_moveSpeed;
 	}
 
-	// Coyote time lets the player still jump for a tiny moment after leaving ground.
-	if (m_onGround)
-		m_coyoteTimer = m_coyoteTime;
-	else
-		m_coyoteTimer = std::max(0.f, m_coyoteTimer - deltaTime);
-
-	// Jump buffer stores a jump press briefly so jumps feel more forgiving.
-	m_jumpBufferTimer = std::max(0.f, m_jumpBufferTimer - deltaTime);
-
 	const bool jumpHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 
-	// Only refresh the jump buffer on the press edge, not while held continuously.
+	// Jump buffer is armed only on the rising edge of the input.
 	if (jumpHeld && !m_jumpHeldLastFrame)
 	{
 		m_jumpBufferTimer = m_jumpBufferTime;
 	}
 
-	// If both forgiveness systems overlap, perform the jump.
-	if (m_jumpBufferTimer > 0.f && m_coyoteTimer > 0.f)
-	{
-		m_velocity.y = -m_jumpSpeed;
-		m_onGround = false;
-		m_coyoteTimer = 0.f;
-		m_jumpBufferTimer = 0.f;
-	}
-
 	m_jumpHeldLastFrame = jumpHeld;
 }
 
-void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level, unsigned int windowWidth)
+void GAME1_Player::startPrimaryJump()
+{
+	m_velocity.y = -m_jumpSpeed;
+	m_onGround = false;
+	m_coyoteTimer = 0.f;
+
+	m_primaryJumpStarted = true;
+	m_usedDoubleJump = false;
+	m_primaryJumpTimer = 0.f;
+}
+
+void GAME1_Player::startDoubleJump()
+{
+	m_velocity.y = -m_jumpSpeed;
+	m_onGround = false;
+	m_usedDoubleJump = true;
+}
+
+bool GAME1_Player::tryConsumeJumpBuffer()
+{
+	if (m_jumpBufferTimer <= 0.f)
+		return false;
+
+	// First priority: grounded jump or coyote jump.
+	if (m_onGround || m_coyoteTimer > 0.f)
+	{
+		startPrimaryJump();
+		m_jumpBufferTimer = 0.f;
+		return true;
+	}
+
+	// Second priority: double jump, but only inside the allowed time window
+	// after the first jump.
+	if (m_primaryJumpStarted &&
+		!m_usedDoubleJump &&
+		m_primaryJumpTimer <= m_doubleJumpWindow)
+	{
+		startDoubleJump();
+		m_jumpBufferTimer = 0.f;
+		return true;
+	}
+
+	return false;
+}
+
+void GAME1_Player::beginRespawn()
+{
+	m_isRespawning = true;
+	m_respawnTimer = m_respawnDuration;
+
+	m_velocity = { 0.f, 0.f };
+	m_onGround = false;
+	m_jumpBufferTimer = 0.f;
+	m_coyoteTimer = 0.f;
+	m_primaryJumpStarted = false;
+	m_usedDoubleJump = false;
+	m_primaryJumpTimer = 0.f;
+
+	m_standingBreakCol = -1;
+	m_standingBreakRow = -1;
+	m_breakStandTimer = 0.f;
+}
+
+void GAME1_Player::finishRespawn()
+{
+	m_isRespawning = false;
+	m_respawnTimer = 0.f;
+
+	m_velocity = { 0.f, 0.f };
+	m_onGround = false;
+	m_jumpBufferTimer = 0.f;
+	m_coyoteTimer = 0.f;
+	m_primaryJumpStarted = false;
+	m_usedDoubleJump = false;
+	m_primaryJumpTimer = 0.f;
+
+	m_standingBreakCol = -1;
+	m_standingBreakRow = -1;
+	m_breakStandTimer = 0.f;
+
+	if (m_sprite.has_value())
+	{
+		m_sprite->setPosition(m_spawnPosition);
+	}
+}
+
+void GAME1_Player::update(float deltaTime, GAME1_Level& level)
+{
+	if (!m_sprite.has_value())
+		return;
+
+	if (m_isRespawning)
+	{
+		m_respawnTimer -= deltaTime;
+
+		if (m_respawnTimer <= 0.f)
+		{
+			finishRespawn();
+		}
+
+		return;
+	}
+
+	const bool wasOnGround = m_onGround;
+
+	m_jumpBufferTimer = std::max(0.f, m_jumpBufferTimer - deltaTime);
+	m_coyoteTimer = std::max(0.f, m_coyoteTimer - deltaTime);
+
+	if (m_primaryJumpStarted)
+	{
+		m_primaryJumpTimer += deltaTime;
+	}
+
+	handleInput();
+
+	const bool jumpedBeforeMove = tryConsumeJumpBuffer();
+
+	m_velocity.y += m_gravity * deltaTime;
+
+	moveHorizontal(deltaTime, level);
+	moveVertical(deltaTime, level);
+
+	const bool landedThisFrame = !wasOnGround && m_onGround;
+
+	// Coyote time only starts if the player actually walked off a ledge.
+	// It never starts from an intentional jump.
+	if (wasOnGround && !m_onGround && !jumpedBeforeMove && m_velocity.y >= 0.f)
+	{
+		m_coyoteTimer = m_coyoteTime;
+	}
+
+	if (landedThisFrame)
+	{
+		m_primaryJumpStarted = false;
+		m_usedDoubleJump = false;
+		m_primaryJumpTimer = 0.f;
+		m_coyoteTimer = 0.f;
+
+		// If jump was buffered just before landing, execute immediately.
+		tryConsumeJumpBuffer();
+	}
+
+	updateBreakBlockTimer(level, deltaTime);
+
+	// Death line: if the player falls two whole tiles below the map,
+	// they are considered dead and the respawn countdown begins.
+	const float deathLine = level.getPixelHeight() + static_cast<float>(GAME1_Level::TileSize * 2);
+
+	if (m_sprite->getPosition().y > deathLine)
+	{
+		beginRespawn();
+	}
+}
+
+void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level)
 {
 	m_sprite->move({ m_velocity.x * deltaTime, 0.f });
 
@@ -175,18 +302,22 @@ void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level, unsigned 
 
 	bounds = m_sprite->getGlobalBounds();
 
-	// Screen wrap gives the small arcade level a more classic feel.
-	if (bounds.position.x < 0.f)
+	// Instead of the old wraparound, a side-scroller keeps the player
+	// clamped inside the world bounds.
+	const float minX = 0.f;
+	const float maxX = std::max(0.f, level.getPixelWidth() - bounds.size.x);
+
+	if (bounds.position.x < minX)
 	{
 		m_sprite->setPosition({
-			static_cast<float>(windowWidth) - bounds.size.x,
+			minX,
 			m_sprite->getPosition().y
 			});
 	}
-	else if (bounds.position.x + bounds.size.x > static_cast<float>(windowWidth))
+	else if (bounds.position.x > maxX)
 	{
 		m_sprite->setPosition({
-			0.f,
+			maxX,
 			m_sprite->getPosition().y
 			});
 	}
@@ -237,7 +368,6 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 
 				m_velocity.y = 0.f;
 
-				// Breakable blocks also shatter when hit from underneath.
 				if (level.isBreakTile(col, topTile))
 				{
 					level.breakTile(col, topTile);
@@ -254,7 +384,6 @@ void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 	if (!m_sprite.has_value())
 		return;
 
-	// The stand-to-break mechanic only matters when standing on the ground.
 	if (!m_onGround)
 	{
 		m_standingBreakCol = -1;
@@ -272,7 +401,6 @@ void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 	int foundBreakCol = -1;
 	int foundBreakRow = -1;
 
-	// Search only the row directly under the player's feet.
 	for (int col = leftTile; col <= rightTile; ++col)
 	{
 		if (level.isBreakTile(col, supportRow))
@@ -291,7 +419,6 @@ void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 		return;
 	}
 
-	// If still standing on the same break block, count up the timer.
 	if (foundBreakCol == m_standingBreakCol && foundBreakRow == m_standingBreakRow)
 	{
 		m_breakStandTimer += deltaTime;
@@ -308,7 +435,6 @@ void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 	}
 	else
 	{
-		// New break block under the player, so restart the countdown.
 		m_standingBreakCol = foundBreakCol;
 		m_standingBreakRow = foundBreakRow;
 		m_breakStandTimer = 0.f;
@@ -317,10 +443,24 @@ void GAME1_Player::updateBreakBlockTimer(GAME1_Level& level, float deltaTime)
 
 void GAME1_Player::draw(sf::RenderWindow& window) const
 {
-	if (m_sprite.has_value())
+	if (m_sprite.has_value() && !m_isRespawning)
 	{
 		window.draw(*m_sprite);
 	}
+}
+
+bool GAME1_Player::isRespawning() const
+{
+	return m_isRespawning;
+}
+
+int GAME1_Player::getRespawnCountdown() const
+{
+	if (!m_isRespawning)
+		return 0;
+
+	const int seconds = static_cast<int>(std::ceil(m_respawnTimer));
+	return std::max(1, seconds);
 }
 
 sf::FloatRect GAME1_Player::getBounds() const

@@ -17,7 +17,10 @@ struct ArcadeHubGameEntry
 {
 	std::string label;
 	std::string displayName;
-	std::string splashScreenPath;
+
+	// Folder containing ordered PNG frames for the animated splash.
+	// Example: Assets/Game#1/GIFs/SplashScreen
+	std::string splashFramesDirectory;
 };
 
 class ArcadeHub
@@ -28,6 +31,7 @@ public:
 		const std::vector<ArcadeHubGameEntry>& games);
 
 	void updateClockText();
+	void updateAnimation(float deltaTime);
 	void updateVisualTheme(float totalTimeSeconds);
 
 	void layout(const sf::RenderWindow& window);
@@ -37,7 +41,6 @@ public:
 
 	ArcadeHubAction handleClick(sf::Vector2f mousePosition) const;
 
-	// Changed from RenderWindow to RenderTarget so we can draw to a RenderTexture.
 	void draw(sf::RenderTarget& target) const;
 
 	std::size_t getSelectedIndex() const;
@@ -49,7 +52,7 @@ private:
 	struct LoadedGameCard
 	{
 		ArcadeHubGameEntry data;
-		sf::Texture splashTexture;
+		std::vector<sf::Texture> splashFrames;
 	};
 
 private:
@@ -63,6 +66,10 @@ private:
 
 	std::vector<LoadedGameCard> m_games;
 	std::size_t m_selectedIndex = 0;
+
+	std::size_t m_currentFrameIndex = 0;
+	float m_animationTimer = 0.f;
+	float m_animationFrameDuration = 1.f / 24.f;
 
 	std::optional<sf::Text> m_projectNameText;
 	std::optional<sf::Text> m_clockText;
@@ -79,7 +86,6 @@ private:
 
 	sf::Vector2u m_lastLayoutSize{ 0, 0 };
 
-	// Theme colors updated every frame from a slow HSV hue sweep.
 	sf::Color m_themeBright = sf::Color::White;
 	sf::Color m_themeMid = sf::Color(180, 180, 180);
 	sf::Color m_themeDark = sf::Color(35, 35, 35);

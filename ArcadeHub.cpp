@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <iomanip>
 #include <sstream>
 
@@ -40,15 +41,35 @@ namespace
 	{
 		return static_cast<std::uint8_t>(std::clamp(value, 0.f, 255.f));
 	}
+
+	std::string ToLower(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(),
+			[](unsigned char c)
+			{
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return value;
+	}
+
+	bool IsPngFile(const std::filesystem::path& path)
+	{
+		return path.has_extension() && ToLower(path.extension().string()) == ".png";
+	}
 }
 
 bool ArcadeHub::load(const std::string& fontPath,
 	const std::string& projectName,
 	const std::vector<ArcadeHubGameEntry>& games)
 {
+	namespace fs = std::filesystem;
+
 	m_lastError.clear();
 	m_games.clear();
 	m_selectedIndex = 0;
+	m_currentFrameIndex = 0;
+	m_animationTimer = 0.f;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -114,10 +135,48 @@ bool ArcadeHub::load(const std::string& fontPath,
 		LoadedGameCard card;
 		card.data = entry;
 
-		if (!card.splashTexture.loadFromFile(entry.splashScreenPath))
+		const fs::path framesDirectory = entry.splashFramesDirectory;
+
+		if (!fs::exists(framesDirectory) || !fs::is_directory(framesDirectory))
 		{
-			m_lastError = "Failed to load splash screen: " + entry.splashScreenPath;
+			m_lastError = "Failed to open splash frames directory: " + framesDirectory.string();
 			return false;
+		}
+
+		std::vector<fs::path> framePaths;
+
+		for (const auto& fileEntry : fs::directory_iterator(framesDirectory))
+		{
+			if (fileEntry.is_regular_file() && IsPngFile(fileEntry.path()))
+			{
+				framePaths.push_back(fileEntry.path());
+			}
+		}
+
+		std::sort(framePaths.begin(), framePaths.end(),
+			[](const fs::path& a, const fs::path& b)
+			{
+				return a.filename().string() < b.filename().string();
+			});
+
+		if (framePaths.empty())
+		{
+			m_lastError = "No PNG splash frames found in: " + framesDirectory.string();
+			return false;
+		}
+
+		card.splashFrames.reserve(framePaths.size());
+
+		for (const fs::path& framePath : framePaths)
+		{
+			sf::Texture texture;
+			if (!texture.loadFromFile(framePath.string()))
+			{
+				m_lastError = "Failed to load splash frame: " + framePath.string();
+				return false;
+			}
+
+			card.splashFrames.push_back(std::move(texture));
 		}
 
 		m_games.push_back(std::move(card));
@@ -137,9 +196,27 @@ void ArcadeHub::updateClockText()
 	}
 }
 
+void ArcadeHub::updateAnimation(float deltaTime)
+{
+	if (m_games.empty())
+		return;
+
+	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
+
+	if (selectedCard.splashFrames.size() <= 1)
+		return;
+
+	m_animationTimer += deltaTime;
+
+	while (m_animationTimer >= m_animationFrameDuration)
+	{
+		m_animationTimer -= m_animationFrameDuration;
+		m_currentFrameIndex = (m_currentFrameIndex + 1) % selectedCard.splashFrames.size();
+	}
+}
+
 void ArcadeHub::updateVisualTheme(float totalTimeSeconds)
 {
-	// 8 degrees per second = full color loop every 45 seconds.
 	const float hue = std::fmod(totalTimeSeconds * 8.f, 360.f);
 
 	m_themeBright = ColorFromHSV(hue, 0.60f, 1.00f);
@@ -214,7 +291,8 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 	}
 
 	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-	const sf::Vector2u textureSize = selectedCard.splashTexture.getSize();
+	const sf::Texture& currentTexture = selectedCard.splashFrames[m_currentFrameIndex % selectedCard.splashFrames.size()];
+	const sf::Vector2u textureSize = currentTexture.getSize();
 
 	const float targetWidth = 560.f;
 	const float targetHeight = 320.f;
@@ -332,14 +410,12 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	const float width = static_cast<float>(m_lastLayoutSize.x);
 	const float height = static_cast<float>(m_lastLayoutSize.y);
 
-	// Background fill that also receives the slow RGB tint.
 	sf::RectangleShape background;
 	background.setPosition({ 0.f, 0.f });
 	background.setSize({ width, height });
 	background.setFillColor(m_themeBackground);
 	target.draw(background);
 
-	// Outer frame.
 	sf::RectangleShape screenFrame;
 	screenFrame.setPosition({ 8.f, 8.f });
 	screenFrame.setSize({ width - 16.f, height - 16.f });
@@ -348,7 +424,6 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	screenFrame.setOutlineThickness(3.f);
 	target.draw(screenFrame);
 
-	// Inner frame, just to stylize it a bit more.
 	sf::RectangleShape innerFrame;
 	innerFrame.setPosition({ 18.f, 18.f });
 	innerFrame.setSize({ width - 36.f, height - 36.f });
@@ -361,7 +436,6 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	innerFrame.setOutlineThickness(1.f);
 	target.draw(innerFrame);
 
-	// Splash panel.
 	sf::RectangleShape splashPanel;
 	splashPanel.setPosition({
 		m_splashButtonBounds.position.x - 12.f,
@@ -376,7 +450,6 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	splashPanel.setOutlineThickness(3.f);
 	target.draw(splashPanel);
 
-	// Thin decorative bar near the top of the splash panel.
 	sf::RectangleShape splashHeaderLine;
 	splashHeaderLine.setPosition({
 		splashPanel.getPosition().x + 10.f,
@@ -390,7 +463,9 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	target.draw(splashHeaderLine);
 
 	const LoadedGameCard& selectedCard = m_games[m_selectedIndex];
-	sf::Sprite splashSprite(selectedCard.splashTexture);
+	const sf::Texture& currentTexture = selectedCard.splashFrames[m_currentFrameIndex % selectedCard.splashFrames.size()];
+
+	sf::Sprite splashSprite(currentTexture);
 
 	const sf::FloatRect localBounds = splashSprite.getLocalBounds();
 	if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
@@ -496,4 +571,7 @@ void ArcadeHub::updateDisplayedTexts()
 
 	m_gameLabelText->setString(selectedCard.data.label);
 	m_gameNameText->setString(selectedCard.data.displayName);
+
+	m_currentFrameIndex = 0;
+	m_animationTimer = 0.f;
 }

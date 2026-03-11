@@ -25,6 +25,11 @@ public:
 
 	void spawnRandomBreakBlocks(int count, const sf::FloatRect& forbiddenArea);
 
+	int getWidthInTiles() const;
+	int getHeightInTiles() const;
+	float getPixelWidth() const;
+	float getPixelHeight() const;
+
 	const std::string& getLastError() const;
 
 private:

@@ -24,8 +24,7 @@ bool GAME1_Level::loadFromFile(const std::string& mapPath,
 	m_rows.clear();
 	m_lastError.clear();
 
-	// Load both textures before we even open the map,
-	// so the level only succeeds if it is fully drawable.
+	// Load both textures before the level is considered valid.
 	if (!m_floorTexture.loadFromFile(floorTexturePath))
 	{
 		m_lastError = "Failed to load floor texture: " + floorTexturePath;
@@ -48,13 +47,11 @@ bool GAME1_Level::loadFromFile(const std::string& mapPath,
 	std::string line;
 	std::size_t expectedWidth = 0;
 
-	// Each non-empty line becomes one row in the map.
 	while (std::getline(file, line))
 	{
 		if (line.empty())
 			continue;
 
-		// The first row sets the required map width.
 		if (expectedWidth == 0)
 		{
 			expectedWidth = line.size();
@@ -65,7 +62,6 @@ bool GAME1_Level::loadFromFile(const std::string& mapPath,
 			return false;
 		}
 
-		// Only the three known tile letters are allowed.
 		for (char c : line)
 		{
 			if (c != 'X' && c != 'O' && c != 'B')
@@ -89,7 +85,7 @@ bool GAME1_Level::loadFromFile(const std::string& mapPath,
 
 void GAME1_Level::draw(sf::RenderWindow& window) const
 {
-	// Walk the 2D text map and draw a sprite for each visible tile.
+	// Walk the 2D map and draw visible tiles.
 	for (int row = 0; row < static_cast<int>(m_rows.size()); ++row)
 	{
 		for (int col = 0; col < static_cast<int>(m_rows[row].size()); ++col)
@@ -111,7 +107,6 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 			if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 				continue;
 
-			// Scale the source image so every tile is exactly 64x64 in world space.
 			sprite.setScale({
 				static_cast<float>(TileSize) / localBounds.size.x,
 				static_cast<float>(TileSize) / localBounds.size.y
@@ -167,7 +162,6 @@ void GAME1_Level::spawnRandomBreakBlocks(int count, const sf::FloatRect& forbidd
 {
 	std::vector<std::pair<int, int>> candidates;
 
-	// Any empty tile that does not overlap the forbidden area becomes a candidate.
 	for (int row = 0; row < static_cast<int>(m_rows.size()); ++row)
 	{
 		for (int col = 0; col < static_cast<int>(m_rows[row].size()); ++col)
@@ -187,7 +181,6 @@ void GAME1_Level::spawnRandomBreakBlocks(int count, const sf::FloatRect& forbidd
 		}
 	}
 
-	// Shuffle the possible locations so the result feels random each run.
 	std::random_device rd;
 	std::mt19937 rng(rd());
 	std::shuffle(candidates.begin(), candidates.end(), rng);
@@ -200,6 +193,29 @@ void GAME1_Level::spawnRandomBreakBlocks(int count, const sf::FloatRect& forbidd
 		const int row = candidates[i].second;
 		m_rows[row][col] = 'B';
 	}
+}
+
+int GAME1_Level::getWidthInTiles() const
+{
+	if (m_rows.empty())
+		return 0;
+
+	return static_cast<int>(m_rows[0].size());
+}
+
+int GAME1_Level::getHeightInTiles() const
+{
+	return static_cast<int>(m_rows.size());
+}
+
+float GAME1_Level::getPixelWidth() const
+{
+	return static_cast<float>(getWidthInTiles() * TileSize);
+}
+
+float GAME1_Level::getPixelHeight() const
+{
+	return static_cast<float>(getHeightInTiles() * TileSize);
 }
 
 const std::string& GAME1_Level::getLastError() const

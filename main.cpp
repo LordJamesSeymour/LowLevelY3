@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -16,22 +17,15 @@
 
 namespace
 {
-	// -------------------------------------------------------------------------
-	// Shared/global asset paths
-	// -------------------------------------------------------------------------
 	const std::filesystem::path kGlobalFontPath = "Assets/menu.ttf";
 	const std::filesystem::path kHubShaderPath = "Assets/Shaders/ArcadeHubCRT.frag";
 
-	// -------------------------------------------------------------------------
-	// Game 1 asset paths
-	// -------------------------------------------------------------------------
 	const std::filesystem::path kGame1ResourcesDirectory = "Assets/Game#1/Resources";
 	const std::filesystem::path kGame1MapsDirectory = "Assets/Game#1/Maps";
-	const std::filesystem::path kGame1SplashScreenPath = "Assets/Game#1/SplashScreen/SidescrollerSplashScreen.png";
 
-	// -------------------------------------------------------------------------
-	// Application states
-	// -------------------------------------------------------------------------
+	// Changed from single image path to frame directory.
+	const std::filesystem::path kGame1SplashFramesDirectory = "Assets/Game#1/GIFs/SplashScreen";
+
 	enum class AppState
 	{
 		Hub,
@@ -41,9 +35,6 @@ namespace
 		GAME1_Editor
 	};
 
-	// -------------------------------------------------------------------------
-	// Simple Windows popup helpers for readable debugging
-	// -------------------------------------------------------------------------
 	void ShowError(const std::string& message)
 	{
 		MessageBoxA(nullptr, message.c_str(), "Project Error", MB_OK | MB_ICONERROR);
@@ -54,10 +45,6 @@ namespace
 		MessageBoxA(nullptr, message.c_str(), "Info", MB_OK | MB_ICONINFORMATION);
 	}
 
-	// -------------------------------------------------------------------------
-	// Tries to find a .sln file in the current directory or nearby parent folders.
-	// The hub uses that filename as the top-left project title.
-	// -------------------------------------------------------------------------
 	std::string TryFindSolutionInFolder(const std::filesystem::path& folder)
 	{
 		namespace fs = std::filesystem;
@@ -97,9 +84,6 @@ namespace
 		return "Project Name";
 	}
 
-	// -------------------------------------------------------------------------
-	// Shared level filename helpers for Game 1
-	// -------------------------------------------------------------------------
 	bool IsValidLevelFile(const std::filesystem::path& path)
 	{
 		if (!path.has_filename() || path.extension() != ".txt")
@@ -163,9 +147,6 @@ namespace
 		return result;
 	}
 
-	// -------------------------------------------------------------------------
-	// Loads a chosen Game 1 level and the Game 1 player assets
-	// -------------------------------------------------------------------------
 	bool LoadGame1(GAME1_Level& level, GAME1_Player& player, const std::string& mapPath)
 	{
 		const std::string floorTilePath = (kGame1ResourcesDirectory / "FloorTile.png").string();
@@ -198,6 +179,51 @@ namespace
 
 		return true;
 	}
+
+	std::optional<int> TryGetToolbarSlotFromKey(sf::Keyboard::Key key)
+	{
+		switch (key)
+		{
+		case sf::Keyboard::Key::Num1:
+		case sf::Keyboard::Key::Numpad1:
+			return 1;
+
+		case sf::Keyboard::Key::Num2:
+		case sf::Keyboard::Key::Numpad2:
+			return 2;
+
+		case sf::Keyboard::Key::Num3:
+		case sf::Keyboard::Key::Numpad3:
+			return 3;
+
+		case sf::Keyboard::Key::Num4:
+		case sf::Keyboard::Key::Numpad4:
+			return 4;
+
+		case sf::Keyboard::Key::Num5:
+		case sf::Keyboard::Key::Numpad5:
+			return 5;
+
+		case sf::Keyboard::Key::Num6:
+		case sf::Keyboard::Key::Numpad6:
+			return 6;
+
+		case sf::Keyboard::Key::Num7:
+		case sf::Keyboard::Key::Numpad7:
+			return 7;
+
+		case sf::Keyboard::Key::Num8:
+		case sf::Keyboard::Key::Numpad8:
+			return 8;
+
+		case sf::Keyboard::Key::Num9:
+		case sf::Keyboard::Key::Numpad9:
+			return 9;
+
+		default:
+			return std::nullopt;
+		}
+	}
 }
 
 int main()
@@ -205,11 +231,6 @@ int main()
 	sf::RenderWindow window(sf::VideoMode({ 1024, 640 }), "Arcade Collection");
 	window.setFramerateLimit(60);
 
-	// -------------------------------------------------------------------------
-	// Hub post-processing setup
-	// We render the hub to a texture first, then pass that texture through
-	// a CRT shader to get scanlines, flicker, refresh sweep, etc.
-	// -------------------------------------------------------------------------
 	sf::RenderTexture hubRenderTexture;
 	if (!hubRenderTexture.resize(window.getSize()))
 	{
@@ -232,16 +253,13 @@ int main()
 
 	float totalAppTime = 0.f;
 
-	// -------------------------------------------------------------------------
-	// Top-level arcade hub setup
-	// -------------------------------------------------------------------------
 	ArcadeHub hub;
 
 	std::vector<ArcadeHubGameEntry> hubGames;
 	hubGames.push_back({
 		"GAME #1",
 		"Sidescroller Platformer",
-		kGame1SplashScreenPath.string()
+		kGame1SplashFramesDirectory.string()
 		});
 
 	if (!hub.load(kGlobalFontPath.string(), GetProjectNameFromSolution(), hubGames))
@@ -256,9 +274,25 @@ int main()
 		return -1;
 	}
 
-	// -------------------------------------------------------------------------
-	// Game 1 setup
-	// -------------------------------------------------------------------------
+	sf::Font game1UiFont;
+	if (!game1UiFont.openFromFile(kGlobalFontPath.string()))
+	{
+		std::string msg =
+			"Game 1 UI font failed to load.\n\n" +
+			kGlobalFontPath.string() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	sf::Text respawnText(game1UiFont);
+	respawnText.setCharacterSize(34);
+	respawnText.setFillColor(sf::Color::White);
+	respawnText.setOutlineColor(sf::Color::Black);
+	respawnText.setOutlineThickness(2.f);
+
 	GAME1_Menu game1Menu;
 	if (!game1Menu.load((kGame1ResourcesDirectory / "xbutton.png").string(),
 		(kGame1ResourcesDirectory / "logo.png").string(),
@@ -289,8 +323,10 @@ int main()
 	}
 
 	GAME1_LevelEditor game1Editor;
-	if (!game1Editor.load((kGame1ResourcesDirectory / "FloorTile.png").string(),
-		(kGame1ResourcesDirectory / "breakblock.png").string()))
+	if (!game1Editor.load(
+		(kGame1ResourcesDirectory / "FloorTile.png").string(),
+		(kGame1ResourcesDirectory / "breakblock.png").string(),
+		kGlobalFontPath.string()))
 	{
 		std::string msg =
 			"Game 1 level editor failed to load.\n\n" +
@@ -316,15 +352,11 @@ int main()
 
 		while (const std::optional event = window.pollEvent())
 		{
-			// Always allow the window to close no matter what state we are in.
 			if (event->is<sf::Event::Closed>())
 			{
 				window.close();
 			}
 
-			// -----------------------------------------------------------------
-			// Arcade hub input
-			// -----------------------------------------------------------------
 			if (appState == AppState::Hub)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -379,10 +411,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 menu input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Menu)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -425,10 +453,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 level select input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_LevelSelect)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -460,10 +484,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 gameplay input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Game)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -474,10 +494,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 editor input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Editor)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -485,14 +501,6 @@ int main()
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
 						appState = AppState::GAME1_Menu;
-					}
-					else if (keyReleased->code == sf::Keyboard::Key::B)
-					{
-						game1Editor.toggleFloorBrush();
-					}
-					else if (keyReleased->code == sf::Keyboard::Key::F)
-					{
-						game1Editor.toggleBreakBrush();
 					}
 					else if (keyReleased->code == sf::Keyboard::Key::P)
 					{
@@ -503,6 +511,14 @@ int main()
 						else
 						{
 							ShowInfo("Level saved successfully.\n\n" + game1Editor.getLastSavedPath());
+						}
+					}
+					else
+					{
+						const std::optional<int> selectedSlot = TryGetToolbarSlotFromKey(keyReleased->code);
+						if (selectedSlot.has_value())
+						{
+							game1Editor.selectToolbarSlot(*selectedSlot);
 						}
 					}
 				}
@@ -520,16 +536,13 @@ int main()
 			}
 		}
 
-		// ---------------------------------------------------------------------
-		// Per-frame update + drawing
-		// ---------------------------------------------------------------------
 		if (appState == AppState::Hub)
 		{
 			hub.updateClockText();
+			hub.updateAnimation(deltaTime);
 			hub.updateVisualTheme(totalAppTime);
 			hub.layout(window);
 
-			// Keep render texture size synced to the window size.
 			if (hubRenderTexture.getSize() != window.getSize())
 			{
 				if (!hubRenderTexture.resize(window.getSize()))
@@ -569,17 +582,50 @@ int main()
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
-			game1Player.update(deltaTime, game1Level, window.getSize().x);
+			game1Player.update(deltaTime, game1Level);
+
+			sf::View worldView = window.getDefaultView();
+
+			const sf::FloatRect playerBounds = game1Player.getBounds();
+			const float playerCenterX = playerBounds.position.x + playerBounds.size.x * 0.5f;
+
+			const float halfViewWidth = worldView.getSize().x * 0.5f;
+			const float minViewCenterX = halfViewWidth;
+			const float maxViewCenterX = std::max(halfViewWidth, game1Level.getPixelWidth() - halfViewWidth);
+			const float targetViewCenterX = std::clamp(playerCenterX, minViewCenterX, maxViewCenterX);
+
+			worldView.setCenter({
+				targetViewCenterX,
+				worldView.getSize().y * 0.5f
+				});
+
+			window.setView(worldView);
 
 			window.clear(sf::Color(120, 190, 255));
 			game1Level.draw(window);
 			game1Player.draw(window);
+
+			window.setView(window.getDefaultView());
+
+			if (game1Player.isRespawning())
+			{
+				respawnText.setString("Respawning player in: " + std::to_string(game1Player.getRespawnCountdown()));
+
+				const sf::FloatRect textBounds = respawnText.getLocalBounds();
+				respawnText.setPosition({
+					(static_cast<float>(window.getSize().x) - textBounds.size.x) * 0.5f - textBounds.position.x,
+					80.f - textBounds.position.y
+					});
+
+				window.draw(respawnText);
+			}
+
 			window.display();
 		}
 		else if (appState == AppState::GAME1_Editor)
 		{
 			window.clear(sf::Color(80, 170, 255));
-			game1Editor.draw(window);
+			game1Editor.draw(window, sf::Mouse::getPosition(window));
 			window.display();
 		}
 		else if (appState == AppState::GAME1_LevelSelect)
@@ -590,7 +636,7 @@ int main()
 			game1LevelSelect.draw(window);
 			window.display();
 		}
-		else // GAME1_Menu
+		else
 		{
 			game1Menu.layout(window);
 
