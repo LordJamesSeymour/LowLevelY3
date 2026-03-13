@@ -75,6 +75,10 @@ private:
 
 	float m_gameOverParallaxMultiplier = 0.12f;
 
+	// Less than 1.0 = zoom in.
+	// Lower values zoom in more.
+	float m_gameplayZoom = 0.6f;
+
 	std::string m_resourcesDirectory;
 	std::string m_lastError;
 };

@@ -341,6 +341,19 @@ void GAME2_Game::update(float deltaTime, sf::Vector2u windowSize)
 
 void GAME2_Game::draw(sf::RenderWindow& window) const
 {
+	const sf::View defaultView = window.getDefaultView();
+
+	// Zoom the gameplay in without stretching textures.
+	// Smaller view size = closer camera.
+	sf::View gameplayView = defaultView;
+	gameplayView.setSize({
+		defaultView.getSize().x * m_gameplayZoom,
+		defaultView.getSize().y * m_gameplayZoom
+		});
+	gameplayView.setCenter(defaultView.getCenter());
+
+	window.setView(gameplayView);
+
 	m_spaceBackgroundLayer.draw(window);
 	m_startsLayer.draw(window);
 	m_meteorsLayer.draw(window);
@@ -357,6 +370,9 @@ void GAME2_Game::draw(sf::RenderWindow& window) const
 	}
 
 	m_player.draw(window);
+
+	// Return to the normal screen-space view for UI.
+	window.setView(defaultView);
 
 	window.draw(m_livesText);
 
