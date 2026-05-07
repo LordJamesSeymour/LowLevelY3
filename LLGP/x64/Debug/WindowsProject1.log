@@ -1,7 +1,2 @@
-﻿  BombermanEnemy.cpp
-  BombermanLevel.cpp
-  BombermanPlayer.cpp
-  GAME1_BombermanWindow.cpp
-  main.cpp
-  Generating Code...
+﻿  GAME1_BombermanWindow.cpp
   WindowsProject1.vcxproj -> C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\LLGP.exe

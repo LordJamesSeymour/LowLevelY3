@@ -50,6 +50,9 @@ private:
 
 	void refreshBombPassThroughState();
 
+	void updateRespawn(float deltaTime);
+	void damagePlayer();
+
 	void updateBombs(float deltaTime);
 	void explodeBomb(BombermanBomb& bomb);
 	void addExplosionTile(std::vector<BombermanExplosionTile>& tiles,
@@ -69,10 +72,13 @@ private:
 		const sf::Texture& texture,
 		BombermanGridPosition gridPosition) const;
 
+	void drawSolidWallsOverPlayerWhenNeeded(sf::RenderTarget& target) const;
+
 	void refreshUiText(sf::Vector2u windowSize);
 
 	sf::FloatRect getTileBounds(BombermanGridPosition gridPosition) const;
 	bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b) const;
+	sf::FloatRect expandRect(const sf::FloatRect& rect, float amount) const;
 
 private:
 	std::string m_bombermanRootDirectory;
@@ -102,6 +108,10 @@ private:
 	int m_playerLives = 3;
 	int m_bombRange = 2;
 	int m_maxActiveBombs = 1;
+
+	bool m_isRespawning = false;
+	float m_respawnTimer = 0.f;
+	float m_respawnDuration = 1.4f;
 
 	bool m_spaceHeldLastFrame = false;
 	bool m_restartHeldLastFrame = false;

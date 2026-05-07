@@ -214,6 +214,9 @@ void GAME1_BombermanWindow::placeBomb()
 		return;
 
 	BombermanBomb bomb(bombPosition, 2.0f, m_bombRange);
+
+	// Player starts inside the bomb tile, so the player can walk through this bomb
+	// until their collision box has fully exited the bomb tile.
 	bomb.setPlayerCanPassThrough(true);
 
 	m_bombs.push_back(bomb);
@@ -245,6 +248,8 @@ bool GAME1_BombermanWindow::isTileBlockedForPlayer(int col, int row) const
 		if (bombGrid.col != col || bombGrid.row != row)
 			continue;
 
+		// The player ignores only the bomb they are still physically leaving.
+		// Once refreshBombPassThroughState() turns this off, the bomb blocks the player again.
 		if (bomb.canPlayerPassThrough())
 			continue;
 
@@ -266,6 +271,8 @@ bool GAME1_BombermanWindow::isTileBlockedForEnemies(int col, int row) const
 
 		const BombermanGridPosition bombGrid = bomb.getGridPosition();
 
+		// Enemies ALWAYS collide with bombs immediately.
+		// This does not care whether the player is still inside the bomb tile.
 		if (bombGrid.col == col && bombGrid.row == row)
 			return true;
 	}
@@ -278,7 +285,7 @@ void GAME1_BombermanWindow::refreshBombPassThroughState()
 	if (!m_player.isAlive())
 		return;
 
-	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
+	const sf::FloatRect playerCollisionBounds = m_player.getCollisionBounds();
 
 	for (BombermanBomb& bomb : m_bombs)
 	{
@@ -288,7 +295,13 @@ void GAME1_BombermanWindow::refreshBombPassThroughState()
 		if (!bomb.canPlayerPassThrough())
 			continue;
 
-		if (playerGrid != bomb.getGridPosition())
+		const sf::FloatRect bombTileBounds = getTileBounds(bomb.getGridPosition());
+
+		// Important:
+		// Do NOT activate player collision again until the player's collision box
+		// has fully left the bomb tile. This prevents the player from clipping
+		// or getting snapped/stuck inside the bomb.
+		if (!rectsIntersect(playerCollisionBounds, bombTileBounds))
 		{
 			bomb.setPlayerCanPassThrough(false);
 		}
@@ -305,7 +318,6 @@ void GAME1_BombermanWindow::updateRespawn(float deltaTime)
 	m_isRespawning = false;
 	m_respawnTimer = 0.f;
 
-	// Clear hazards so the player does not instantly respawn into an old explosion.
 	m_bombs.clear();
 	m_explosions.clear();
 
@@ -590,8 +602,6 @@ void GAME1_BombermanWindow::drawSolidWallsOverPlayerWhenNeeded(sf::RenderTarget&
 
 			const float wallCenterY = wallBounds.position.y + wallBounds.size.y * 0.5f;
 
-			// Player is touching the NORTH/top side of this wall tile.
-			// In this case, redraw the wall over the player.
 			if (playerCenter.y < wallCenterY)
 			{
 				m_level.drawSolidWallAt(target, col, row);
