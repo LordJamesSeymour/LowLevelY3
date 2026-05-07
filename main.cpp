@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include "ArcadeHub.h"
+#include "GAME1_BombermanWindow.h"
 #include "GAME1_Level.h"
 #include "GAME1_Player.h"
 #include "GAME1_Menu.h"
@@ -19,29 +20,31 @@
 
 namespace
 {
-	const std::filesystem::path kGlobalFontPath = "Assets/menu.ttf";
-	const std::filesystem::path kHubShaderPath = "Assets/Shaders/ArcadeHubCRT.frag";
+	const std::filesystem::path kGlobalFontPath = "assets/menu.ttf";
+	const std::filesystem::path kHubShaderPath = "assets/Shaders/ArcadeHubCRT.frag";
+	const std::filesystem::path kLockedImagePath = "assets/LockedImage.png";
 
-	// -------------------------------------------------------------------------
-	// Game 1 paths
-	// -------------------------------------------------------------------------
-	const std::filesystem::path kGame1ResourcesDirectory = "Assets/Game#1/Resources";
-	const std::filesystem::path kGame1MapsDirectory = "Assets/Game#1/Maps";
-	const std::filesystem::path kGame1SplashFramesDirectory = "Assets/Game#1/GIFs/SplashScreen";
+	const std::filesystem::path kBombermanRootDirectory = "assets/Game#0/Bomberman";
+	const std::filesystem::path kBombermanSplashStillImagePath = "assets/Game#0/SplashScreen/BombermanSplashScreen.png";
 
-	// -------------------------------------------------------------------------
-	// Game 2 paths
-	// -------------------------------------------------------------------------
-	const std::filesystem::path kGame2ResourcesDirectory = "Assets/Game#2/Resources";
-	const std::filesystem::path kGame2SplashStillImagePath = "Assets/Game#2/SplashScreen/Game2SplashScreen.png";
+	const std::filesystem::path kGame1ResourcesDirectory = "assets/Game#1/Resources";
+	const std::filesystem::path kGame1MapsDirectory = "assets/Game#1/Maps";
+	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/GIFs/SplashScreen";
+
+	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
+	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
 
 	enum class AppState
 	{
 		Hub,
+
+		GAME1_Bomberman,
+
 		GAME1_Menu,
 		GAME1_LevelSelect,
 		GAME1_Game,
 		GAME1_Editor,
+
 		GAME2_Menu,
 		GAME2_Game
 	};
@@ -54,6 +57,32 @@ namespace
 	void ShowInfo(const std::string& message)
 	{
 		MessageBoxA(nullptr, message.c_str(), "Info", MB_OK | MB_ICONINFORMATION);
+	}
+
+	void ApplyWindowView(sf::RenderWindow& window)
+	{
+		const sf::Vector2u size = window.getSize();
+
+		if (size.x == 0 || size.y == 0)
+			return;
+
+		const sf::FloatRect visibleArea(
+			{ 0.f, 0.f },
+			{ static_cast<float>(size.x), static_cast<float>(size.y) }
+		);
+
+		window.setView(sf::View(visibleArea));
+	}
+
+	bool ResizeRenderTexture(sf::RenderTexture& renderTexture, sf::Vector2u newSize)
+	{
+		if (newSize.x == 0 || newSize.y == 0)
+			return false;
+
+		if (renderTexture.getSize() == newSize)
+			return true;
+
+		return renderTexture.resize(newSize);
 	}
 
 	std::string TryFindSolutionInFolder(const std::filesystem::path& folder)
@@ -242,9 +271,8 @@ int main()
 	sf::RenderWindow window(sf::VideoMode({ 1024, 640 }), "Arcade Collection");
 	window.setFramerateLimit(60);
 
-	// -------------------------------------------------------------------------
-	// Hub post-processing setup
-	// -------------------------------------------------------------------------
+	ApplyWindowView(window);
+
 	sf::RenderTexture hubRenderTexture;
 	if (!hubRenderTexture.resize(window.getSize()))
 	{
@@ -267,27 +295,38 @@ int main()
 
 	float totalAppTime = 0.f;
 
-	// -------------------------------------------------------------------------
-	// Top-level hub setup
-	// -------------------------------------------------------------------------
 	ArcadeHub hub;
 
 	std::vector<ArcadeHubGameEntry> hubGames;
 	hubGames.push_back({
 		"GAME #1",
-		"Sidescroller Platformer",
-		kGame1SplashFramesDirectory.string(),
-		""
+		"Bomberman",
+		"",
+		kBombermanSplashStillImagePath.string(),
+		false
 		});
 
 	hubGames.push_back({
 		"GAME #2",
-		"Second Arcade Game",
+		"Toonland Platformer",
+		kGame1SplashFramesDirectory.string(),
 		"",
-		kGame2SplashStillImagePath.string()
+		true
 		});
 
-	if (!hub.load(kGlobalFontPath.string(), GetProjectNameFromSolution(), hubGames))
+	hubGames.push_back({
+		"GAME #3",
+		"Space Shooter",
+		"",
+		kGame2SplashStillImagePath.string(),
+		true
+		});
+
+	if (!hub.load(
+		kGlobalFontPath.string(),
+		GetProjectNameFromSolution(),
+		hubGames,
+		kLockedImagePath.string()))
 	{
 		std::string msg =
 			"Arcade hub failed to load.\n\n" +
@@ -299,9 +338,19 @@ int main()
 		return -1;
 	}
 
-	// -------------------------------------------------------------------------
-	// Shared Game 1 UI font
-	// -------------------------------------------------------------------------
+	GAME1_BombermanWindow bombermanWindow;
+	if (!bombermanWindow.load(kGlobalFontPath.string(), kBombermanRootDirectory.string()))
+	{
+		std::string msg =
+			"Bomberman failed to load.\n\n" +
+			bombermanWindow.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
 	sf::Font game1UiFont;
 	if (!game1UiFont.openFromFile(kGlobalFontPath.string()))
 	{
@@ -321,9 +370,6 @@ int main()
 	respawnText.setOutlineColor(sf::Color::Black);
 	respawnText.setOutlineThickness(2.f);
 
-	// -------------------------------------------------------------------------
-	// Game 1 setup
-	// -------------------------------------------------------------------------
 	GAME1_Menu game1Menu;
 	if (!game1Menu.load((kGame1ResourcesDirectory / "xbutton.png").string(),
 		(kGame1ResourcesDirectory / "logo.png").string(),
@@ -372,9 +418,6 @@ int main()
 	GAME1_Level game1Level;
 	GAME1_Player game1Player;
 
-	// -------------------------------------------------------------------------
-	// Game 2 setup
-	// -------------------------------------------------------------------------
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
 		(kGame2ResourcesDirectory / "logo.png").string(),
@@ -405,6 +448,26 @@ int main()
 
 	AppState appState = AppState::Hub;
 
+	auto TryLaunchSelectedHubGame = [&]()
+		{
+			if (hub.isSelectedGameLocked())
+				return;
+
+			if (hub.getSelectedIndex() == 0)
+			{
+				bombermanWindow.reset();
+				appState = AppState::GAME1_Bomberman;
+			}
+			else if (hub.getSelectedIndex() == 1)
+			{
+				appState = AppState::GAME1_Menu;
+			}
+			else if (hub.getSelectedIndex() == 2)
+			{
+				appState = AppState::GAME2_Menu;
+			}
+		};
+
 	sf::Clock clock;
 
 	while (window.isOpen())
@@ -419,9 +482,27 @@ int main()
 				window.close();
 			}
 
-			// -----------------------------------------------------------------
-			// Arcade hub input
-			// -----------------------------------------------------------------
+			if (const auto* resized = event->getIf<sf::Event::Resized>())
+			{
+				(void)resized;
+
+				ApplyWindowView(window);
+
+				if (!ResizeRenderTexture(hubRenderTexture, window.getSize()))
+				{
+					hubCrtShaderEnabled = false;
+				}
+				else
+				{
+					hubRenderTexture.setSmooth(true);
+				}
+
+				if (appState == AppState::GAME2_Game)
+				{
+					game2Game.reset(window.getSize());
+				}
+			}
+
 			if (appState == AppState::Hub)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -438,10 +519,7 @@ int main()
 					{
 						if (!hub.isTransitioning())
 						{
-							if (hub.getSelectedIndex() == 0)
-								appState = AppState::GAME1_Menu;
-							else if (hub.getSelectedIndex() == 1)
-								appState = AppState::GAME2_Menu;
+							TryLaunchSelectedHubGame();
 						}
 					}
 				}
@@ -466,10 +544,7 @@ int main()
 							break;
 
 						case ArcadeHubAction::LaunchGame:
-							if (hub.getSelectedIndex() == 0)
-								appState = AppState::GAME1_Menu;
-							else if (hub.getSelectedIndex() == 1)
-								appState = AppState::GAME2_Menu;
+							TryLaunchSelectedHubGame();
 							break;
 
 						case ArcadeHubAction::None:
@@ -479,10 +554,16 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 menu input
-			// -----------------------------------------------------------------
+			else if (appState == AppState::GAME1_Bomberman)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						appState = AppState::Hub;
+					}
+				}
+			}
 			else if (appState == AppState::GAME1_Menu)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -525,10 +606,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 level select input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_LevelSelect)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -560,10 +637,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 gameplay input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Game)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -574,10 +647,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 1 editor input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME1_Editor)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -624,10 +693,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 2 menu input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME2_Menu)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -661,10 +726,6 @@ int main()
 					}
 				}
 			}
-
-			// -----------------------------------------------------------------
-			// Game 2 gameplay input
-			// -----------------------------------------------------------------
 			else if (appState == AppState::GAME2_Game)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -699,9 +760,8 @@ int main()
 			}
 		}
 
-		// ---------------------------------------------------------------------
-		// Per-frame update + drawing
-		// ---------------------------------------------------------------------
+		ApplyWindowView(window);
+
 		if (appState == AppState::Hub)
 		{
 			hub.updateClockText();
@@ -709,12 +769,9 @@ int main()
 			hub.updateVisualTheme(totalAppTime);
 			hub.layout(window);
 
-			if (hubRenderTexture.getSize() != window.getSize())
+			if (!ResizeRenderTexture(hubRenderTexture, window.getSize()))
 			{
-				if (!hubRenderTexture.resize(window.getSize()))
-				{
-					hubCrtShaderEnabled = false;
-				}
+				hubCrtShaderEnabled = false;
 			}
 
 			if (hubCrtShaderEnabled)
@@ -724,6 +781,7 @@ int main()
 				hubRenderTexture.display();
 
 				sf::Sprite hubSprite(hubRenderTexture.getTexture());
+				hubSprite.setPosition({ 0.f, 0.f });
 
 				hubCrtShader.setUniform("u_texture", sf::Shader::CurrentTexture);
 				hubCrtShader.setUniform("u_time", totalAppTime);
@@ -745,6 +803,15 @@ int main()
 				hub.draw(window);
 				window.display();
 			}
+		}
+		else if (appState == AppState::GAME1_Bomberman)
+		{
+			bombermanWindow.update(deltaTime, window.getSize());
+			bombermanWindow.layout(window);
+
+			window.clear(sf::Color::Black);
+			bombermanWindow.draw(window);
+			window.display();
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
@@ -771,7 +838,7 @@ int main()
 			game1Level.draw(window);
 			game1Player.draw(window);
 
-			window.setView(window.getDefaultView());
+			ApplyWindowView(window);
 
 			if (game1Player.isRespawning())
 			{
@@ -818,7 +885,7 @@ int main()
 			game2Menu.draw(window);
 			window.display();
 		}
-		else // GAME2_Game
+		else
 		{
 			game2Game.update(deltaTime, window.getSize());
 

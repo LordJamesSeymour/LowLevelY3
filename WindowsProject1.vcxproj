@@ -145,6 +145,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ArcadeHub.h" />
+    <ClInclude Include="BombermanBomb.h" />
+    <ClInclude Include="BombermanEnemy.h" />
+    <ClInclude Include="BombermanLevel.h" />
+    <ClInclude Include="BombermanPlayer.h" />
+    <ClInclude Include="BombermanTypes.h" />
+    <ClInclude Include="GAME1_BombermanWindow.h" />
     <ClInclude Include="GAME1_Level.h" />
     <ClInclude Include="GAME1_LevelEditor.h" />
     <ClInclude Include="GAME1_LevelSelect.h" />
@@ -159,6 +165,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ArcadeHub.cpp" />
+    <ClCompile Include="BombermanEnemy.cpp" />
+    <ClCompile Include="BombermanLevel.cpp" />
+    <ClCompile Include="BombermanPlayer.cpp" />
+    <ClCompile Include="GAME1_BombermanWindow.cpp" />
     <ClCompile Include="GAME1_Level.cpp" />
     <ClCompile Include="GAME1_LevelEditor.cpp" />
     <ClCompile Include="GAME1_LevelSelect.cpp" />

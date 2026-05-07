@@ -13,84 +13,132 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\Bomberman">
+      <UniqueIdentifier>{8b321a7f-ff52-471c-a96a-544bf6c8a041}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Platformer">
+      <UniqueIdentifier>{a10f62da-e2db-4dd5-99cc-522df7a2d41d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\SpaceGame">
+      <UniqueIdentifier>{0038303d-921d-4b55-84fb-eeeaef9dd885}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Bomberman">
+      <UniqueIdentifier>{5954eb01-6159-4285-bfea-ec038184e79c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Platformer">
+      <UniqueIdentifier>{4babb312-68ea-4ffe-b473-a84c8deae287}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\SpaceGame">
+      <UniqueIdentifier>{d4e93f28-60a5-409f-9f63-3d044c29370a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="GAME1_Player.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME1_Level.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME1_Menu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME1_LevelEditor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME1_LevelSelect.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ArcadeHub.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GAME2_Menu.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="GAME1_BombermanWindow.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_Level.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_LevelEditor.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_LevelSelect.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_Menu.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_Player.h">
+      <Filter>Header Files\Platformer</Filter>
     </ClInclude>
     <ClInclude Include="GAME2_BackgroundLayer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME2_Player.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME2_Enemy.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GAME2_Game.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\SpaceGame</Filter>
     </ClInclude>
     <ClInclude Include="GAME2_Bullet.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\SpaceGame</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME2_Enemy.h">
+      <Filter>Header Files\SpaceGame</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME2_Game.h">
+      <Filter>Header Files\SpaceGame</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME2_Menu.h">
+      <Filter>Header Files\SpaceGame</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME2_Player.h">
+      <Filter>Header Files\SpaceGame</Filter>
+    </ClInclude>
+    <ClInclude Include="BombermanTypes.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="BombermanLevel.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="BombermanPlayer.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="BombermanEnemy.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="BombermanBomb.h">
+      <Filter>Header Files\Bomberman</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GAME1_Player.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME1_Level.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME1_Menu.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME1_LevelEditor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME1_LevelSelect.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ArcadeHub.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GAME2_Menu.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="GAME1_BombermanWindow.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_Level.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_LevelEditor.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_LevelSelect.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_Menu.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_Player.cpp">
+      <Filter>Source Files\Platformer</Filter>
     </ClCompile>
     <ClCompile Include="GAME2_BackgroundLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME2_Player.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME2_Enemy.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GAME2_Game.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\SpaceGame</Filter>
     </ClCompile>
     <ClCompile Include="GAME2_Bullet.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\SpaceGame</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME2_Enemy.cpp">
+      <Filter>Source Files\SpaceGame</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME2_Game.cpp">
+      <Filter>Source Files\SpaceGame</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME2_Menu.cpp">
+      <Filter>Source Files\SpaceGame</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME2_Player.cpp">
+      <Filter>Source Files\SpaceGame</Filter>
+    </ClCompile>
+    <ClCompile Include="BombermanLevel.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="BombermanPlayer.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="BombermanEnemy.cpp">
+      <Filter>Source Files\Bomberman</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

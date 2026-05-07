@@ -24,6 +24,10 @@ struct ArcadeHubGameEntry
 
 	std::string splashFramesDirectory;
 	std::string splashStillImagePath;
+
+	// If true, the game still appears in the hub,
+	// but gets a lock overlay and cannot be launched.
+	bool isLocked = false;
 };
 
 class ArcadeHub
@@ -31,7 +35,8 @@ class ArcadeHub
 public:
 	bool load(const std::string& fontPath,
 		const std::string& projectName,
-		const std::vector<ArcadeHubGameEntry>& games);
+		const std::vector<ArcadeHubGameEntry>& games,
+		const std::string& lockedImagePath = "");
 
 	void updateClockText();
 	void updateAnimation(float deltaTime);
@@ -49,6 +54,9 @@ public:
 	std::size_t getSelectedIndex() const;
 	const ArcadeHubGameEntry& getSelectedGame() const;
 	bool isTransitioning() const;
+
+	bool isGameLocked(std::size_t gameIndex) const;
+	bool isSelectedGameLocked() const;
 
 	const std::string& getLastError() const;
 
@@ -74,6 +82,10 @@ private:
 	sf::Font m_font;
 
 	std::vector<LoadedGameCard> m_games;
+
+	// Lock overlay asset
+	sf::Texture m_lockTexture;
+	bool m_hasLockTexture = false;
 
 	// The currently selected game.
 	std::size_t m_selectedIndex = 0;

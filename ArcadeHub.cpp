@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -61,7 +62,8 @@ namespace
 
 bool ArcadeHub::load(const std::string& fontPath,
 	const std::string& projectName,
-	const std::vector<ArcadeHubGameEntry>& games)
+	const std::vector<ArcadeHubGameEntry>& games,
+	const std::string& lockedImagePath)
 {
 	namespace fs = std::filesystem;
 
@@ -73,6 +75,7 @@ bool ArcadeHub::load(const std::string& fontPath,
 	m_isSwiping = false;
 	m_swipeTimer = 0.f;
 	m_swipeDirection = 1;
+	m_hasLockTexture = false;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -84,6 +87,31 @@ bool ArcadeHub::load(const std::string& fontPath,
 	{
 		m_lastError = "Arcade hub has no games configured.";
 		return false;
+	}
+
+	const bool hasLockedGames = std::any_of(
+		games.begin(),
+		games.end(),
+		[](const ArcadeHubGameEntry& entry)
+		{
+			return entry.isLocked;
+		});
+
+	if (hasLockedGames)
+	{
+		if (lockedImagePath.empty())
+		{
+			m_lastError = "Locked games exist, but no locked image path was provided.";
+			return false;
+		}
+
+		if (!m_lockTexture.loadFromFile(lockedImagePath))
+		{
+			m_lastError = "Failed to load locked image: " + lockedImagePath;
+			return false;
+		}
+
+		m_hasLockTexture = true;
 	}
 
 	m_projectNameText.emplace(m_font);
@@ -124,7 +152,6 @@ bool ArcadeHub::load(const std::string& fontPath,
 
 		bool loadedAnyTexture = false;
 
-		// Option 1: animated PNG folder
 		if (!entry.splashFramesDirectory.empty())
 		{
 			const fs::path framesDirectory = entry.splashFramesDirectory;
@@ -163,24 +190,15 @@ bool ArcadeHub::load(const std::string& fontPath,
 			}
 		}
 
-		// Option 2: single still image
 		if (!loadedAnyTexture && !entry.splashStillImagePath.empty())
 		{
 			sf::Texture texture;
-			if (!texture.loadFromFile(entry.splashStillImagePath))
+
+			if (texture.loadFromFile(entry.splashStillImagePath))
 			{
-				m_lastError = "Failed to load splash image: " + entry.splashStillImagePath;
-				return false;
+				card.splashFrames.push_back(std::move(texture));
+				loadedAnyTexture = true;
 			}
-
-			card.splashFrames.push_back(std::move(texture));
-			loadedAnyTexture = true;
-		}
-
-		if (!loadedAnyTexture)
-		{
-			m_lastError = "No valid splash asset found for hub entry: " + entry.displayName;
-			return false;
 		}
 
 		m_games.push_back(std::move(card));
@@ -201,7 +219,6 @@ void ArcadeHub::updateClockText()
 
 void ArcadeHub::updateAnimation(float deltaTime)
 {
-	// Advance animated splash frames for every loaded game.
 	for (LoadedGameCard& card : m_games)
 	{
 		if (card.splashFrames.size() <= 1)
@@ -216,7 +233,6 @@ void ArcadeHub::updateAnimation(float deltaTime)
 		}
 	}
 
-	// Advance the hub swipe animation.
 	if (m_isSwiping)
 	{
 		m_swipeTimer += deltaTime;
@@ -300,13 +316,11 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 			});
 	}
 
-	// Bring back the old "fit neatly to the image" behavior instead of forcing
-	// every splash into one fixed rectangle.
 	const sf::Texture* selectedTexture = getCurrentTextureForGame(m_selectedIndex);
 
 	const float maxSplashWidth = 560.f;
 	const float maxSplashHeight = 340.f;
-	const float splashTopY = 138.f; // moved slightly upward to make room for the dots
+	const float splashTopY = 138.f;
 
 	float scaledWidth = maxSplashWidth;
 	float scaledHeight = maxSplashHeight;
@@ -353,6 +367,7 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 		m_rightButtonBounds = ExpandRect(m_rightArrowText->getGlobalBounds(), 20.f);
 	}
 }
+
 void ArcadeHub::navigateLeft()
 {
 	if (m_games.size() <= 1 || m_isSwiping)
@@ -410,8 +425,6 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 
 	const float windowWidth = static_cast<float>(m_lastLayoutSize.x);
 
-	// Keep the same layout rules used by layout():
-	// the card fits inside a max area, but preserves the texture aspect ratio.
 	const float maxSplashWidth = 560.f;
 	const float maxSplashHeight = 340.f;
 	const float splashTopY = m_splashButtonBounds.position.y;
@@ -441,11 +454,10 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 		{ scaledWidth, scaledHeight }
 	);
 
-	// Title above the card.
 	sf::Text labelText(m_font);
 	labelText.setString(card.data.label);
 	labelText.setCharacterSize(54);
-	labelText.setFillColor(m_themeBright);
+	labelText.setFillColor(card.data.isLocked ? sf::Color(180, 180, 180) : m_themeBright);
 	labelText.setOutlineColor(sf::Color::Black);
 	labelText.setOutlineThickness(2.f);
 
@@ -457,11 +469,10 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 			});
 	}
 
-	// Subtitle below the card.
 	sf::Text nameText(m_font);
 	nameText.setString(card.data.displayName);
 	nameText.setCharacterSize(28);
-	nameText.setFillColor(m_themeMid);
+	nameText.setFillColor(card.data.isLocked ? sf::Color(150, 150, 150) : m_themeMid);
 	nameText.setOutlineColor(sf::Color::Black);
 	nameText.setOutlineThickness(2.f);
 
@@ -473,11 +484,14 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 			});
 	}
 
-	// Launch hint.
 	sf::Text launchHintText(m_font);
-	launchHintText.setString("[ CLICK IMAGE OR PRESS ENTER TO LAUNCH ]");
+	launchHintText.setString(
+		card.data.isLocked
+		? "[ LOCKED - NOT AVAILABLE YET ]"
+		: "[ CLICK IMAGE OR PRESS ENTER TO LAUNCH ]"
+	);
 	launchHintText.setCharacterSize(22);
-	launchHintText.setFillColor(m_themeMid);
+	launchHintText.setFillColor(card.data.isLocked ? sf::Color(140, 140, 140) : m_themeMid);
 	launchHintText.setOutlineColor(sf::Color::Black);
 	launchHintText.setOutlineThickness(1.f);
 
@@ -489,7 +503,6 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 			});
 	}
 
-	// Main splash panel.
 	sf::RectangleShape splashPanel;
 	splashPanel.setPosition({
 		panelBounds.position.x - 12.f,
@@ -500,7 +513,7 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 		panelBounds.size.y + 24.f
 		});
 	splashPanel.setFillColor(m_themeDark);
-	splashPanel.setOutlineColor(m_themeBright);
+	splashPanel.setOutlineColor(card.data.isLocked ? sf::Color(130, 130, 130) : m_themeBright);
 	splashPanel.setOutlineThickness(3.f);
 	target.draw(splashPanel);
 
@@ -513,7 +526,7 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 		splashPanel.getSize().x - 20.f,
 		3.f
 		});
-	splashHeaderLine.setFillColor(m_themeMid);
+	splashHeaderLine.setFillColor(card.data.isLocked ? sf::Color(100, 100, 100) : m_themeMid);
 	target.draw(splashHeaderLine);
 
 	if (texture != nullptr)
@@ -537,6 +550,54 @@ void ArcadeHub::drawGameCard(sf::RenderTarget& target, std::size_t gameIndex, fl
 				});
 
 			target.draw(splashSprite);
+		}
+	}
+	else
+	{
+		sf::Text placeholderText(m_font);
+		placeholderText.setString("SPLASH IMAGE\nCOMING SOON");
+		placeholderText.setCharacterSize(34);
+		placeholderText.setFillColor(m_themeMid);
+		placeholderText.setOutlineColor(sf::Color::Black);
+		placeholderText.setOutlineThickness(2.f);
+
+		const sf::FloatRect bounds = placeholderText.getLocalBounds();
+		placeholderText.setPosition({
+			panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+			panelBounds.position.y + (panelBounds.size.y - bounds.size.y) * 0.5f - bounds.position.y
+			});
+
+		target.draw(placeholderText);
+	}
+
+	if (card.data.isLocked)
+	{
+		sf::RectangleShape lockedOverlay;
+		lockedOverlay.setPosition(panelBounds.position);
+		lockedOverlay.setSize(panelBounds.size);
+		lockedOverlay.setFillColor(sf::Color(0, 0, 0, 115));
+		target.draw(lockedOverlay);
+
+		if (m_hasLockTexture)
+		{
+			sf::Sprite lockSprite(m_lockTexture);
+
+			const sf::FloatRect lockBounds = lockSprite.getLocalBounds();
+			if (lockBounds.size.x > 0.f && lockBounds.size.y > 0.f)
+			{
+				lockSprite.setScale({
+					panelBounds.size.x / lockBounds.size.x,
+					panelBounds.size.y / lockBounds.size.y
+					});
+
+				lockSprite.setPosition({
+					panelBounds.position.x,
+					panelBounds.position.y
+					});
+
+				lockSprite.setColor(sf::Color(255, 255, 255, 235));
+				target.draw(lockSprite);
+			}
 		}
 	}
 
@@ -569,14 +630,12 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	const float width = static_cast<float>(m_lastLayoutSize.x);
 	const float height = static_cast<float>(m_lastLayoutSize.y);
 
-	// Background
 	sf::RectangleShape background;
 	background.setPosition({ 0.f, 0.f });
 	background.setSize({ width, height });
 	background.setFillColor(m_themeBackground);
 	target.draw(background);
 
-	// Outer frame
 	sf::RectangleShape screenFrame;
 	screenFrame.setPosition({ 8.f, 8.f });
 	screenFrame.setSize({ width - 16.f, height - 16.f });
@@ -585,16 +644,10 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	screenFrame.setOutlineThickness(3.f);
 	target.draw(screenFrame);
 
-	// Inner frame
 	sf::RectangleShape innerFrame;
 	innerFrame.setPosition({ 18.f, 18.f });
 	innerFrame.setSize({ width - 36.f, height - 36.f });
 	innerFrame.setFillColor(sf::Color::Transparent);
-	innerFrame.setOutlineColor(ColorFromHSV(
-		0.f,
-		0.f,
-		0.f
-	));
 	innerFrame.setOutlineColor(sf::Color(
 		static_cast<std::uint8_t>(std::clamp(m_themeBright.r * 0.55f, 0.f, 255.f)),
 		static_cast<std::uint8_t>(std::clamp(m_themeBright.g * 0.55f, 0.f, 255.f)),
@@ -603,9 +656,6 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	innerFrame.setOutlineThickness(1.f);
 	target.draw(innerFrame);
 
-	// Card drawing:
-	// - if not swiping, draw only the selected card
-	// - if swiping, draw both old and new cards with a side-swipe animation
 	if (!m_isSwiping)
 	{
 		drawGameCard(target, m_selectedIndex, 0.f);
@@ -623,7 +673,6 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 		drawGameCard(target, m_selectedIndex, incomingOffset);
 	}
 
-	// Page dots similar to social media page indicators.
 	const float dotRadius = 7.f;
 	const float dotGap = 16.f;
 	const float totalDotsWidth = m_games.empty()
@@ -641,10 +690,24 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 			dotsY
 			});
 
-		if (i == m_selectedIndex)
+		if (m_games[i].data.isLocked)
+		{
+			if (i == m_selectedIndex)
+				dot.setFillColor(sf::Color(150, 150, 150));
+			else
+				dot.setFillColor(sf::Color(70, 70, 70));
+
+			dot.setOutlineColor(sf::Color(20, 20, 20));
+			dot.setOutlineThickness(2.f);
+		}
+		else if (i == m_selectedIndex)
+		{
 			dot.setFillColor(m_themeBright);
+		}
 		else
+		{
 			dot.setFillColor(sf::Color(110, 110, 110));
+		}
 
 		target.draw(dot);
 	}
@@ -669,6 +732,19 @@ const ArcadeHubGameEntry& ArcadeHub::getSelectedGame() const
 bool ArcadeHub::isTransitioning() const
 {
 	return m_isSwiping;
+}
+
+bool ArcadeHub::isGameLocked(std::size_t gameIndex) const
+{
+	if (gameIndex >= m_games.size())
+		return true;
+
+	return m_games[gameIndex].data.isLocked;
+}
+
+bool ArcadeHub::isSelectedGameLocked() const
+{
+	return isGameLocked(m_selectedIndex);
 }
 
 const std::string& ArcadeHub::getLastError() const
@@ -736,9 +812,6 @@ sf::Color ArcadeHub::ColorFromHSV(float hueDegrees, float saturation, float valu
 
 float ArcadeHub::ApplySwipeCurve(float t)
 {
-	// Inverted feel:
-	// starts slower, accelerates through the middle,
-	// then eases off a bit near the end.
 	t = std::clamp(t, 0.f, 1.f);
 
 	if (t < 0.22f)
