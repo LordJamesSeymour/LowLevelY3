@@ -3,7 +3,6 @@
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +16,14 @@ public:
 
 	void draw(sf::RenderTarget& target) const;
 
+	// Draws only floor tiles. This should be drawn before all depth-sorted objects.
+	void drawFloorLayer(sf::RenderTarget& target) const;
+
+	// Draws wall / breakable / exit objects for one tile.
+	// Used by the game window for row-by-row depth sorting.
+	void drawWorldTileAt(sf::RenderTarget& target, int col, int row) const;
+
+	// Kept for compatibility / debugging.
 	void drawBaseLayer(sf::RenderTarget& target, bool includeSolidWalls) const;
 	void drawSolidWallsOnly(sf::RenderTarget& target) const;
 	void drawSolidWallAt(sf::RenderTarget& target, int col, int row) const;

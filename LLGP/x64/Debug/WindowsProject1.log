@@ -1,2 +1,11 @@
-﻿  GAME1_BombermanWindow.cpp
+﻿  BombermanPlayer.cpp
+  GAME1_BombermanWindow.cpp
+  main.cpp
+  Generating Code...
+sfml-graphics-s-d.lib(Font.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Font.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-graphics-s-d.lib(RenderTexture.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(RenderTexture.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-graphics-s-d.lib(RenderWindow.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(RenderWindow.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-window-s-d.lib(GlContext.cpp.obj) : warning LNK4099: PDB 'sfml-window-s-d.pdb' was not found with 'sfml-window-s-d.lib(GlContext.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-window-s-d.pdb'; linking object as if no debug info
+sfml-window-s-d.lib(Window.cpp.obj) : warning LNK4099: PDB 'sfml-window-s-d.pdb' was not found with 'sfml-window-s-d.lib(Window.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-window-s-d.pdb'; linking object as if no debug info
+sfml-window-s-d.lib(JoystickImpl.cpp.obj) : warning LNK4099: PDB 'sfml-window-s-d.pdb' was not found with 'sfml-window-s-d.lib(JoystickImpl.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-window-s-d.pdb'; linking object as if no debug info
   WindowsProject1.vcxproj -> C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\LLGP.exe

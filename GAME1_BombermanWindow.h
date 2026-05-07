@@ -8,6 +8,7 @@
 
 #include <SFML/Graphics.hpp>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -32,14 +33,36 @@ private:
 		Victory
 	};
 
+	enum class PowerUpType
+	{
+		FireUp,
+		BombUp,
+		SpeedUp
+	};
+
 	struct ActiveExplosion
 	{
 		std::vector<BombermanExplosionTile> tiles;
 		float timer = 0.35f;
 	};
 
+	struct ActivePowerUp
+	{
+		PowerUpType type = PowerUpType::FireUp;
+		BombermanGridPosition gridPosition{ 0, 0 };
+		bool collected = false;
+	};
+
+	struct PowerUpTexture
+	{
+		sf::Texture texture;
+		bool loaded = false;
+	};
+
 private:
 	bool loadTexture(sf::Texture& texture, const std::string& path, const std::string& readableName);
+	bool tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths);
+
 	bool loadLevelAndActors();
 
 	void placeBomb();
@@ -50,11 +73,17 @@ private:
 
 	void refreshBombPassThroughState();
 
-	void updateRespawn(float deltaTime);
 	void damagePlayer();
+	void respawnPlayerImmediately();
 
 	void updateBombs(float deltaTime);
 	void explodeBomb(BombermanBomb& bomb);
+	void maybeSpawnPowerUpAt(BombermanGridPosition gridPosition);
+	bool isPowerUpAtTile(BombermanGridPosition gridPosition) const;
+
+	void collectPowerUps();
+	void applyPowerUp(PowerUpType type);
+
 	void addExplosionTile(std::vector<BombermanExplosionTile>& tiles,
 		BombermanGridPosition position,
 		BombermanExplosionTileType type);
@@ -67,18 +96,24 @@ private:
 	void checkPlayerEnemyCollision();
 
 	void updateWinLoseState();
+	bool areAllEnemiesDefeated() const;
+	bool isPlayerStandingOnExit() const;
 
 	void drawTextureInTile(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		BombermanGridPosition gridPosition) const;
 
-	void drawSolidWallsOverPlayerWhenNeeded(sf::RenderTarget& target) const;
+	void drawPowerUpInTile(sf::RenderTarget& target, const ActivePowerUp& powerUp) const;
+	void drawPowerUpIcon(sf::RenderTarget& target, PowerUpType type, sf::Vector2f position, float size) const;
+
+	const PowerUpTexture& getPowerUpTexture(PowerUpType type) const;
+	sf::Color getFallbackPowerUpColor(PowerUpType type) const;
+	std::string getPowerUpShortName(PowerUpType type) const;
 
 	void refreshUiText(sf::Vector2u windowSize);
 
 	sf::FloatRect getTileBounds(BombermanGridPosition gridPosition) const;
 	bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b) const;
-	sf::FloatRect expandRect(const sf::FloatRect& rect, float amount) const;
 
 private:
 	std::string m_bombermanRootDirectory;
@@ -91,17 +126,24 @@ private:
 
 	std::vector<BombermanBomb> m_bombs;
 	std::vector<ActiveExplosion> m_explosions;
+	std::vector<ActivePowerUp> m_powerUps;
 
 	sf::Texture m_bombTexture;
 	sf::Texture m_explosionCenterTexture;
 	sf::Texture m_explosionHorizontalTexture;
 	sf::Texture m_explosionVerticalTexture;
 
+	PowerUpTexture m_fireUpTexture;
+	PowerUpTexture m_bombUpTexture;
+	PowerUpTexture m_speedUpTexture;
+
 	sf::Font m_font;
 
 	std::optional<sf::Text> m_statusText;
 	std::optional<sf::Text> m_helpText;
 	std::optional<sf::Text> m_statsText;
+	std::optional<sf::Text> m_objectiveText;
+	std::optional<sf::Text> m_powerUpHudText;
 
 	PlayState m_playState = PlayState::Playing;
 
@@ -109,9 +151,17 @@ private:
 	int m_bombRange = 2;
 	int m_maxActiveBombs = 1;
 
-	bool m_isRespawning = false;
-	float m_respawnTimer = 0.f;
-	float m_respawnDuration = 1.4f;
+	int m_fireUpLevel = 0;
+	int m_bombUpLevel = 0;
+	int m_speedUpLevel = 0;
+
+	float m_basePlayerSpeed = 150.f;
+	float m_speedUpAmount = 18.f;
+	float m_maxPlayerSpeed = 240.f;
+
+	float m_powerUpDropChance = 0.35f;
+
+	std::mt19937 m_rng{ std::random_device{}() };
 
 	bool m_spaceHeldLastFrame = false;
 	bool m_restartHeldLastFrame = false;

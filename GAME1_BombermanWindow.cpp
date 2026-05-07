@@ -1,7 +1,6 @@
 #include "GAME1_BombermanWindow.h"
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 
 bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
@@ -38,6 +37,18 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	m_statsText->setOutlineColor(sf::Color::Black);
 	m_statsText->setOutlineThickness(2.f);
 
+	m_objectiveText.emplace(m_font);
+	m_objectiveText->setCharacterSize(22);
+	m_objectiveText->setFillColor(sf::Color(255, 230, 120));
+	m_objectiveText->setOutlineColor(sf::Color::Black);
+	m_objectiveText->setOutlineThickness(2.f);
+
+	m_powerUpHudText.emplace(m_font);
+	m_powerUpHudText->setCharacterSize(20);
+	m_powerUpHudText->setFillColor(sf::Color::White);
+	m_powerUpHudText->setOutlineColor(sf::Color::Black);
+	m_powerUpHudText->setOutlineThickness(2.f);
+
 	const fs::path bombsDirectory = fs::path(m_resourcesDirectory) / "Bombs";
 
 	if (!loadTexture(m_bombTexture, (bombsDirectory / "bomb.png").string(), "bomb"))
@@ -51,6 +62,32 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 
 	if (!loadTexture(m_explosionVerticalTexture, (bombsDirectory / "explosion_vertical.png").string(), "vertical explosion"))
 		return false;
+
+	const fs::path powerUpsDirectory = fs::path(m_resourcesDirectory) / "PowerUps";
+
+	tryLoadPowerUpTexture(m_fireUpTexture,
+		{
+			(powerUpsDirectory / "fire_up.png").string(),
+			(powerUpsDirectory / "FireUp.png").string(),
+			(powerUpsDirectory / "fire.png").string(),
+			(powerUpsDirectory / "powerup_fire.png").string()
+		});
+
+	tryLoadPowerUpTexture(m_bombUpTexture,
+		{
+			(powerUpsDirectory / "bomb_up.png").string(),
+			(powerUpsDirectory / "BombUp.png").string(),
+			(powerUpsDirectory / "bombup.png").string(),
+			(powerUpsDirectory / "powerup_bomb.png").string()
+		});
+
+	tryLoadPowerUpTexture(m_speedUpTexture,
+		{
+			(powerUpsDirectory / "speed_up.png").string(),
+			(powerUpsDirectory / "SpeedUp.png").string(),
+			(powerUpsDirectory / "speed.png").string(),
+			(powerUpsDirectory / "powerup_speed.png").string()
+		});
 
 	if (!m_player.load((fs::path(m_resourcesDirectory) / "Player").string()))
 	{
@@ -77,12 +114,28 @@ bool GAME1_BombermanWindow::loadTexture(sf::Texture& texture, const std::string&
 	return true;
 }
 
+bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths)
+{
+	for (const std::string& path : candidatePaths)
+	{
+		if (target.texture.loadFromFile(path))
+		{
+			target.loaded = true;
+			return true;
+		}
+	}
+
+	target.loaded = false;
+	return false;
+}
+
 bool GAME1_BombermanWindow::loadLevelAndActors()
 {
 	namespace fs = std::filesystem;
 
 	m_bombs.clear();
 	m_explosions.clear();
+	m_powerUps.clear();
 	m_enemies.clear();
 
 	const fs::path levelPath = fs::path(m_mapsDirectory) / "level01.txt";
@@ -94,6 +147,16 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	}
 
 	m_player.reset(m_level.getPlayerSpawn(), m_level);
+
+	m_playerLives = 3;
+	m_bombRange = 2;
+	m_maxActiveBombs = 1;
+
+	m_fireUpLevel = 0;
+	m_bombUpLevel = 0;
+	m_speedUpLevel = 0;
+
+	m_player.setMoveSpeed(m_basePlayerSpeed);
 
 	const fs::path enemyTexturePath = fs::path(m_resourcesDirectory) / "Enemies" / "enemy_basic.png";
 
@@ -113,12 +176,7 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 		}
 	}
 
-	m_playerLives = 3;
-	m_bombRange = 2;
-	m_maxActiveBombs = 1;
 	m_playState = PlayState::Playing;
-	m_isRespawning = false;
-	m_respawnTimer = 0.f;
 	m_spaceHeldLastFrame = false;
 	m_restartHeldLastFrame = false;
 
@@ -144,31 +202,25 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 
 	if (m_playState == PlayState::Playing)
 	{
-		if (m_isRespawning)
-		{
-			updateRespawn(deltaTime);
-		}
-		else
-		{
-			const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 
-			if (spaceHeld && !m_spaceHeldLastFrame)
+		if (spaceHeld && !m_spaceHeldLastFrame)
+		{
+			placeBomb();
+		}
+
+		m_spaceHeldLastFrame = spaceHeld;
+
+		m_player.update(
+			deltaTime,
+			m_level,
+			[this](int col, int row)
 			{
-				placeBomb();
-			}
+				return isTileBlockedForPlayer(col, row);
+			});
 
-			m_spaceHeldLastFrame = spaceHeld;
-
-			m_player.update(
-				deltaTime,
-				m_level,
-				[this](int col, int row)
-				{
-					return isTileBlockedForPlayer(col, row);
-				});
-
-			refreshBombPassThroughState();
-		}
+		refreshBombPassThroughState();
+		collectPowerUps();
 
 		updateEnemies(deltaTime);
 		updateBombs(deltaTime);
@@ -194,7 +246,7 @@ void GAME1_BombermanWindow::layout(const sf::RenderWindow& window)
 
 void GAME1_BombermanWindow::placeBomb()
 {
-	if (!m_player.isAlive() || m_isRespawning)
+	if (!m_player.isAlive())
 		return;
 
 	const int activeBombCount = static_cast<int>(std::count_if(
@@ -214,9 +266,6 @@ void GAME1_BombermanWindow::placeBomb()
 		return;
 
 	BombermanBomb bomb(bombPosition, 2.0f, m_bombRange);
-
-	// Player starts inside the bomb tile, so the player can walk through this bomb
-	// until their collision box has fully exited the bomb tile.
 	bomb.setPlayerCanPassThrough(true);
 
 	m_bombs.push_back(bomb);
@@ -248,8 +297,6 @@ bool GAME1_BombermanWindow::isTileBlockedForPlayer(int col, int row) const
 		if (bombGrid.col != col || bombGrid.row != row)
 			continue;
 
-		// The player ignores only the bomb they are still physically leaving.
-		// Once refreshBombPassThroughState() turns this off, the bomb blocks the player again.
 		if (bomb.canPlayerPassThrough())
 			continue;
 
@@ -271,8 +318,6 @@ bool GAME1_BombermanWindow::isTileBlockedForEnemies(int col, int row) const
 
 		const BombermanGridPosition bombGrid = bomb.getGridPosition();
 
-		// Enemies ALWAYS collide with bombs immediately.
-		// This does not care whether the player is still inside the bomb tile.
 		if (bombGrid.col == col && bombGrid.row == row)
 			return true;
 	}
@@ -297,10 +342,6 @@ void GAME1_BombermanWindow::refreshBombPassThroughState()
 
 		const sf::FloatRect bombTileBounds = getTileBounds(bomb.getGridPosition());
 
-		// Important:
-		// Do NOT activate player collision again until the player's collision box
-		// has fully left the bomb tile. This prevents the player from clipping
-		// or getting snapped/stuck inside the bomb.
 		if (!rectsIntersect(playerCollisionBounds, bombTileBounds))
 		{
 			bomb.setPlayerCanPassThrough(false);
@@ -308,25 +349,12 @@ void GAME1_BombermanWindow::refreshBombPassThroughState()
 	}
 }
 
-void GAME1_BombermanWindow::updateRespawn(float deltaTime)
-{
-	m_respawnTimer -= deltaTime;
-
-	if (m_respawnTimer > 0.f)
-		return;
-
-	m_isRespawning = false;
-	m_respawnTimer = 0.f;
-
-	m_bombs.clear();
-	m_explosions.clear();
-
-	m_player.reset(m_level.getPlayerSpawn(), m_level);
-}
-
 void GAME1_BombermanWindow::damagePlayer()
 {
 	if (!m_player.isAlive())
+		return;
+
+	if (m_player.isInvincible())
 		return;
 
 	m_player.kill();
@@ -336,13 +364,19 @@ void GAME1_BombermanWindow::damagePlayer()
 	{
 		m_playerLives = 0;
 		m_playState = PlayState::GameOver;
-		m_isRespawning = false;
-		m_respawnTimer = 0.f;
 		return;
 	}
 
-	m_isRespawning = true;
-	m_respawnTimer = m_respawnDuration;
+	respawnPlayerImmediately();
+}
+
+void GAME1_BombermanWindow::respawnPlayerImmediately()
+{
+	m_bombs.clear();
+	m_explosions.clear();
+
+	m_player.reset(m_level.getPlayerSpawn(), m_level);
+	m_player.beginInvincibility(3.0f);
 }
 
 void GAME1_BombermanWindow::updateBombs(float deltaTime)
@@ -416,12 +450,103 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 			if (m_level.isBreakableBlock(current.col, current.row))
 			{
 				m_level.destroyBreakableBlock(current.col, current.row);
+				maybeSpawnPowerUpAt(current);
 				break;
 			}
 		}
 	}
 
 	m_explosions.push_back(std::move(explosion));
+}
+
+void GAME1_BombermanWindow::maybeSpawnPowerUpAt(BombermanGridPosition gridPosition)
+{
+	if (isPowerUpAtTile(gridPosition))
+		return;
+
+	std::uniform_real_distribution<float> dropDistribution(0.f, 1.f);
+
+	if (dropDistribution(m_rng) > m_powerUpDropChance)
+		return;
+
+	std::uniform_int_distribution<int> typeDistribution(0, 2);
+
+	ActivePowerUp powerUp;
+	powerUp.gridPosition = gridPosition;
+	powerUp.collected = false;
+
+	const int typeValue = typeDistribution(m_rng);
+
+	if (typeValue == 0)
+		powerUp.type = PowerUpType::FireUp;
+	else if (typeValue == 1)
+		powerUp.type = PowerUpType::BombUp;
+	else
+		powerUp.type = PowerUpType::SpeedUp;
+
+	m_powerUps.push_back(powerUp);
+}
+
+bool GAME1_BombermanWindow::isPowerUpAtTile(BombermanGridPosition gridPosition) const
+{
+	for (const ActivePowerUp& powerUp : m_powerUps)
+	{
+		if (!powerUp.collected && powerUp.gridPosition == gridPosition)
+			return true;
+	}
+
+	return false;
+}
+
+void GAME1_BombermanWindow::collectPowerUps()
+{
+	if (!m_player.isAlive())
+		return;
+
+	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
+
+	for (ActivePowerUp& powerUp : m_powerUps)
+	{
+		if (powerUp.collected)
+			continue;
+
+		if (powerUp.gridPosition == playerGrid)
+		{
+			powerUp.collected = true;
+			applyPowerUp(powerUp.type);
+		}
+	}
+
+	m_powerUps.erase(
+		std::remove_if(
+			m_powerUps.begin(),
+			m_powerUps.end(),
+			[](const ActivePowerUp& powerUp)
+			{
+				return powerUp.collected;
+			}),
+		m_powerUps.end());
+}
+
+void GAME1_BombermanWindow::applyPowerUp(PowerUpType type)
+{
+	switch (type)
+	{
+	case PowerUpType::FireUp:
+		++m_fireUpLevel;
+		m_bombRange = std::min(8, m_bombRange + 1);
+		break;
+
+	case PowerUpType::BombUp:
+		++m_bombUpLevel;
+		m_maxActiveBombs = std::min(8, m_maxActiveBombs + 1);
+		break;
+
+	case PowerUpType::SpeedUp:
+		++m_speedUpLevel;
+		m_player.setMoveSpeed(std::min(m_maxPlayerSpeed, m_player.getMoveSpeed() + m_speedUpAmount));
+		break;
+	}
 }
 
 void GAME1_BombermanWindow::addExplosionTile(std::vector<BombermanExplosionTile>& tiles,
@@ -462,7 +587,7 @@ void GAME1_BombermanWindow::updateExplosions(float deltaTime)
 
 void GAME1_BombermanWindow::applyExplosionDamage()
 {
-	if (m_player.isAlive())
+	if (m_player.isAlive() && !m_player.isInvincible())
 	{
 		const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
 
@@ -515,7 +640,7 @@ void GAME1_BombermanWindow::updateEnemies(float deltaTime)
 
 void GAME1_BombermanWindow::checkPlayerEnemyCollision()
 {
-	if (!m_player.isAlive() || m_isRespawning)
+	if (!m_player.isAlive() || m_player.isInvincible())
 		return;
 
 	for (const BombermanEnemy& enemy : m_enemies)
@@ -536,19 +661,42 @@ void GAME1_BombermanWindow::updateWinLoseState()
 	if (m_playState == PlayState::GameOver)
 		return;
 
-	const bool anyEnemyAlive = std::any_of(
+	if (!areAllEnemiesDefeated())
+		return;
+
+	if (m_level.hasExit())
+	{
+		if (isPlayerStandingOnExit())
+		{
+			m_playState = PlayState::Victory;
+		}
+
+		return;
+	}
+
+	m_playState = PlayState::Victory;
+}
+
+bool GAME1_BombermanWindow::areAllEnemiesDefeated() const
+{
+	return std::none_of(
 		m_enemies.begin(),
 		m_enemies.end(),
 		[](const BombermanEnemy& enemy)
 		{
 			return enemy.isAlive();
 		});
+}
 
-	if (!anyEnemyAlive)
-	{
-		m_playState = PlayState::Victory;
-		m_isRespawning = false;
-	}
+bool GAME1_BombermanWindow::isPlayerStandingOnExit() const
+{
+	if (!m_player.isAlive())
+		return false;
+
+	if (!m_level.hasExit())
+		return false;
+
+	return m_player.getGridPosition(m_level) == m_level.getExitPosition();
 }
 
 void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
@@ -575,38 +723,127 @@ void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
 	target.draw(sprite);
 }
 
-void GAME1_BombermanWindow::drawSolidWallsOverPlayerWhenNeeded(sf::RenderTarget& target) const
+void GAME1_BombermanWindow::drawPowerUpInTile(sf::RenderTarget& target, const ActivePowerUp& powerUp) const
 {
-	if (!m_player.isAlive())
+	if (powerUp.collected)
 		return;
 
-	const sf::FloatRect playerBounds = m_player.getCollisionBounds();
+	const PowerUpTexture& powerUpTexture = getPowerUpTexture(powerUp.type);
 
-	const sf::Vector2f playerCenter{
-		playerBounds.position.x + playerBounds.size.x * 0.5f,
-		playerBounds.position.y + playerBounds.size.y * 0.5f
-	};
-
-	for (int row = 0; row < m_level.getHeightInTiles(); ++row)
+	if (powerUpTexture.loaded)
 	{
-		for (int col = 0; col < m_level.getWidthInTiles(); ++col)
+		drawTextureInTile(target, powerUpTexture.texture, powerUp.gridPosition);
+		return;
+	}
+
+	const sf::FloatRect tileBounds = getTileBounds(powerUp.gridPosition);
+
+	sf::CircleShape fallbackCircle;
+	fallbackCircle.setRadius(15.f);
+	fallbackCircle.setPointCount(24);
+	fallbackCircle.setFillColor(getFallbackPowerUpColor(powerUp.type));
+	fallbackCircle.setOutlineColor(sf::Color::White);
+	fallbackCircle.setOutlineThickness(2.f);
+	fallbackCircle.setPosition({
+		tileBounds.position.x + tileBounds.size.x * 0.5f - 15.f,
+		tileBounds.position.y + tileBounds.size.y * 0.5f - 15.f
+		});
+
+	target.draw(fallbackCircle);
+
+	sf::Text label(m_font);
+	label.setString(getPowerUpShortName(powerUp.type));
+	label.setCharacterSize(15);
+	label.setFillColor(sf::Color::Black);
+	label.setStyle(sf::Text::Bold);
+
+	const sf::FloatRect bounds = label.getLocalBounds();
+	label.setPosition({
+		tileBounds.position.x + (tileBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+		tileBounds.position.y + (tileBounds.size.y - bounds.size.y) * 0.5f - bounds.position.y - 2.f
+		});
+
+	target.draw(label);
+}
+
+void GAME1_BombermanWindow::drawPowerUpIcon(sf::RenderTarget& target, PowerUpType type, sf::Vector2f position, float size) const
+{
+	const PowerUpTexture& powerUpTexture = getPowerUpTexture(type);
+
+	if (powerUpTexture.loaded)
+	{
+		sf::Sprite sprite(powerUpTexture.texture);
+
+		const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+		if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
 		{
-			if (!m_level.isWall(col, row))
-				continue;
-
-			const sf::FloatRect wallBounds = getTileBounds({ col, row });
-			const sf::FloatRect expandedWallBounds = expandRect(wallBounds, 4.f);
-
-			if (!rectsIntersect(playerBounds, expandedWallBounds))
-				continue;
-
-			const float wallCenterY = wallBounds.position.y + wallBounds.size.y * 0.5f;
-
-			if (playerCenter.y < wallCenterY)
-			{
-				m_level.drawSolidWallAt(target, col, row);
-			}
+			sprite.setScale({
+				size / localBounds.size.x,
+				size / localBounds.size.y
+				});
+			sprite.setPosition(position);
+			target.draw(sprite);
+			return;
 		}
+	}
+
+	sf::CircleShape fallbackCircle;
+	fallbackCircle.setRadius(size * 0.5f);
+	fallbackCircle.setPointCount(24);
+	fallbackCircle.setFillColor(getFallbackPowerUpColor(type));
+	fallbackCircle.setOutlineColor(sf::Color::White);
+	fallbackCircle.setOutlineThickness(1.5f);
+	fallbackCircle.setPosition(position);
+
+	target.draw(fallbackCircle);
+}
+
+const GAME1_BombermanWindow::PowerUpTexture& GAME1_BombermanWindow::getPowerUpTexture(PowerUpType type) const
+{
+	switch (type)
+	{
+	case PowerUpType::FireUp:
+		return m_fireUpTexture;
+
+	case PowerUpType::BombUp:
+		return m_bombUpTexture;
+
+	case PowerUpType::SpeedUp:
+	default:
+		return m_speedUpTexture;
+	}
+}
+
+sf::Color GAME1_BombermanWindow::getFallbackPowerUpColor(PowerUpType type) const
+{
+	switch (type)
+	{
+	case PowerUpType::FireUp:
+		return sf::Color(255, 100, 50);
+
+	case PowerUpType::BombUp:
+		return sf::Color(90, 170, 255);
+
+	case PowerUpType::SpeedUp:
+	default:
+		return sf::Color(120, 255, 120);
+	}
+}
+
+std::string GAME1_BombermanWindow::getPowerUpShortName(PowerUpType type) const
+{
+	switch (type)
+	{
+	case PowerUpType::FireUp:
+		return "F";
+
+	case PowerUpType::BombUp:
+		return "B";
+
+	case PowerUpType::SpeedUp:
+	default:
+		return "S";
 	}
 }
 
@@ -646,52 +883,93 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 
 	window.setView(worldView);
 
-	m_level.drawBaseLayer(window, true);
+	m_level.drawFloorLayer(window);
 
-	for (const BombermanBomb& bomb : m_bombs)
-	{
-		drawTextureInTile(window, m_bombTexture, bomb.getGridPosition());
-	}
+	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
 
-	for (const ActiveExplosion& explosion : m_explosions)
+	for (int row = 0; row < m_level.getHeightInTiles(); ++row)
 	{
-		for (const BombermanExplosionTile& tile : explosion.tiles)
+		for (int col = 0; col < m_level.getWidthInTiles(); ++col)
 		{
-			switch (tile.type)
+			m_level.drawWorldTileAt(window, col, row);
+		}
+
+		for (const ActivePowerUp& powerUp : m_powerUps)
+		{
+			if (!powerUp.collected && powerUp.gridPosition.row == row)
 			{
-			case BombermanExplosionTileType::Center:
-				drawTextureInTile(window, m_explosionCenterTexture, tile.gridPosition);
-				break;
+				drawPowerUpInTile(window, powerUp);
+			}
+		}
 
-			case BombermanExplosionTileType::Horizontal:
-				drawTextureInTile(window, m_explosionHorizontalTexture, tile.gridPosition);
-				break;
+		for (const BombermanBomb& bomb : m_bombs)
+		{
+			if (bomb.getGridPosition().row == row)
+			{
+				drawTextureInTile(window, m_bombTexture, bomb.getGridPosition());
+			}
+		}
 
-			case BombermanExplosionTileType::Vertical:
-				drawTextureInTile(window, m_explosionVerticalTexture, tile.gridPosition);
-				break;
+		for (const BombermanEnemy& enemy : m_enemies)
+		{
+			if (!enemy.isAlive())
+				continue;
+
+			if (enemy.getGridPosition(m_level).row == row)
+			{
+				enemy.draw(window);
+			}
+		}
+
+		if (m_player.isAlive() && playerGrid.row == row)
+		{
+			m_player.draw(window);
+		}
+
+		for (const ActiveExplosion& explosion : m_explosions)
+		{
+			for (const BombermanExplosionTile& tile : explosion.tiles)
+			{
+				if (tile.gridPosition.row != row)
+					continue;
+
+				switch (tile.type)
+				{
+				case BombermanExplosionTileType::Center:
+					drawTextureInTile(window, m_explosionCenterTexture, tile.gridPosition);
+					break;
+
+				case BombermanExplosionTileType::Horizontal:
+					drawTextureInTile(window, m_explosionHorizontalTexture, tile.gridPosition);
+					break;
+
+				case BombermanExplosionTileType::Vertical:
+					drawTextureInTile(window, m_explosionVerticalTexture, tile.gridPosition);
+					break;
+				}
 			}
 		}
 	}
-
-	for (const BombermanEnemy& enemy : m_enemies)
-	{
-		enemy.draw(window);
-	}
-
-	m_player.draw(window);
-
-	drawSolidWallsOverPlayerWhenNeeded(window);
 
 	window.setView(screenView);
 
 	if (m_statsText)
 		window.draw(*m_statsText);
 
+	if (m_objectiveText)
+		window.draw(*m_objectiveText);
+
+	drawPowerUpIcon(window, PowerUpType::FireUp, { 18.f, 76.f }, 26.f);
+	drawPowerUpIcon(window, PowerUpType::BombUp, { 118.f, 76.f }, 26.f);
+	drawPowerUpIcon(window, PowerUpType::SpeedUp, { 218.f, 76.f }, 26.f);
+
+	if (m_powerUpHudText)
+		window.draw(*m_powerUpHudText);
+
 	if (m_helpText)
 		window.draw(*m_helpText);
 
-	if ((m_playState != PlayState::Playing || m_isRespawning) && m_statusText)
+	if (m_playState != PlayState::Playing && m_statusText)
 	{
 		sf::RectangleShape overlay;
 		overlay.setPosition({ 0.f, 0.f });
@@ -724,10 +1002,43 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 			"Lives: " + std::to_string(std::max(0, m_playerLives)) +
 			"   Bombs: " + std::to_string(m_maxActiveBombs) +
 			"   Range: " + std::to_string(m_bombRange) +
+			"   Speed: " + std::to_string(static_cast<int>(m_player.getMoveSpeed())) +
 			"   Enemies: " + std::to_string(livingEnemies)
 		);
 
 		m_statsText->setPosition({ 18.f, 14.f });
+	}
+
+	if (m_objectiveText)
+	{
+		if (!m_level.hasExit())
+		{
+			m_objectiveText->setString("Objective: Defeat all enemies");
+			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
+		}
+		else if (livingEnemies > 0)
+		{
+			m_objectiveText->setString("Objective: Defeat all enemies to unlock the exit");
+			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
+		}
+		else
+		{
+			m_objectiveText->setString("Objective: Exit unlocked! Step on the exit tile");
+			m_objectiveText->setFillColor(sf::Color(120, 255, 140));
+		}
+
+		m_objectiveText->setPosition({ 18.f, 44.f });
+	}
+
+	if (m_powerUpHudText)
+	{
+		m_powerUpHudText->setString(
+			"x" + std::to_string(m_fireUpLevel) +
+			"        x" + std::to_string(m_bombUpLevel) +
+			"        x" + std::to_string(m_speedUpLevel)
+		);
+
+		m_powerUpHudText->setPosition({ 50.f, 78.f });
 	}
 
 	if (m_helpText)
@@ -746,16 +1057,11 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		if (m_playState == PlayState::Victory)
 		{
-			m_statusText->setString("VICTORY!\nPress R to restart");
+			m_statusText->setString("VICTORY!\nYou escaped the arena\nPress R to restart");
 		}
 		else if (m_playState == PlayState::GameOver)
 		{
 			m_statusText->setString("GAME OVER\nPress R to restart");
-		}
-		else if (m_isRespawning)
-		{
-			const int seconds = std::max(1, static_cast<int>(std::ceil(m_respawnTimer)));
-			m_statusText->setString("RESPAWNING...\n" + std::to_string(seconds));
 		}
 		else
 		{
@@ -791,20 +1097,6 @@ bool GAME1_BombermanWindow::rectsIntersect(const sf::FloatRect& a, const sf::Flo
 		a.position.x + a.size.x > b.position.x &&
 		a.position.y < b.position.y + b.size.y &&
 		a.position.y + a.size.y > b.position.y;
-}
-
-sf::FloatRect GAME1_BombermanWindow::expandRect(const sf::FloatRect& rect, float amount) const
-{
-	return sf::FloatRect(
-		{
-			rect.position.x - amount,
-			rect.position.y - amount
-		},
-		{
-			rect.size.x + amount * 2.f,
-			rect.size.y + amount * 2.f
-		}
-	);
 }
 
 const std::string& GAME1_BombermanWindow::getLastError() const

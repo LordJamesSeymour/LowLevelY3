@@ -161,48 +161,69 @@ void BombermanLevel::draw(sf::RenderTarget& target) const
 	drawBaseLayer(target, true);
 }
 
-void BombermanLevel::drawBaseLayer(sf::RenderTarget& target, bool includeSolidWalls) const
+void BombermanLevel::drawFloorLayer(sf::RenderTarget& target) const
 {
 	for (int row = 0; row < getHeightInTiles(); ++row)
 	{
 		for (int col = 0; col < getWidthInTiles(); ++col)
 		{
 			drawTextureInTile(target, m_floorTexture, col, row);
+		}
+	}
+}
 
-			const char tile = m_rows[row][col];
+void BombermanLevel::drawWorldTileAt(sf::RenderTarget& target, int col, int row) const
+{
+	if (!isInside(col, row))
+		return;
 
-			if (tile == 'X')
-			{
-				if (includeSolidWalls)
-					drawTextureInTile(target, m_wallTexture, col, row);
-			}
-			else if (tile == 'B')
-			{
-				drawTextureInTile(target, m_breakableTexture, col, row);
-			}
-			else if (tile == 'E')
-			{
-				if (m_hasExitTexture)
-				{
-					drawTextureInTile(target, m_exitTexture, col, row);
-				}
-				else
-				{
-					sf::RectangleShape exitTile;
-					exitTile.setPosition({
-						static_cast<float>(col * TileSize),
-						static_cast<float>(row * TileSize)
-						});
-					exitTile.setSize({
-						static_cast<float>(TileSize),
-						static_cast<float>(TileSize)
-						});
-					exitTile.setFillColor(sf::Color(60, 190, 90, 180));
-					exitTile.setOutlineColor(sf::Color::White);
-					exitTile.setOutlineThickness(-2.f);
-					target.draw(exitTile);
-				}
-			}
+	const char tile = m_rows[row][col];
+
+	if (tile == 'X')
+	{
+		drawTextureInTile(target, m_wallTexture, col, row);
+	}
+	else if (tile == 'B')
+	{
+		drawTextureInTile(target, m_breakableTexture, col, row);
+	}
+	else if (tile == 'E')
+	{
+		if (m_hasExitTexture)
+		{
+			drawTextureInTile(target, m_exitTexture, col, row);
+		}
+		else
+		{
+			sf::RectangleShape exitTile;
+			exitTile.setPosition({
+				static_cast<float>(col * TileSize),
+				static_cast<float>(row * TileSize)
+				});
+			exitTile.setSize({
+				static_cast<float>(TileSize),
+				static_cast<float>(TileSize)
+				});
+			exitTile.setFillColor(sf::Color(60, 190, 90, 180));
+			exitTile.setOutlineColor(sf::Color::White);
+			exitTile.setOutlineThickness(-2.f);
+			target.draw(exitTile);
+		}
+	}
+}
+
+void BombermanLevel::drawBaseLayer(sf::RenderTarget& target, bool includeSolidWalls) const
+{
+	drawFloorLayer(target);
+
+	for (int row = 0; row < getHeightInTiles(); ++row)
+	{
+		for (int col = 0; col < getWidthInTiles(); ++col)
+		{
+			if (!includeSolidWalls && isWall(col, row))
+				continue;
+
+			drawWorldTileAt(target, col, row);
 		}
 	}
 }

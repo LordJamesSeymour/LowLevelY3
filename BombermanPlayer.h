@@ -25,6 +25,12 @@ public:
 
 	bool isAlive() const;
 
+	void beginInvincibility(float duration);
+	bool isInvincible() const;
+
+	void setMoveSpeed(float moveSpeed);
+	float getMoveSpeed() const;
+
 	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
 	BombermanDirection getFacingDirection() const;
 
@@ -38,8 +44,22 @@ private:
 		const std::string& preferredPath,
 		const std::string& fallbackPath);
 
+	void refreshMovementInput();
+
 	bool canFitAt(sf::Vector2f topLeftPosition,
 		const std::function<bool(int col, int row)>& isTileBlocked) const;
+
+	bool tryMoveWithEdgeCorrection(sf::Vector2f movement,
+		const std::function<bool(int col, int row)>& isTileBlocked);
+
+	bool tryForwardMoveWithPerpendicularOffset(sf::Vector2f movement,
+		sf::Vector2f perpendicularOffset,
+		const std::function<bool(int col, int row)>& isTileBlocked);
+
+	sf::Vector2f getCollisionCenterAt(sf::Vector2f topLeftPosition) const;
+	sf::Vector2f getCollisionCenter() const;
+
+	float getNearestLaneCenter(float positionOnAxis) const;
 
 	void applyTextureForFacingDirection();
 
@@ -52,15 +72,27 @@ private:
 	std::optional<sf::Sprite> m_sprite;
 
 	sf::Vector2f m_position{ 0.f, 0.f };
+	sf::Vector2f m_currentMoveInput{ 0.f, 0.f };
 
 	float m_moveSpeed = 150.f;
 
-	// Uniform collision body. This does NOT change based on sprite direction.
-	float m_collisionInset = 13.f;
+	float m_collisionRadius = 13.0f;
+
+	float m_edgeCorrectionMaxDistance = 23.0f;
+	float m_edgeCorrectionStep = 1.0f;
+	float m_edgeCorrectionDeadZone = 2.5f;
 
 	bool m_alive = true;
 
+	float m_invincibilityTimer = 0.f;
+	float m_flashRate = 18.f;
+
 	BombermanDirection m_facingDirection = BombermanDirection::Down;
+
+	bool m_upHeldLastFrame = false;
+	bool m_downHeldLastFrame = false;
+	bool m_leftHeldLastFrame = false;
+	bool m_rightHeldLastFrame = false;
 
 	std::string m_lastError;
 };
