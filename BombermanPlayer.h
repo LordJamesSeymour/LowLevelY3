@@ -4,9 +4,11 @@
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 class BombermanPlayer
 {
@@ -40,9 +42,24 @@ public:
 	const std::string& getLastError() const;
 
 private:
-	bool loadTextureOrFallback(sf::Texture& texture,
-		const std::string& preferredPath,
-		const std::string& fallbackPath);
+	struct AnimationSet
+	{
+		std::vector<sf::Texture> frames;
+		std::vector<std::size_t> movementSequence;
+
+		std::size_t idleFrameIndex = 0;
+		std::size_t sequenceIndex = 0;
+
+		float timer = 0.f;
+	};
+
+private:
+	bool loadAnimationFolder(AnimationSet& animationSet,
+		const std::string& directoryPath,
+		const std::string& readableName);
+
+	void buildMovementSequence(AnimationSet& animationSet,
+		const std::vector<int>& trailingNumbers);
 
 	void refreshMovementInput();
 
@@ -61,13 +78,21 @@ private:
 
 	float getNearestLaneCenter(float positionOnAxis) const;
 
-	void applyTextureForFacingDirection();
+	void updateAnimation(float deltaTime);
+	void applyCurrentAnimationFrame();
+
+	AnimationSet& getActiveAnimationSet();
+	const AnimationSet& getActiveAnimationSet() const;
+
+	const sf::Texture* getCurrentAnimationTexture() const;
+
+	void resetActiveAnimationToIdle();
 
 private:
-	sf::Texture m_downTexture;
-	sf::Texture m_upTexture;
-	sf::Texture m_leftTexture;
-	sf::Texture m_rightTexture;
+	AnimationSet m_frontAnimation;
+	AnimationSet m_backAnimation;
+	AnimationSet m_leftAnimation;
+	AnimationSet m_rightAnimation;
 
 	std::optional<sf::Sprite> m_sprite;
 
@@ -87,7 +112,12 @@ private:
 	float m_invincibilityTimer = 0.f;
 	float m_flashRate = 18.f;
 
+	float m_animationFrameDuration = 0.11f;
+	bool m_movementKeyHeld = false;
+	bool m_wasMovementKeyHeld = false;
+
 	BombermanDirection m_facingDirection = BombermanDirection::Down;
+	BombermanDirection m_previousAnimationDirection = BombermanDirection::Down;
 
 	bool m_upHeldLastFrame = false;
 	bool m_downHeldLastFrame = false;

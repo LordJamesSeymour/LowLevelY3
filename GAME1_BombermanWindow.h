@@ -7,6 +7,7 @@
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
+#include <cstddef>
 #include <optional>
 #include <random>
 #include <string>
@@ -40,10 +41,16 @@ private:
 		SpeedUp
 	};
 
+	struct AnimationFrames
+	{
+		std::vector<sf::Texture> frames;
+	};
+
 	struct ActiveExplosion
 	{
 		std::vector<BombermanExplosionTile> tiles;
-		float timer = 0.35f;
+		float timer = 0.38f;
+		float duration = 0.38f;
 	};
 
 	struct ActivePowerUp
@@ -60,10 +67,26 @@ private:
 	};
 
 private:
-	bool loadTexture(sf::Texture& texture, const std::string& path, const std::string& readableName);
+	bool loadAnimationFramesFromDirectory(AnimationFrames& animation,
+		const std::string& directoryPath,
+		const std::string& readableName);
+
 	bool tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths);
 
 	bool loadLevelAndActors();
+
+	bool assignHiddenExitToBreakableBlock();
+	bool isHiddenExitBlock(BombermanGridPosition gridPosition) const;
+	void revealHiddenExitAt(BombermanGridPosition gridPosition);
+
+	void buildBombAnimationSequence();
+	void updateBombAnimation(float deltaTime);
+	const sf::Texture* getCurrentBombTexture() const;
+
+	std::size_t getExplosionFrameIndex(const ActiveExplosion& explosion,
+		const AnimationFrames& animation) const;
+
+	const AnimationFrames& getExplosionAnimationForTile(BombermanExplosionTileType type) const;
 
 	void placeBomb();
 	bool isBombAtTile(BombermanGridPosition gridPosition) const;
@@ -78,6 +101,7 @@ private:
 
 	void updateBombs(float deltaTime);
 	void explodeBomb(BombermanBomb& bomb);
+
 	void maybeSpawnPowerUpAt(BombermanGridPosition gridPosition);
 	bool isPowerUpAtTile(BombermanGridPosition gridPosition) const;
 
@@ -86,7 +110,9 @@ private:
 
 	void addExplosionTile(std::vector<BombermanExplosionTile>& tiles,
 		BombermanGridPosition position,
-		BombermanExplosionTileType type);
+		BombermanExplosionTileType type,
+		bool flipX = false,
+		bool flipY = false);
 
 	void updateExplosions(float deltaTime);
 	void applyExplosionDamage();
@@ -96,12 +122,17 @@ private:
 	void checkPlayerEnemyCollision();
 
 	void updateWinLoseState();
-	bool areAllEnemiesDefeated() const;
 	bool isPlayerStandingOnExit() const;
 
 	void drawTextureInTile(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		BombermanGridPosition gridPosition) const;
+
+	void drawTextureInTile(sf::RenderTarget& target,
+		const sf::Texture& texture,
+		BombermanGridPosition gridPosition,
+		bool flipX,
+		bool flipY) const;
 
 	void drawPowerUpInTile(sf::RenderTarget& target, const ActivePowerUp& powerUp) const;
 	void drawPowerUpIcon(sf::RenderTarget& target, PowerUpType type, sf::Vector2f position, float size) const;
@@ -128,10 +159,19 @@ private:
 	std::vector<ActiveExplosion> m_explosions;
 	std::vector<ActivePowerUp> m_powerUps;
 
-	sf::Texture m_bombTexture;
-	sf::Texture m_explosionCenterTexture;
-	sf::Texture m_explosionHorizontalTexture;
-	sf::Texture m_explosionVerticalTexture;
+	AnimationFrames m_bombAnimation;
+	std::vector<std::size_t> m_bombAnimationSequence;
+	std::size_t m_bombAnimationSequenceIndex = 0;
+	float m_bombAnimationTimer = 0.f;
+	float m_bombAnimationFrameDuration = 0.16f;
+
+	AnimationFrames m_explosionCenterAnimation;
+	AnimationFrames m_explosionHorizontalAnimation;
+	AnimationFrames m_explosionHorizontalEndAnimation;
+	AnimationFrames m_explosionVerticalAnimation;
+	AnimationFrames m_explosionVerticalEndAnimation;
+
+	float m_explosionDuration = 0.38f;
 
 	PowerUpTexture m_fireUpTexture;
 	PowerUpTexture m_bombUpTexture;
@@ -160,6 +200,9 @@ private:
 	float m_maxPlayerSpeed = 240.f;
 
 	float m_powerUpDropChance = 0.35f;
+
+	BombermanGridPosition m_hiddenExitPosition{ 0, 0 };
+	bool m_hiddenExitAssigned = false;
 
 	std::mt19937 m_rng{ std::random_device{}() };
 

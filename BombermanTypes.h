@@ -1,48 +1,43 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
-
 struct BombermanGridPosition
 {
 	int col = 0;
 	int row = 0;
+
+	bool operator==(const BombermanGridPosition& other) const
+	{
+		return col == other.col && row == other.row;
+	}
+
+	bool operator!=(const BombermanGridPosition& other) const
+	{
+		return !(*this == other);
+	}
 };
-
-inline bool operator==(const BombermanGridPosition& a, const BombermanGridPosition& b)
-{
-	return a.col == b.col && a.row == b.row;
-}
-
-inline bool operator!=(const BombermanGridPosition& a, const BombermanGridPosition& b)
-{
-	return !(a == b);
-}
 
 enum class BombermanDirection
 {
-	Down,
 	Up,
+	Down,
 	Left,
 	Right
-};
-
-enum class BombermanTileType
-{
-	Floor,
-	SolidWall,
-	BreakableBlock,
-	Exit
 };
 
 enum class BombermanExplosionTileType
 {
 	Center,
 	Horizontal,
-	Vertical
+	HorizontalEnd,
+	Vertical,
+	VerticalEnd
 };
 
 struct BombermanExplosionTile
 {
-	BombermanGridPosition gridPosition;
+	BombermanGridPosition gridPosition{ 0, 0 };
 	BombermanExplosionTileType type = BombermanExplosionTileType::Center;
+
+	bool flipX = false;
+	bool flipY = false;
 };

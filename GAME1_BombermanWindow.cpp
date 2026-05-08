@@ -1,7 +1,73 @@
 #include "GAME1_BombermanWindow.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <optional>
+
+namespace
+{
+	std::string ToLower(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(),
+			[](unsigned char c)
+			{
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return value;
+	}
+
+	bool IsPngFile(const std::filesystem::path& path)
+	{
+		if (!path.has_extension())
+			return false;
+
+		return ToLower(path.extension().string()) == ".png";
+	}
+
+	std::optional<int> ExtractTrailingNumber(const std::filesystem::path& path)
+	{
+		const std::string stem = path.stem().string();
+
+		if (stem.empty())
+			return std::nullopt;
+
+		int end = static_cast<int>(stem.size()) - 1;
+
+		if (!std::isdigit(static_cast<unsigned char>(stem[end])))
+			return std::nullopt;
+
+		int start = end;
+
+		while (start > 0 && std::isdigit(static_cast<unsigned char>(stem[start - 1])))
+		{
+			--start;
+		}
+
+		try
+		{
+			return std::stoi(stem.substr(
+				static_cast<std::size_t>(start),
+				static_cast<std::size_t>(end - start + 1)));
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
+	bool NaturalFrameSort(const std::filesystem::path& a, const std::filesystem::path& b)
+	{
+		const std::optional<int> numberA = ExtractTrailingNumber(a);
+		const std::optional<int> numberB = ExtractTrailingNumber(b);
+
+		if (numberA.has_value() && numberB.has_value() && numberA.value() != numberB.value())
+			return numberA.value() < numberB.value();
+
+		return a.filename().string() < b.filename().string();
+	}
+}
 
 bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
 {
@@ -50,18 +116,58 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	m_powerUpHudText->setOutlineThickness(2.f);
 
 	const fs::path bombsDirectory = fs::path(m_resourcesDirectory) / "Bombs";
+	const fs::path bombAnimationDirectory = bombsDirectory / "BombAnim";
+	const fs::path explosionAnimationDirectory = bombsDirectory / "ExplosionAnim";
 
-	if (!loadTexture(m_bombTexture, (bombsDirectory / "bomb.png").string(), "bomb"))
+	if (!loadAnimationFramesFromDirectory(
+		m_bombAnimation,
+		bombAnimationDirectory.string(),
+		"bomb animation"))
+	{
 		return false;
+	}
 
-	if (!loadTexture(m_explosionCenterTexture, (bombsDirectory / "explosion_center.png").string(), "explosion center"))
-		return false;
+	buildBombAnimationSequence();
 
-	if (!loadTexture(m_explosionHorizontalTexture, (bombsDirectory / "explosion_horizontal.png").string(), "horizontal explosion"))
+	if (!loadAnimationFramesFromDirectory(
+		m_explosionCenterAnimation,
+		(explosionAnimationDirectory / "Center").string(),
+		"explosion center animation"))
+	{
 		return false;
+	}
 
-	if (!loadTexture(m_explosionVerticalTexture, (bombsDirectory / "explosion_vertical.png").string(), "vertical explosion"))
+	if (!loadAnimationFramesFromDirectory(
+		m_explosionHorizontalAnimation,
+		(explosionAnimationDirectory / "Horizontal").string(),
+		"explosion horizontal animation"))
+	{
 		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_explosionHorizontalEndAnimation,
+		(explosionAnimationDirectory / "HorizontalEnd").string(),
+		"explosion horizontal end animation"))
+	{
+		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_explosionVerticalAnimation,
+		(explosionAnimationDirectory / "Vertical").string(),
+		"explosion vertical animation"))
+	{
+		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_explosionVerticalEndAnimation,
+		(explosionAnimationDirectory / "VerticalEnd").string(),
+		"explosion vertical end animation"))
+	{
+		return false;
+	}
 
 	const fs::path powerUpsDirectory = fs::path(m_resourcesDirectory) / "PowerUps";
 
@@ -103,18 +209,63 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	return true;
 }
 
-bool GAME1_BombermanWindow::loadTexture(sf::Texture& texture, const std::string& path, const std::string& readableName)
+bool GAME1_BombermanWindow::loadAnimationFramesFromDirectory(AnimationFrames& animation,
+	const std::string& directoryPath,
+	const std::string& readableName)
 {
-	if (!texture.loadFromFile(path))
+	namespace fs = std::filesystem;
+
+	animation.frames.clear();
+
+	const fs::path directory(directoryPath);
+
+	if (!fs::exists(directory) || !fs::is_directory(directory))
 	{
-		m_lastError = "Failed to load Bomberman " + readableName + " texture: " + path;
+		m_lastError = "Failed to load Bomberman " + readableName + ": folder does not exist: " + directoryPath;
 		return false;
+	}
+
+	std::vector<fs::path> framePaths;
+
+	for (const auto& entry : fs::directory_iterator(directory))
+	{
+		if (!entry.is_regular_file())
+			continue;
+
+		if (!IsPngFile(entry.path()))
+			continue;
+
+		framePaths.push_back(entry.path());
+	}
+
+	std::sort(framePaths.begin(), framePaths.end(), NaturalFrameSort);
+
+	if (framePaths.empty())
+	{
+		m_lastError = "Failed to load Bomberman " + readableName + ": no PNG frames found in: " + directoryPath;
+		return false;
+	}
+
+	animation.frames.reserve(framePaths.size());
+
+	for (const fs::path& framePath : framePaths)
+	{
+		sf::Texture texture;
+
+		if (!texture.loadFromFile(framePath.string()))
+		{
+			m_lastError = "Failed to load Bomberman " + readableName + " frame: " + framePath.string();
+			return false;
+		}
+
+		animation.frames.push_back(std::move(texture));
 	}
 
 	return true;
 }
 
-bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths)
+bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
+	const std::vector<std::string>& candidatePaths)
 {
 	for (const std::string& path : candidatePaths)
 	{
@@ -138,6 +289,9 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	m_powerUps.clear();
 	m_enemies.clear();
 
+	m_hiddenExitPosition = { 0, 0 };
+	m_hiddenExitAssigned = false;
+
 	const fs::path levelPath = fs::path(m_mapsDirectory) / "level01.txt";
 
 	if (!m_level.loadFromFile(levelPath.string(), m_resourcesDirectory))
@@ -145,6 +299,23 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 		m_lastError = m_level.getLastError();
 		return false;
 	}
+
+	std::vector<BombermanGridPosition> forbiddenBreakablePositions;
+	forbiddenBreakablePositions.push_back(m_level.getPlayerSpawn());
+
+	for (const BombermanGridPosition& enemySpawn : m_level.getEnemySpawns())
+	{
+		forbiddenBreakablePositions.push_back(enemySpawn);
+	}
+
+	m_level.generateRandomBreakableBlocks(
+		m_rng,
+		5,
+		0.20f,
+		forbiddenBreakablePositions);
+
+	if (!assignHiddenExitToBreakableBlock())
+		return false;
 
 	m_player.reset(m_level.getPlayerSpawn(), m_level);
 
@@ -158,7 +329,7 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 
 	m_player.setMoveSpeed(m_basePlayerSpeed);
 
-	const fs::path enemyTexturePath = fs::path(m_resourcesDirectory) / "Enemies" / "enemy_basic.png";
+	const fs::path copterEnemyDirectory = fs::path(m_resourcesDirectory) / "Enemies" / "Copter";
 
 	const std::vector<BombermanGridPosition>& enemySpawns = m_level.getEnemySpawns();
 
@@ -168,7 +339,7 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	{
 		m_enemies.emplace_back();
 
-		if (!m_enemies.back().load(enemyTexturePath.string(), spawn, m_level))
+		if (!m_enemies.back().load(copterEnemyDirectory.string(), spawn, m_level))
 		{
 			m_lastError = m_enemies.back().getLastError();
 			m_enemies.pop_back();
@@ -180,7 +351,157 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	m_spaceHeldLastFrame = false;
 	m_restartHeldLastFrame = false;
 
+	m_bombAnimationSequenceIndex = 0;
+	m_bombAnimationTimer = 0.f;
+
 	return true;
+}
+
+bool GAME1_BombermanWindow::assignHiddenExitToBreakableBlock()
+{
+	const std::vector<BombermanGridPosition> breakableBlocks = m_level.getBreakableBlockPositions();
+
+	if (breakableBlocks.empty())
+	{
+		m_lastError = "Bomberman level error: hidden exit needs at least one breakable block.";
+		return false;
+	}
+
+	std::uniform_int_distribution<int> blockDistribution(
+		0,
+		static_cast<int>(breakableBlocks.size()) - 1);
+
+	m_hiddenExitPosition = breakableBlocks[blockDistribution(m_rng)];
+	m_hiddenExitAssigned = true;
+
+	return true;
+}
+
+bool GAME1_BombermanWindow::isHiddenExitBlock(BombermanGridPosition gridPosition) const
+{
+	return m_hiddenExitAssigned && gridPosition == m_hiddenExitPosition;
+}
+
+void GAME1_BombermanWindow::revealHiddenExitAt(BombermanGridPosition gridPosition)
+{
+	if (!isHiddenExitBlock(gridPosition))
+		return;
+
+	m_level.revealExitAt(gridPosition.col, gridPosition.row);
+	m_hiddenExitAssigned = false;
+}
+
+void GAME1_BombermanWindow::buildBombAnimationSequence()
+{
+	m_bombAnimationSequence.clear();
+
+	if (m_bombAnimation.frames.empty())
+		return;
+
+	if (m_bombAnimation.frames.size() >= 3)
+	{
+		m_bombAnimationSequence =
+		{
+			0,
+			1,
+			2,
+			1,
+			0
+		};
+	}
+	else if (m_bombAnimation.frames.size() == 2)
+	{
+		m_bombAnimationSequence =
+		{
+			0,
+			1,
+			0
+		};
+	}
+	else
+	{
+		m_bombAnimationSequence =
+		{
+			0
+		};
+	}
+
+	m_bombAnimationSequenceIndex = 0;
+	m_bombAnimationTimer = 0.f;
+}
+
+void GAME1_BombermanWindow::updateBombAnimation(float deltaTime)
+{
+	if (m_bombAnimationSequence.size() <= 1)
+		return;
+
+	m_bombAnimationTimer += deltaTime;
+
+	while (m_bombAnimationTimer >= m_bombAnimationFrameDuration)
+	{
+		m_bombAnimationTimer -= m_bombAnimationFrameDuration;
+		m_bombAnimationSequenceIndex =
+			(m_bombAnimationSequenceIndex + 1) % m_bombAnimationSequence.size();
+	}
+}
+
+const sf::Texture* GAME1_BombermanWindow::getCurrentBombTexture() const
+{
+	if (m_bombAnimation.frames.empty())
+		return nullptr;
+
+	if (m_bombAnimationSequence.empty())
+		return &m_bombAnimation.frames[0];
+
+	const std::size_t frameIndex =
+		m_bombAnimationSequence[m_bombAnimationSequenceIndex % m_bombAnimationSequence.size()];
+
+	return &m_bombAnimation.frames[frameIndex % m_bombAnimation.frames.size()];
+}
+
+std::size_t GAME1_BombermanWindow::getExplosionFrameIndex(const ActiveExplosion& explosion,
+	const AnimationFrames& animation) const
+{
+	if (animation.frames.empty())
+		return 0;
+
+	if (animation.frames.size() == 1)
+		return 0;
+
+	const float duration = std::max(0.001f, explosion.duration);
+	const float elapsed = std::clamp(duration - explosion.timer, 0.f, duration);
+	const float normalized = std::clamp(elapsed / duration, 0.f, 1.f);
+
+	std::size_t frameIndex = static_cast<std::size_t>(
+		normalized * static_cast<float>(animation.frames.size()));
+
+	if (frameIndex >= animation.frames.size())
+		frameIndex = animation.frames.size() - 1;
+
+	return frameIndex;
+}
+
+const GAME1_BombermanWindow::AnimationFrames& GAME1_BombermanWindow::getExplosionAnimationForTile(
+	BombermanExplosionTileType type) const
+{
+	switch (type)
+	{
+	case BombermanExplosionTileType::Center:
+		return m_explosionCenterAnimation;
+
+	case BombermanExplosionTileType::Horizontal:
+		return m_explosionHorizontalAnimation;
+
+	case BombermanExplosionTileType::HorizontalEnd:
+		return m_explosionHorizontalEndAnimation;
+
+	case BombermanExplosionTileType::Vertical:
+		return m_explosionVerticalAnimation;
+
+	case BombermanExplosionTileType::VerticalEnd:
+	default:
+		return m_explosionVerticalEndAnimation;
+	}
 }
 
 void GAME1_BombermanWindow::reset()
@@ -199,6 +520,9 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	}
 
 	m_restartHeldLastFrame = restartHeld;
+
+	m_level.updateAnimations(deltaTime);
+	updateBombAnimation(deltaTime);
 
 	if (m_playState == PlayState::Playing)
 	{
@@ -406,7 +730,8 @@ void GAME1_BombermanWindow::updateBombs(float deltaTime)
 void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 {
 	ActiveExplosion explosion;
-	explosion.timer = 0.38f;
+	explosion.timer = m_explosionDuration;
+	explosion.duration = m_explosionDuration;
 
 	const BombermanGridPosition center = bomb.getGridPosition();
 
@@ -419,11 +744,14 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 
 	for (int directionIndex = 0; directionIndex < directionCount; ++directionIndex)
 	{
+		const int directionCol = directionCols[directionIndex];
+		const int directionRow = directionRows[directionIndex];
+
 		for (int distance = 1; distance <= bomb.getExplosionRange(); ++distance)
 		{
 			const BombermanGridPosition current{
-				center.col + directionCols[directionIndex] * distance,
-				center.row + directionRows[directionIndex] * distance
+				center.col + directionCol * distance,
+				center.row + directionRow * distance
 			};
 
 			if (!m_level.isInside(current.col, current.row))
@@ -432,12 +760,59 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 			if (m_level.isWall(current.col, current.row))
 				break;
 
-			const BombermanExplosionTileType visualType =
-				directionRows[directionIndex] == 0
-				? BombermanExplosionTileType::Horizontal
-				: BombermanExplosionTileType::Vertical;
+			const bool isBreakable = m_level.isBreakableBlock(current.col, current.row);
 
-			addExplosionTile(explosion.tiles, current, visualType);
+			const BombermanGridPosition next{
+				current.col + directionCol,
+				current.row + directionRow
+			};
+
+			const bool reachedMaxRange = distance == bomb.getExplosionRange();
+			const bool nextBlockedByWall =
+				!m_level.isInside(next.col, next.row) ||
+				m_level.isWall(next.col, next.row);
+
+			const bool shouldUseEndCap =
+				isBreakable ||
+				reachedMaxRange ||
+				nextBlockedByWall;
+
+			BombermanExplosionTileType visualType;
+			bool flipX = false;
+			bool flipY = false;
+
+			if (directionRow == 0)
+			{
+				if (shouldUseEndCap)
+				{
+					visualType = BombermanExplosionTileType::HorizontalEnd;
+
+					// HorizontalEnd faces right by default.
+					// Left side must be mirrored.
+					flipX = directionCol < 0;
+				}
+				else
+				{
+					visualType = BombermanExplosionTileType::Horizontal;
+				}
+			}
+			else
+			{
+				if (shouldUseEndCap)
+				{
+					visualType = BombermanExplosionTileType::VerticalEnd;
+
+					// VerticalEnd faces upward by default.
+					// Bottom side must be mirrored vertically.
+					flipY = directionRow > 0;
+				}
+				else
+				{
+					visualType = BombermanExplosionTileType::Vertical;
+				}
+			}
+
+			addExplosionTile(explosion.tiles, current, visualType, flipX, flipY);
 
 			for (BombermanBomb& otherBomb : m_bombs)
 			{
@@ -447,12 +822,26 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 				}
 			}
 
-			if (m_level.isBreakableBlock(current.col, current.row))
+			if (isBreakable)
 			{
+				const bool destroyedHiddenExitBlock = isHiddenExitBlock(current);
+
 				m_level.destroyBreakableBlock(current.col, current.row);
-				maybeSpawnPowerUpAt(current);
+
+				if (destroyedHiddenExitBlock)
+				{
+					revealHiddenExitAt(current);
+				}
+				else
+				{
+					maybeSpawnPowerUpAt(current);
+				}
+
 				break;
 			}
+
+			if (shouldUseEndCap)
+				break;
 		}
 	}
 
@@ -551,7 +940,9 @@ void GAME1_BombermanWindow::applyPowerUp(PowerUpType type)
 
 void GAME1_BombermanWindow::addExplosionTile(std::vector<BombermanExplosionTile>& tiles,
 	BombermanGridPosition position,
-	BombermanExplosionTileType type)
+	BombermanExplosionTileType type,
+	bool flipX,
+	bool flipY)
 {
 	const auto alreadyExists = std::any_of(
 		tiles.begin(),
@@ -564,7 +955,13 @@ void GAME1_BombermanWindow::addExplosionTile(std::vector<BombermanExplosionTile>
 	if (alreadyExists)
 		return;
 
-	tiles.push_back({ position, type });
+	BombermanExplosionTile tile;
+	tile.gridPosition = position;
+	tile.type = type;
+	tile.flipX = flipX;
+	tile.flipY = flipY;
+
+	tiles.push_back(tile);
 }
 
 void GAME1_BombermanWindow::updateExplosions(float deltaTime)
@@ -661,31 +1058,10 @@ void GAME1_BombermanWindow::updateWinLoseState()
 	if (m_playState == PlayState::GameOver)
 		return;
 
-	if (!areAllEnemiesDefeated())
-		return;
-
-	if (m_level.hasExit())
+	if (m_level.hasExit() && isPlayerStandingOnExit())
 	{
-		if (isPlayerStandingOnExit())
-		{
-			m_playState = PlayState::Victory;
-		}
-
-		return;
+		m_playState = PlayState::Victory;
 	}
-
-	m_playState = PlayState::Victory;
-}
-
-bool GAME1_BombermanWindow::areAllEnemiesDefeated() const
-{
-	return std::none_of(
-		m_enemies.begin(),
-		m_enemies.end(),
-		[](const BombermanEnemy& enemy)
-		{
-			return enemy.isAlive();
-		});
 }
 
 bool GAME1_BombermanWindow::isPlayerStandingOnExit() const
@@ -703,6 +1079,15 @@ void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
 	const sf::Texture& texture,
 	BombermanGridPosition gridPosition) const
 {
+	drawTextureInTile(target, texture, gridPosition, false, false);
+}
+
+void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
+	const sf::Texture& texture,
+	BombermanGridPosition gridPosition,
+	bool flipX,
+	bool flipY) const
+{
 	sf::Sprite sprite(texture);
 
 	const sf::FloatRect localBounds = sprite.getLocalBounds();
@@ -710,15 +1095,24 @@ void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
 	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 		return;
 
+	const float scaleX = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x;
+	const float scaleY = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y;
+
 	sprite.setScale({
-		static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x,
-		static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y
+		flipX ? -scaleX : scaleX,
+		flipY ? -scaleY : scaleY
 		});
 
-	sprite.setPosition({
-		static_cast<float>(gridPosition.col * BombermanLevel::TileSize),
-		static_cast<float>(gridPosition.row * BombermanLevel::TileSize)
-		});
+	float drawX = static_cast<float>(gridPosition.col * BombermanLevel::TileSize);
+	float drawY = static_cast<float>(gridPosition.row * BombermanLevel::TileSize);
+
+	if (flipX)
+		drawX += static_cast<float>(BombermanLevel::TileSize);
+
+	if (flipY)
+		drawY += static_cast<float>(BombermanLevel::TileSize);
+
+	sprite.setPosition({ drawX, drawY });
 
 	target.draw(sprite);
 }
@@ -758,6 +1152,7 @@ void GAME1_BombermanWindow::drawPowerUpInTile(sf::RenderTarget& target, const Ac
 	label.setStyle(sf::Text::Bold);
 
 	const sf::FloatRect bounds = label.getLocalBounds();
+
 	label.setPosition({
 		tileBounds.position.x + (tileBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
 		tileBounds.position.y + (tileBounds.size.y - bounds.size.y) * 0.5f - bounds.position.y - 2.f
@@ -766,7 +1161,10 @@ void GAME1_BombermanWindow::drawPowerUpInTile(sf::RenderTarget& target, const Ac
 	target.draw(label);
 }
 
-void GAME1_BombermanWindow::drawPowerUpIcon(sf::RenderTarget& target, PowerUpType type, sf::Vector2f position, float size) const
+void GAME1_BombermanWindow::drawPowerUpIcon(sf::RenderTarget& target,
+	PowerUpType type,
+	sf::Vector2f position,
+	float size) const
 {
 	const PowerUpTexture& powerUpTexture = getPowerUpTexture(type);
 
@@ -782,6 +1180,7 @@ void GAME1_BombermanWindow::drawPowerUpIcon(sf::RenderTarget& target, PowerUpTyp
 				size / localBounds.size.x,
 				size / localBounds.size.y
 				});
+
 			sprite.setPosition(position);
 			target.draw(sprite);
 			return;
@@ -876,6 +1275,7 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 		static_cast<float>(windowSize.x),
 		static_cast<float>(windowSize.y)
 		});
+
 	worldView.setCenter({
 		m_level.getPixelWidth() * 0.5f,
 		m_level.getPixelHeight() * 0.5f
@@ -886,6 +1286,7 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 	m_level.drawFloorLayer(window);
 
 	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
+	const sf::Texture* currentBombTexture = getCurrentBombTexture();
 
 	for (int row = 0; row < m_level.getHeightInTiles(); ++row)
 	{
@@ -902,11 +1303,14 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 			}
 		}
 
-		for (const BombermanBomb& bomb : m_bombs)
+		if (currentBombTexture != nullptr)
 		{
-			if (bomb.getGridPosition().row == row)
+			for (const BombermanBomb& bomb : m_bombs)
 			{
-				drawTextureInTile(window, m_bombTexture, bomb.getGridPosition());
+				if (bomb.getGridPosition().row == row)
+				{
+					drawTextureInTile(window, *currentBombTexture, bomb.getGridPosition());
+				}
 			}
 		}
 
@@ -933,20 +1337,19 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 				if (tile.gridPosition.row != row)
 					continue;
 
-				switch (tile.type)
-				{
-				case BombermanExplosionTileType::Center:
-					drawTextureInTile(window, m_explosionCenterTexture, tile.gridPosition);
-					break;
+				const AnimationFrames& animation = getExplosionAnimationForTile(tile.type);
 
-				case BombermanExplosionTileType::Horizontal:
-					drawTextureInTile(window, m_explosionHorizontalTexture, tile.gridPosition);
-					break;
+				if (animation.frames.empty())
+					continue;
 
-				case BombermanExplosionTileType::Vertical:
-					drawTextureInTile(window, m_explosionVerticalTexture, tile.gridPosition);
-					break;
-				}
+				const std::size_t frameIndex = getExplosionFrameIndex(explosion, animation);
+
+				drawTextureInTile(
+					window,
+					animation.frames[frameIndex],
+					tile.gridPosition,
+					tile.flipX,
+					tile.flipY);
 			}
 		}
 	}
@@ -1013,17 +1416,12 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		if (!m_level.hasExit())
 		{
-			m_objectiveText->setString("Objective: Defeat all enemies");
-			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
-		}
-		else if (livingEnemies > 0)
-		{
-			m_objectiveText->setString("Objective: Defeat all enemies to unlock the exit");
+			m_objectiveText->setString("Objective: Destroy blocks to find the hidden exit");
 			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
 		}
 		else
 		{
-			m_objectiveText->setString("Objective: Exit unlocked! Step on the exit tile");
+			m_objectiveText->setString("Objective: Exit found! Step on it to escape");
 			m_objectiveText->setFillColor(sf::Color(120, 255, 140));
 		}
 
@@ -1057,7 +1455,7 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		if (m_playState == PlayState::Victory)
 		{
-			m_statusText->setString("VICTORY!\nYou escaped the arena\nPress R to restart");
+			m_statusText->setString("VICTORY!\nYou found the hidden exit\nPress R to restart");
 		}
 		else if (m_playState == PlayState::GameOver)
 		{

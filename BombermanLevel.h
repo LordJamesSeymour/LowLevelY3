@@ -3,6 +3,8 @@
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
+#include <cstddef>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -14,16 +16,18 @@ public:
 public:
 	bool loadFromFile(const std::string& mapPath, const std::string& resourcesDirectory);
 
+	void updateAnimations(float deltaTime);
+
+	void generateRandomBreakableBlocks(std::mt19937& rng,
+		int minimumBlocks,
+		float maxEmptyTileRatio,
+		const std::vector<BombermanGridPosition>& forbiddenPositions);
+
 	void draw(sf::RenderTarget& target) const;
 
-	// Draws only floor tiles. This should be drawn before all depth-sorted objects.
 	void drawFloorLayer(sf::RenderTarget& target) const;
-
-	// Draws wall / breakable / exit objects for one tile.
-	// Used by the game window for row-by-row depth sorting.
 	void drawWorldTileAt(sf::RenderTarget& target, int col, int row) const;
 
-	// Kept for compatibility / debugging.
 	void drawBaseLayer(sf::RenderTarget& target, bool includeSolidWalls) const;
 	void drawSolidWallsOnly(sf::RenderTarget& target) const;
 	void drawSolidWallAt(sf::RenderTarget& target, int col, int row) const;
@@ -35,6 +39,9 @@ public:
 	bool canExplosionPassThrough(int col, int row) const;
 
 	void destroyBreakableBlock(int col, int row);
+
+	bool revealExitAt(int col, int row);
+	std::vector<BombermanGridPosition> getBreakableBlockPositions() const;
 
 	BombermanGridPosition getPlayerSpawn() const;
 	const std::vector<BombermanGridPosition>& getEnemySpawns() const;
@@ -56,15 +63,44 @@ public:
 
 private:
 	bool loadTexture(sf::Texture& texture, const std::string& path, const std::string& readableName);
+
+	bool loadAnimationFramesFromDirectory(std::vector<sf::Texture>& frames,
+		const std::string& directoryPath,
+		const std::string& readableName);
+
 	void drawTextureInTile(sf::RenderTarget& target, const sf::Texture& texture, int col, int row) const;
+
+	bool isSolidWallCharacter(char tile) const;
+	const sf::Texture* getWallTextureForTile(char tile) const;
+
+	const sf::Texture* getCurrentBreakableTexture() const;
+
+	bool isForbiddenBreakablePosition(int col,
+		int row,
+		const std::vector<BombermanGridPosition>& forbiddenPositions) const;
 
 private:
 	std::vector<std::string> m_rows;
 
 	sf::Texture m_floorTexture;
-	sf::Texture m_wallTexture;
-	sf::Texture m_breakableTexture;
 	sf::Texture m_exitTexture;
+
+	std::vector<sf::Texture> m_breakableFrames;
+	std::size_t m_breakableCurrentFrame = 0;
+	float m_breakableAnimationTimer = 0.f;
+	float m_breakableFrameDuration = 0.12f;
+
+	sf::Texture m_solidBlockTexture;
+
+	sf::Texture m_wallUpTexture;
+	sf::Texture m_wallDownTexture;
+	sf::Texture m_wallLeftTexture;
+	sf::Texture m_wallRightTexture;
+	sf::Texture m_wallTopTexture;
+	sf::Texture m_wallTopLeftTexture;
+	sf::Texture m_wallTopRightTexture;
+	sf::Texture m_wallBotLeftTexture;
+	sf::Texture m_wallBotRightTexture;
 
 	bool m_hasExitTexture = false;
 

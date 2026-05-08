@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <filesystem>
+#include <optional>
 
 namespace
 {
@@ -48,6 +50,67 @@ namespace
 
 		return 0.f;
 	}
+
+	std::string ToLower(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(),
+			[](unsigned char c)
+			{
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return value;
+	}
+
+	bool IsPngFile(const std::filesystem::path& path)
+	{
+		if (!path.has_extension())
+			return false;
+
+		return ToLower(path.extension().string()) == ".png";
+	}
+
+	std::optional<int> ExtractTrailingNumber(const std::filesystem::path& path)
+	{
+		const std::string stem = path.stem().string();
+
+		if (stem.empty())
+			return std::nullopt;
+
+		int end = static_cast<int>(stem.size()) - 1;
+
+		if (!std::isdigit(static_cast<unsigned char>(stem[end])))
+			return std::nullopt;
+
+		int start = end;
+
+		while (start > 0 && std::isdigit(static_cast<unsigned char>(stem[start - 1])))
+		{
+			--start;
+		}
+
+		try
+		{
+			return std::stoi(stem.substr(
+				static_cast<std::size_t>(start),
+				static_cast<std::size_t>(end - start + 1)));
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
+	bool NaturalFrameSort(const std::filesystem::path& a, const std::filesystem::path& b)
+	{
+		const std::optional<int> numberA = ExtractTrailingNumber(a);
+		const std::optional<int> numberB = ExtractTrailingNumber(b);
+
+		if (numberA.has_value() && numberB.has_value() && numberA.value() != numberB.value())
+			return numberA.value() < numberB.value();
+
+		return a.filename().string() < b.filename().string();
+	}
 }
 
 bool BombermanPlayer::load(const std::string& playerDirectory)
@@ -56,35 +119,48 @@ bool BombermanPlayer::load(const std::string& playerDirectory)
 
 	m_lastError.clear();
 
-	const fs::path base(playerDirectory);
+	fs::path blueDirectory(playerDirectory);
 
-	const std::string downPath = (base / "player_down.png").string();
-	const std::string upPath = (base / "player_up.png").string();
-	const std::string leftPath = (base / "player_left.png").string();
-	const std::string rightPath = (base / "player_right.png").string();
-
-	if (!m_downTexture.loadFromFile(downPath))
+	// Current expected call is:
+	// assets/Game#0/Bomberman/Resources/Player
+	//
+	// New expected sprite location is:
+	// assets/Game#0/Bomberman/Resources/Player/Blue
+	if (blueDirectory.filename().string() != "Blue")
 	{
-		m_lastError = "Failed to load Bomberman player texture: " + downPath;
+		blueDirectory /= "Blue";
+	}
+
+	if (!loadAnimationFolder(m_frontAnimation, (blueDirectory / "Front").string(), "Blue player front animation"))
+		return false;
+
+	if (!loadAnimationFolder(m_backAnimation, (blueDirectory / "Back").string(), "Blue player back animation"))
+		return false;
+
+	if (!loadAnimationFolder(m_leftAnimation, (blueDirectory / "Left").string(), "Blue player left animation"))
+		return false;
+
+	if (!loadAnimationFolder(m_rightAnimation, (blueDirectory / "Right").string(), "Blue player right animation"))
+		return false;
+
+	m_facingDirection = BombermanDirection::Down;
+	m_previousAnimationDirection = BombermanDirection::Down;
+
+	const sf::Texture* startingTexture = getCurrentAnimationTexture();
+
+	if (startingTexture == nullptr)
+	{
+		m_lastError = "Blue player has no valid starting animation frame.";
 		return false;
 	}
 
-	if (!loadTextureOrFallback(m_upTexture, upPath, downPath))
-		return false;
-
-	if (!loadTextureOrFallback(m_leftTexture, leftPath, downPath))
-		return false;
-
-	if (!loadTextureOrFallback(m_rightTexture, rightPath, downPath))
-		return false;
-
-	m_sprite.emplace(m_downTexture);
+	m_sprite.emplace(*startingTexture);
 
 	const sf::FloatRect localBounds = m_sprite->getLocalBounds();
 
 	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 	{
-		m_lastError = "Bomberman player texture has invalid size.";
+		m_lastError = "Blue player texture has invalid size.";
 		return false;
 	}
 
@@ -96,20 +172,127 @@ bool BombermanPlayer::load(const std::string& playerDirectory)
 	return true;
 }
 
-bool BombermanPlayer::loadTextureOrFallback(sf::Texture& texture,
-	const std::string& preferredPath,
-	const std::string& fallbackPath)
+bool BombermanPlayer::loadAnimationFolder(AnimationSet& animationSet,
+	const std::string& directoryPath,
+	const std::string& readableName)
 {
-	if (texture.loadFromFile(preferredPath))
-		return true;
+	namespace fs = std::filesystem;
 
-	if (!texture.loadFromFile(fallbackPath))
+	animationSet.frames.clear();
+	animationSet.movementSequence.clear();
+	animationSet.idleFrameIndex = 0;
+	animationSet.sequenceIndex = 0;
+	animationSet.timer = 0.f;
+
+	const fs::path directory(directoryPath);
+
+	if (!fs::exists(directory) || !fs::is_directory(directory))
 	{
-		m_lastError = "Failed to load Bomberman player texture: " + preferredPath;
+		m_lastError = "Failed to load " + readableName + ": folder does not exist: " + directoryPath;
 		return false;
 	}
 
+	std::vector<fs::path> framePaths;
+
+	for (const auto& entry : fs::directory_iterator(directory))
+	{
+		if (!entry.is_regular_file())
+			continue;
+
+		if (!IsPngFile(entry.path()))
+			continue;
+
+		framePaths.push_back(entry.path());
+	}
+
+	std::sort(framePaths.begin(), framePaths.end(), NaturalFrameSort);
+
+	if (framePaths.empty())
+	{
+		m_lastError = "Failed to load " + readableName + ": no PNG files found in: " + directoryPath;
+		return false;
+	}
+
+	std::vector<int> trailingNumbers;
+	trailingNumbers.reserve(framePaths.size());
+
+	animationSet.frames.reserve(framePaths.size());
+
+	for (const fs::path& framePath : framePaths)
+	{
+		sf::Texture texture;
+
+		if (!texture.loadFromFile(framePath.string()))
+		{
+			m_lastError = "Failed to load " + readableName + " frame: " + framePath.string();
+			return false;
+		}
+
+		const std::optional<int> trailingNumber = ExtractTrailingNumber(framePath);
+		trailingNumbers.push_back(trailingNumber.value_or(-1));
+
+		animationSet.frames.push_back(std::move(texture));
+	}
+
+	buildMovementSequence(animationSet, trailingNumbers);
+
 	return true;
+}
+
+void BombermanPlayer::buildMovementSequence(AnimationSet& animationSet,
+	const std::vector<int>& trailingNumbers)
+{
+	auto findFrameByNumber = [&trailingNumbers](int wantedNumber) -> std::optional<std::size_t>
+		{
+			for (std::size_t i = 0; i < trailingNumbers.size(); ++i)
+			{
+				if (trailingNumbers[i] == wantedNumber)
+					return i;
+			}
+
+			return std::nullopt;
+		};
+
+	const std::optional<std::size_t> frame0 = findFrameByNumber(0);
+	const std::optional<std::size_t> frame1 = findFrameByNumber(1);
+	const std::optional<std::size_t> frame2 = findFrameByNumber(2);
+
+	if (frame1.has_value())
+	{
+		animationSet.idleFrameIndex = frame1.value();
+	}
+	else
+	{
+		animationSet.idleFrameIndex = 0;
+	}
+
+	if (frame0.has_value() && frame1.has_value() && frame2.has_value())
+	{
+		// Required movement cycle:
+		// _1 -> _2 -> _1 -> _0 -> _1 -> repeat
+		animationSet.movementSequence =
+		{
+			frame1.value(),
+			frame2.value(),
+			frame1.value(),
+			frame0.value(),
+			frame1.value()
+		};
+	}
+	else
+	{
+		// Fallback for future animation folders with different frame names.
+		// If the expected 0/1/2 naming is missing, cycle through all loaded frames.
+		for (std::size_t i = 0; i < animationSet.frames.size(); ++i)
+		{
+			animationSet.movementSequence.push_back(i);
+		}
+	}
+
+	if (animationSet.movementSequence.empty())
+	{
+		animationSet.movementSequence.push_back(animationSet.idleFrameIndex);
+	}
 }
 
 void BombermanPlayer::reset(BombermanGridPosition spawnPosition, const BombermanLevel& level)
@@ -118,14 +301,19 @@ void BombermanPlayer::reset(BombermanGridPosition spawnPosition, const Bomberman
 	m_invincibilityTimer = 0.f;
 
 	m_facingDirection = BombermanDirection::Down;
+	m_previousAnimationDirection = BombermanDirection::Down;
+
 	m_currentMoveInput = { 0.f, 0.f };
+	m_movementKeyHeld = false;
+	m_wasMovementKeyHeld = false;
 
 	m_upHeldLastFrame = false;
 	m_downHeldLastFrame = false;
 	m_leftHeldLastFrame = false;
 	m_rightHeldLastFrame = false;
 
-	applyTextureForFacingDirection();
+	resetActiveAnimationToIdle();
+	applyCurrentAnimationFrame();
 
 	m_position = level.gridToWorldTopLeft(spawnPosition);
 
@@ -150,7 +338,7 @@ void BombermanPlayer::update(float deltaTime,
 		return;
 
 	refreshMovementInput();
-	applyTextureForFacingDirection();
+	updateAnimation(deltaTime);
 
 	const sf::Vector2f movement = m_currentMoveInput * m_moveSpeed * deltaTime;
 	const sf::Vector2f nextPosition = m_position + movement;
@@ -164,6 +352,7 @@ void BombermanPlayer::update(float deltaTime,
 		tryMoveWithEdgeCorrection(movement, isTileBlocked);
 	}
 
+	applyCurrentAnimationFrame();
 	m_sprite->setPosition(m_position);
 }
 
@@ -189,6 +378,8 @@ void BombermanPlayer::refreshMovementInput()
 	const bool downNew = downHeld && !m_downHeldLastFrame;
 	const bool leftNew = leftHeld && !m_leftHeldLastFrame;
 	const bool rightNew = rightHeld && !m_rightHeldLastFrame;
+
+	m_movementKeyHeld = upHeld || downHeld || leftHeld || rightHeld;
 
 	bool changedDirectionThisFrame = false;
 
@@ -224,9 +415,7 @@ void BombermanPlayer::refreshMovementInput()
 
 	if (!changedDirectionThisFrame)
 	{
-		const bool anyHeld = upHeld || downHeld || leftHeld || rightHeld;
-
-		if (!anyHeld)
+		if (!m_movementKeyHeld)
 		{
 			m_currentMoveInput = { 0.f, 0.f };
 		}
@@ -261,6 +450,135 @@ void BombermanPlayer::refreshMovementInput()
 	m_downHeldLastFrame = downHeld;
 	m_leftHeldLastFrame = leftHeld;
 	m_rightHeldLastFrame = rightHeld;
+}
+
+void BombermanPlayer::updateAnimation(float deltaTime)
+{
+	AnimationSet& animationSet = getActiveAnimationSet();
+
+	const bool directionChanged = m_facingDirection != m_previousAnimationDirection;
+	const bool movementJustStarted = m_movementKeyHeld && !m_wasMovementKeyHeld;
+	const bool movementJustStopped = !m_movementKeyHeld && m_wasMovementKeyHeld;
+
+	if (directionChanged || movementJustStarted || movementJustStopped)
+	{
+		animationSet.sequenceIndex = 0;
+		animationSet.timer = 0.f;
+	}
+
+	if (m_movementKeyHeld)
+	{
+		if (animationSet.movementSequence.size() > 1)
+		{
+			animationSet.timer += deltaTime;
+
+			while (animationSet.timer >= m_animationFrameDuration)
+			{
+				animationSet.timer -= m_animationFrameDuration;
+				animationSet.sequenceIndex =
+					(animationSet.sequenceIndex + 1) % animationSet.movementSequence.size();
+			}
+		}
+	}
+	else
+	{
+		animationSet.sequenceIndex = 0;
+		animationSet.timer = 0.f;
+	}
+
+	m_previousAnimationDirection = m_facingDirection;
+	m_wasMovementKeyHeld = m_movementKeyHeld;
+}
+
+void BombermanPlayer::applyCurrentAnimationFrame()
+{
+	if (!m_sprite)
+		return;
+
+	const sf::Texture* currentTexture = getCurrentAnimationTexture();
+
+	if (currentTexture == nullptr)
+		return;
+
+	m_sprite->setTexture(*currentTexture, true);
+
+	const sf::FloatRect localBounds = m_sprite->getLocalBounds();
+
+	if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+	{
+		m_sprite->setScale({
+			static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x,
+			static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y
+			});
+	}
+}
+
+BombermanPlayer::AnimationSet& BombermanPlayer::getActiveAnimationSet()
+{
+	switch (m_facingDirection)
+	{
+	case BombermanDirection::Up:
+		return m_backAnimation;
+
+	case BombermanDirection::Down:
+		return m_frontAnimation;
+
+	case BombermanDirection::Left:
+		return m_leftAnimation;
+
+	case BombermanDirection::Right:
+	default:
+		return m_rightAnimation;
+	}
+}
+
+const BombermanPlayer::AnimationSet& BombermanPlayer::getActiveAnimationSet() const
+{
+	switch (m_facingDirection)
+	{
+	case BombermanDirection::Up:
+		return m_backAnimation;
+
+	case BombermanDirection::Down:
+		return m_frontAnimation;
+
+	case BombermanDirection::Left:
+		return m_leftAnimation;
+
+	case BombermanDirection::Right:
+	default:
+		return m_rightAnimation;
+	}
+}
+
+const sf::Texture* BombermanPlayer::getCurrentAnimationTexture() const
+{
+	const AnimationSet& animationSet = getActiveAnimationSet();
+
+	if (animationSet.frames.empty())
+		return nullptr;
+
+	if (!m_movementKeyHeld)
+	{
+		return &animationSet.frames[animationSet.idleFrameIndex % animationSet.frames.size()];
+	}
+
+	if (animationSet.movementSequence.empty())
+	{
+		return &animationSet.frames[animationSet.idleFrameIndex % animationSet.frames.size()];
+	}
+
+	const std::size_t frameIndex =
+		animationSet.movementSequence[animationSet.sequenceIndex % animationSet.movementSequence.size()];
+
+	return &animationSet.frames[frameIndex % animationSet.frames.size()];
+}
+
+void BombermanPlayer::resetActiveAnimationToIdle()
+{
+	AnimationSet& animationSet = getActiveAnimationSet();
+	animationSet.sequenceIndex = 0;
+	animationSet.timer = 0.f;
 }
 
 bool BombermanPlayer::canFitAt(sf::Vector2f topLeftPosition,
@@ -388,41 +706,6 @@ float BombermanPlayer::getNearestLaneCenter(float positionOnAxis) const
 	const float laneIndex = std::round((positionOnAxis - tileSize * 0.5f) / tileSize);
 
 	return laneIndex * tileSize + tileSize * 0.5f;
-}
-
-void BombermanPlayer::applyTextureForFacingDirection()
-{
-	if (!m_sprite)
-		return;
-
-	switch (m_facingDirection)
-	{
-	case BombermanDirection::Down:
-		m_sprite->setTexture(m_downTexture, true);
-		break;
-
-	case BombermanDirection::Up:
-		m_sprite->setTexture(m_upTexture, true);
-		break;
-
-	case BombermanDirection::Left:
-		m_sprite->setTexture(m_leftTexture, true);
-		break;
-
-	case BombermanDirection::Right:
-		m_sprite->setTexture(m_rightTexture, true);
-		break;
-	}
-
-	const sf::FloatRect localBounds = m_sprite->getLocalBounds();
-
-	if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
-	{
-		m_sprite->setScale({
-			static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x,
-			static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y
-			});
-	}
 }
 
 void BombermanPlayer::draw(sf::RenderTarget& target) const

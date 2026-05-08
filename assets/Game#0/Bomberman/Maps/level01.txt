@@ -1,7 +1,13 @@
-XXXXXXXXXXXXX
-XP     O   EX
-X X X X X X X
-X B B B B B X
-X X X X X X X
-X     O     X
-XXXXXXXXXXXXX
+QUUUUUUUUUUUUUY
+L P   M     O R
+L M M M M M M R
+L             R
+L M M M M M M R
+L           M R
+L M M M MMM M R
+L       M     R
+L M M M M   M R
+L       O    MR
+L M M M M M M R
+L   M M M     R
+ZDDDDDDDDDDDDDC
