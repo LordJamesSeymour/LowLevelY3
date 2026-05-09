@@ -80,7 +80,7 @@ namespace
 		{
 			const int parsedWorld = std::stoi(line.substr(prefix.size()));
 
-			if (parsedWorld == 1 || parsedWorld == 2)
+			if (parsedWorld >= 1)
 				outWorldNumber = parsedWorld;
 		}
 		catch (...)
@@ -88,6 +88,33 @@ namespace
 		}
 
 		return true;
+	}
+
+	std::optional<int> TryExtractWorldNumberFromFolder(const std::filesystem::path& path)
+	{
+		const std::string name = path.filename().string();
+		const std::string prefix = "World";
+
+		if (name.rfind(prefix, 0) != 0)
+			return std::nullopt;
+
+		if (name.size() <= prefix.size())
+			return std::nullopt;
+
+		for (std::size_t i = prefix.size(); i < name.size(); ++i)
+		{
+			if (!std::isdigit(static_cast<unsigned char>(name[i])))
+				return std::nullopt;
+		}
+
+		try
+		{
+			return std::stoi(name.substr(prefix.size()));
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
 	}
 }
 
@@ -107,6 +134,8 @@ bool GAME1_BombermanLevelEditor::load(const std::string& fontPath, const std::st
 		m_lastError = "Failed to load Bomberman editor font: " + fontPath;
 		return false;
 	}
+
+	refreshSavedLevelList();
 
 	if (!resetFromTemplate())
 		return false;
@@ -132,6 +161,7 @@ bool GAME1_BombermanLevelEditor::resetFromTemplate()
 	m_selectedToolIndex = 0;
 	m_hotbarPage = 0;
 	rebuildVisibleToolbar();
+	refreshSavedLevelList();
 
 	return true;
 }
@@ -196,7 +226,34 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 230, 80)
 	);
 
-	if (m_worldNumber == 2)
+	if (m_worldNumber == 3)
+	{
+		addWorldTool('M', "M", "World 3 solid block", (worldTilesPath / "solidblock_0.png").string(), sf::Color(120, 120, 120));
+
+		addWorldTool('S', "S", "World 3 bottom wall", (worldTilesPath / "solidwall_bot.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('T', "T", "World 3 top wall", (worldTilesPath / "solidwall_top.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('L', "L", "World 3 left wall", (worldTilesPath / "solidwall_left.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('R', "R", "World 3 right wall", (worldTilesPath / "solidwall_right.png").string(), sf::Color(130, 130, 130));
+
+		addWorldTool('Q', "Q", "World 3 top-left", (worldTilesPath / "solidwall_topleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Y', "Y", "World 3 top-right", (worldTilesPath / "solidwall_topright.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Z', "Z", "World 3 bottom-left", (worldTilesPath / "solidwall_botleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('C', "C", "World 3 bottom-right", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
+
+		addWorldTool('U', "U", "World 3 back-left 0", (worldTilesPath / "solidwall_backleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('D', "D", "World 3 back-right 0", (worldTilesPath / "solidwall_backright_0.png").string(), sf::Color(130, 130, 130));
+
+		addWorldTool('F', "F", "World 3 back-left 1", (worldTilesPath / "solidwall_backleft_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('G', "G", "World 3 back-left 2", (worldTilesPath / "solidwall_backleft_2.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('H', "H", "World 3 back-left 3", (worldTilesPath / "solidwall_backleft_3.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('I', "I", "World 3 back-left 4", (worldTilesPath / "solidwall_backleft_4.png").string(), sf::Color(130, 130, 130));
+
+		addWorldTool('J', "J", "World 3 back-right 1", (worldTilesPath / "solidwall_backright_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('N', "N", "World 3 back-right 2", (worldTilesPath / "solidwall_backright_2.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('V', "V", "World 3 back-right 3", (worldTilesPath / "solidwall_backright_3.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('W', "W", "World 3 back-right 4", (worldTilesPath / "solidwall_backright_4.png").string(), sf::Color(130, 130, 130));
+	}
+	else if (m_worldNumber == 2)
 	{
 		addWorldTool('M', "M", "World 2 solid block", (worldTilesPath / "solidblock.png").string(), sf::Color(120, 120, 120));
 		addWorldTool('S', "S", "World 2 bottom wall", (worldTilesPath / "solidwall_bot.png").string(), sf::Color(130, 130, 130));
@@ -343,9 +400,9 @@ bool GAME1_BombermanLevelEditor::loadRowsFromFile(const std::string& mapPath)
 	if (!file.is_open())
 	{
 		m_lastError =
-			"Failed to open Bomberman level template:\n" +
+			"Failed to open Bomberman level file:\n" +
 			mapPath +
-			"\n\nCreate this file inside the Bomberman Maps folder.";
+			"\n\nCheck that this file exists inside the Bomberman Maps folder.";
 		return false;
 	}
 
@@ -373,7 +430,7 @@ bool GAME1_BombermanLevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 	if (rawLines.empty())
 	{
-		m_lastError = "Bomberman level template is empty: " + mapPath;
+		m_lastError = "Bomberman level file is empty: " + mapPath;
 		return false;
 	}
 
@@ -390,7 +447,7 @@ bool GAME1_BombermanLevelEditor::loadRowsFromFile(const std::string& mapPath)
 			if (!validateTileCharacter(paddedLine[col]))
 			{
 				m_lastError =
-					"Bomberman template error: unsupported character '" +
+					"Bomberman level file error: unsupported character '" +
 					std::string(1, paddedLine[col]) +
 					"' at row " +
 					std::to_string(row + 1) +
@@ -525,13 +582,45 @@ void GAME1_BombermanLevelEditor::layout(const sf::RenderWindow& window)
 		{ 150.f, 44.f }
 	);
 
+	m_loadButtonBounds = sf::FloatRect(
+		{ windowWidth - 174.f, 74.f },
+		{ 150.f, 38.f }
+	);
+
+	const float loadArrowSize = 38.f;
+	const float loadSelectorWidth = 108.f;
+	const float loadGap = 4.f;
+	const float loadTotalWidth = loadArrowSize + loadGap + loadSelectorWidth + loadGap + loadArrowSize;
+	const float loadStartX = windowWidth - loadTotalWidth - 24.f;
+	const float loadY = 118.f;
+
+	m_loadPreviousButtonBounds = sf::FloatRect(
+		{ loadStartX, loadY },
+		{ loadArrowSize, loadArrowSize }
+	);
+
+	m_loadLevelSelectorBounds = sf::FloatRect(
+		{ loadStartX + loadArrowSize + loadGap, loadY },
+		{ loadSelectorWidth, loadArrowSize }
+	);
+
+	m_loadNextButtonBounds = sf::FloatRect(
+		{ loadStartX + loadArrowSize + loadGap + loadSelectorWidth + loadGap, loadY },
+		{ loadArrowSize, loadArrowSize }
+	);
+
+	m_worldPreviousButtonBounds = sf::FloatRect(
+		{ 14.f, 22.f },
+		{ 44.f, 44.f }
+	);
+
 	m_worldSelectorBounds = sf::FloatRect(
-		{ 24.f, 22.f },
+		{ 62.f, 22.f },
 		{ 150.f, 44.f }
 	);
 
 	m_worldNextButtonBounds = sf::FloatRect(
-		{ 178.f, 22.f },
+		{ 216.f, 22.f },
 		{ 44.f, 44.f }
 	);
 
@@ -637,6 +726,16 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 		sf::Color::White
 	);
 
+	sf::RectangleShape worldPreviousButton;
+	worldPreviousButton.setPosition(m_worldPreviousButtonBounds.position);
+	worldPreviousButton.setSize(m_worldPreviousButtonBounds.size);
+	worldPreviousButton.setFillColor(sf::Color(45, 45, 70));
+	worldPreviousButton.setOutlineColor(sf::Color::White);
+	worldPreviousButton.setOutlineThickness(2.f);
+	window.draw(worldPreviousButton);
+
+	drawTextCentered("<", 28, m_worldPreviousButtonBounds, sf::Color::White);
+
 	sf::RectangleShape worldBox;
 	worldBox.setPosition(m_worldSelectorBounds.position);
 	worldBox.setSize(m_worldSelectorBounds.size);
@@ -671,6 +770,46 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 	window.draw(saveButton);
 
 	drawTextCentered("SAVE", 22, m_saveButtonBounds, sf::Color::White);
+
+	sf::RectangleShape loadButton;
+	loadButton.setPosition(m_loadButtonBounds.position);
+	loadButton.setSize(m_loadButtonBounds.size);
+	loadButton.setFillColor(sf::Color(45, 70, 120));
+	loadButton.setOutlineColor(sf::Color::White);
+	loadButton.setOutlineThickness(2.f);
+	window.draw(loadButton);
+
+	drawTextCentered("<Load>", 19, m_loadButtonBounds, sf::Color::White);
+
+	sf::RectangleShape loadPreviousButton;
+	loadPreviousButton.setPosition(m_loadPreviousButtonBounds.position);
+	loadPreviousButton.setSize(m_loadPreviousButtonBounds.size);
+	loadPreviousButton.setFillColor(sf::Color(45, 45, 70));
+	loadPreviousButton.setOutlineColor(sf::Color::White);
+	loadPreviousButton.setOutlineThickness(2.f);
+	window.draw(loadPreviousButton);
+
+	drawTextCentered("<", 24, m_loadPreviousButtonBounds, sf::Color::White);
+
+	sf::RectangleShape loadSelectorBox;
+	loadSelectorBox.setPosition(m_loadLevelSelectorBounds.position);
+	loadSelectorBox.setSize(m_loadLevelSelectorBounds.size);
+	loadSelectorBox.setFillColor(sf::Color(38, 38, 52));
+	loadSelectorBox.setOutlineColor(sf::Color::White);
+	loadSelectorBox.setOutlineThickness(2.f);
+	window.draw(loadSelectorBox);
+
+	drawTextCentered(getSelectedLoadLevelName(), 16, m_loadLevelSelectorBounds, sf::Color(255, 230, 120));
+
+	sf::RectangleShape loadNextButton;
+	loadNextButton.setPosition(m_loadNextButtonBounds.position);
+	loadNextButton.setSize(m_loadNextButtonBounds.size);
+	loadNextButton.setFillColor(sf::Color(45, 45, 70));
+	loadNextButton.setOutlineColor(sf::Color::White);
+	loadNextButton.setOutlineThickness(2.f);
+	window.draw(loadNextButton);
+
+	drawTextCentered(">", 24, m_loadNextButtonBounds, sf::Color::White);
 
 	const Tool* selectedTool = nullptr;
 
@@ -853,6 +992,30 @@ void GAME1_BombermanLevelEditor::handleMousePressed(sf::Mouse::Button button, sf
 		if (containsPoint(m_saveButtonBounds, mousePosition))
 		{
 			saveToNextLevelFile();
+			return;
+		}
+
+		if (containsPoint(m_loadButtonBounds, mousePosition))
+		{
+			loadSelectedLevelIntoEditor();
+			return;
+		}
+
+		if (containsPoint(m_loadPreviousButtonBounds, mousePosition))
+		{
+			selectPreviousLoadLevel();
+			return;
+		}
+
+		if (containsPoint(m_loadNextButtonBounds, mousePosition))
+		{
+			selectNextLoadLevel();
+			return;
+		}
+
+		if (containsPoint(m_worldPreviousButtonBounds, mousePosition))
+		{
+			selectPreviousWorld();
 			return;
 		}
 
@@ -1152,7 +1315,40 @@ void GAME1_BombermanLevelEditor::selectNextWorld()
 	const int previousHotbarPage = m_hotbarPage;
 	const std::vector<std::string> previousRows = m_rows;
 
-	m_worldNumber = m_worldNumber == 1 ? 2 : 1;
+	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
+
+	m_worldNumber = m_worldNumber >= highestWorld ? 1 : m_worldNumber + 1;
+	m_hotbarPage = 0;
+
+	if (!loadRowsFromFile(getTemplatePath().string()))
+	{
+		m_worldNumber = previousWorld;
+		m_selectedToolIndex = previousSelectedToolIndex;
+		m_hotbarPage = previousHotbarPage;
+		m_rows = previousRows;
+		buildTools();
+		rebuildVisibleToolbar();
+		return;
+	}
+
+	buildTools();
+
+	m_selectedToolIndex = 0;
+	m_hotbarPage = 0;
+
+	rebuildVisibleToolbar();
+}
+
+void GAME1_BombermanLevelEditor::selectPreviousWorld()
+{
+	const int previousWorld = m_worldNumber;
+	const int previousSelectedToolIndex = m_selectedToolIndex;
+	const int previousHotbarPage = m_hotbarPage;
+	const std::vector<std::string> previousRows = m_rows;
+
+	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
+
+	m_worldNumber = m_worldNumber <= 1 ? highestWorld : m_worldNumber - 1;
 	m_hotbarPage = 0;
 
 	if (!loadRowsFromFile(getTemplatePath().string()))
@@ -1234,6 +1430,143 @@ void GAME1_BombermanLevelEditor::ensureSelectedToolVisible()
 	const int worldToolIndex = m_selectedToolIndex - m_fixedToolCount;
 	m_hotbarPage = worldToolIndex / m_worldToolsPerPage;
 	rebuildVisibleToolbar();
+}
+
+void GAME1_BombermanLevelEditor::refreshSavedLevelList()
+{
+	namespace fs = std::filesystem;
+
+	m_savedLevelPaths.clear();
+
+	try
+	{
+		fs::create_directories(m_mapsDirectory);
+
+		std::vector<fs::path> paths;
+
+		for (const auto& entry : fs::directory_iterator(m_mapsDirectory))
+		{
+			if (entry.is_regular_file() && isValidLevelFile(entry.path()))
+			{
+				paths.push_back(entry.path());
+			}
+		}
+
+		std::sort(paths.begin(), paths.end(),
+			[this](const fs::path& a, const fs::path& b)
+			{
+				return extractLevelNumber(a) < extractLevelNumber(b);
+			});
+
+		for (const fs::path& path : paths)
+		{
+			m_savedLevelPaths.push_back(path.string());
+		}
+	}
+	catch (...)
+	{
+		m_savedLevelPaths.clear();
+	}
+
+	if (m_savedLevelPaths.empty())
+	{
+		m_selectedLoadLevelIndex = 0;
+		return;
+	}
+
+	if (m_selectedLoadLevelIndex < 0)
+		m_selectedLoadLevelIndex = 0;
+
+	if (m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+		m_selectedLoadLevelIndex = static_cast<int>(m_savedLevelPaths.size()) - 1;
+}
+
+void GAME1_BombermanLevelEditor::selectNextLoadLevel()
+{
+	refreshSavedLevelList();
+
+	if (m_savedLevelPaths.empty())
+		return;
+
+	m_selectedLoadLevelIndex =
+		(m_selectedLoadLevelIndex + 1) % static_cast<int>(m_savedLevelPaths.size());
+}
+
+void GAME1_BombermanLevelEditor::selectPreviousLoadLevel()
+{
+	refreshSavedLevelList();
+
+	if (m_savedLevelPaths.empty())
+		return;
+
+	--m_selectedLoadLevelIndex;
+
+	if (m_selectedLoadLevelIndex < 0)
+		m_selectedLoadLevelIndex = static_cast<int>(m_savedLevelPaths.size()) - 1;
+}
+
+bool GAME1_BombermanLevelEditor::loadSelectedLevelIntoEditor()
+{
+	refreshSavedLevelList();
+
+	m_lastError.clear();
+	m_lastSavedPath.clear();
+
+	if (m_savedLevelPaths.empty())
+	{
+		m_lastError = "No saved Bomberman levels found in:\n" + m_mapsDirectory;
+		return false;
+	}
+
+	if (m_selectedLoadLevelIndex < 0 ||
+		m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	{
+		m_selectedLoadLevelIndex = 0;
+	}
+
+	const std::string selectedPath = m_savedLevelPaths[m_selectedLoadLevelIndex];
+
+	const int previousWorld = m_worldNumber;
+	const int previousSelectedToolIndex = m_selectedToolIndex;
+	const int previousHotbarPage = m_hotbarPage;
+	const std::vector<std::string> previousRows = m_rows;
+
+	m_worldNumber = 1;
+
+	if (!loadRowsFromFile(selectedPath))
+	{
+		m_worldNumber = previousWorld;
+		m_selectedToolIndex = previousSelectedToolIndex;
+		m_hotbarPage = previousHotbarPage;
+		m_rows = previousRows;
+		buildTools();
+		rebuildVisibleToolbar();
+		return false;
+	}
+
+	buildTools();
+
+	m_selectedToolIndex = 0;
+	m_hotbarPage = 0;
+
+	rebuildVisibleToolbar();
+
+	return true;
+}
+
+std::string GAME1_BombermanLevelEditor::getSelectedLoadLevelName() const
+{
+	if (m_savedLevelPaths.empty())
+		return "<none>";
+
+	if (m_selectedLoadLevelIndex < 0 ||
+		m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	{
+		return "<none>";
+	}
+
+	const std::filesystem::path path(m_savedLevelPaths[m_selectedLoadLevelIndex]);
+	return path.stem().string();
 }
 
 int GAME1_BombermanLevelEditor::findToolIndexForTile(char tile) const
@@ -1360,6 +1693,19 @@ bool GAME1_BombermanLevelEditor::saveToNextLevelFile()
 		}
 
 		m_lastSavedPath = savePath.string();
+
+		refreshSavedLevelList();
+
+		for (int i = 0; i < static_cast<int>(m_savedLevelPaths.size()); ++i)
+		{
+			if (std::filesystem::path(m_savedLevelPaths[i]).lexically_normal() ==
+				savePath.lexically_normal())
+			{
+				m_selectedLoadLevelIndex = i;
+				break;
+			}
+		}
+
 		return true;
 	}
 	catch (const std::exception& e)
@@ -1472,12 +1818,12 @@ void GAME1_BombermanLevelEditor::drawTextureFitted(sf::RenderTarget& target,
 
 std::filesystem::path GAME1_BombermanLevelEditor::getTemplatePath() const
 {
-	if (m_worldNumber == 2)
+	if (m_worldNumber <= 1)
 	{
-		return getMapsDirectory() / "leveltemplate2.txt";
+		return getMapsDirectory() / "leveltemplate.txt";
 	}
 
-	return getMapsDirectory() / "leveltemplate.txt";
+	return getMapsDirectory() / ("leveltemplate" + std::to_string(m_worldNumber) + ".txt");
 }
 
 std::filesystem::path GAME1_BombermanLevelEditor::getMapsDirectory() const
@@ -1495,6 +1841,34 @@ std::filesystem::path GAME1_BombermanLevelEditor::getCurrentWorldTilesDirectory(
 	return getTilesDirectory() / ("World" + std::to_string(m_worldNumber));
 }
 
+int GAME1_BombermanLevelEditor::getHighestAvailableWorldNumber() const
+{
+	namespace fs = std::filesystem;
+
+	int highestWorldNumber = 1;
+
+	const fs::path tilesDirectory = getTilesDirectory();
+
+	if (!fs::exists(tilesDirectory) || !fs::is_directory(tilesDirectory))
+		return highestWorldNumber;
+
+	for (const auto& entry : fs::directory_iterator(tilesDirectory))
+	{
+		if (!entry.is_directory())
+			continue;
+
+		const std::optional<int> worldNumber = TryExtractWorldNumberFromFolder(entry.path());
+
+		if (!worldNumber.has_value())
+			continue;
+
+		if (worldNumber.value() > highestWorldNumber)
+			highestWorldNumber = worldNumber.value();
+	}
+
+	return highestWorldNumber;
+}
+
 bool GAME1_BombermanLevelEditor::isValidLevelFile(const std::filesystem::path& path) const
 {
 	if (!path.has_filename() || path.extension() != ".txt")
@@ -1502,10 +1876,7 @@ bool GAME1_BombermanLevelEditor::isValidLevelFile(const std::filesystem::path& p
 
 	const std::string stem = path.stem().string();
 
-	if (stem == "leveltemplate")
-		return false;
-
-	if (stem == "leveltemplate2")
+	if (stem.rfind("leveltemplate", 0) == 0)
 		return false;
 
 	if (stem.rfind("level", 0) != 0)

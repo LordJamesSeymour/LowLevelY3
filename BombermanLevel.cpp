@@ -268,6 +268,36 @@ bool BombermanLevel::loadWorldTileTextures(const std::string& resourcesDirectory
 	if (!loadTexture(m_floorTexture, (worldTilesPath / "floor.png").string(), "world floor"))
 		return false;
 
+	if (m_worldNumber == 3)
+	{
+		if (!loadWorldWallTexture('M', (worldTilesPath / "solidblock_0.png").string(), "world 3 solid block")) return false;
+
+		if (!loadWorldWallTexture('S', (worldTilesPath / "solidwall_bot.png").string(), "world 3 bottom wall")) return false;
+		if (!loadWorldWallTexture('T', (worldTilesPath / "solidwall_top.png").string(), "world 3 top wall")) return false;
+		if (!loadWorldWallTexture('L', (worldTilesPath / "solidwall_left.png").string(), "world 3 left wall")) return false;
+		if (!loadWorldWallTexture('R', (worldTilesPath / "solidwall_right.png").string(), "world 3 right wall")) return false;
+
+		if (!loadWorldWallTexture('Q', (worldTilesPath / "solidwall_topleft.png").string(), "world 3 top-left wall")) return false;
+		if (!loadWorldWallTexture('Y', (worldTilesPath / "solidwall_topright.png").string(), "world 3 top-right wall")) return false;
+		if (!loadWorldWallTexture('Z', (worldTilesPath / "solidwall_botleft.png").string(), "world 3 bottom-left wall")) return false;
+		if (!loadWorldWallTexture('C', (worldTilesPath / "solidwall_botright.png").string(), "world 3 bottom-right wall")) return false;
+
+		if (!loadWorldWallTexture('U', (worldTilesPath / "solidwall_backleft_0.png").string(), "world 3 back-left wall 0")) return false;
+		if (!loadWorldWallTexture('D', (worldTilesPath / "solidwall_backright_0.png").string(), "world 3 back-right wall 0")) return false;
+
+		if (!loadWorldWallTexture('F', (worldTilesPath / "solidwall_backleft_1.png").string(), "world 3 back-left wall 1")) return false;
+		if (!loadWorldWallTexture('G', (worldTilesPath / "solidwall_backleft_2.png").string(), "world 3 back-left wall 2")) return false;
+		if (!loadWorldWallTexture('H', (worldTilesPath / "solidwall_backleft_3.png").string(), "world 3 back-left wall 3")) return false;
+		if (!loadWorldWallTexture('I', (worldTilesPath / "solidwall_backleft_4.png").string(), "world 3 back-left wall 4")) return false;
+
+		if (!loadWorldWallTexture('J', (worldTilesPath / "solidwall_backright_1.png").string(), "world 3 back-right wall 1")) return false;
+		if (!loadWorldWallTexture('N', (worldTilesPath / "solidwall_backright_2.png").string(), "world 3 back-right wall 2")) return false;
+		if (!loadWorldWallTexture('V', (worldTilesPath / "solidwall_backright_3.png").string(), "world 3 back-right wall 3")) return false;
+		if (!loadWorldWallTexture('W', (worldTilesPath / "solidwall_backright_4.png").string(), "world 3 back-right wall 4")) return false;
+
+		return true;
+	}
+
 	if (m_worldNumber == 2)
 	{
 		if (!loadWorldWallTexture('M', (worldTilesPath / "solidblock.png").string(), "world 2 solid block")) return false;

@@ -90,9 +90,17 @@ private:
 	void selectPreviousTool();
 
 	void selectNextWorld();
+	void selectPreviousWorld();
+
 	void selectNextHotbarPage();
 	void selectPreviousHotbarPage();
 	void ensureSelectedToolVisible();
+
+	void refreshSavedLevelList();
+	void selectNextLoadLevel();
+	void selectPreviousLoadLevel();
+	bool loadSelectedLevelIntoEditor();
+	std::string getSelectedLoadLevelName() const;
 
 	int findToolIndexForTile(char tile) const;
 	int findVisibleToolbarPositionForToolIndex(int toolIndex) const;
@@ -123,6 +131,8 @@ private:
 	std::filesystem::path getTilesDirectory() const;
 	std::filesystem::path getCurrentWorldTilesDirectory() const;
 
+	int getHighestAvailableWorldNumber() const;
+
 	bool isValidLevelFile(const std::filesystem::path& path) const;
 	int extractLevelNumber(const std::filesystem::path& path) const;
 
@@ -136,6 +146,9 @@ private:
 	std::vector<std::string> m_rows;
 	std::vector<Tool> m_tools;
 	std::vector<int> m_visibleToolbarToolIndices;
+
+	std::vector<std::string> m_savedLevelPaths;
+	int m_selectedLoadLevelIndex = 0;
 
 	int m_selectedToolIndex = 0;
 	int m_worldNumber = 1;
@@ -152,8 +165,16 @@ private:
 	float m_toolbarSlotGap = 6.f;
 
 	sf::FloatRect m_saveButtonBounds;
+
+	sf::FloatRect m_loadButtonBounds;
+	sf::FloatRect m_loadPreviousButtonBounds;
+	sf::FloatRect m_loadLevelSelectorBounds;
+	sf::FloatRect m_loadNextButtonBounds;
+
+	sf::FloatRect m_worldPreviousButtonBounds;
 	sf::FloatRect m_worldSelectorBounds;
 	sf::FloatRect m_worldNextButtonBounds;
+
 	sf::FloatRect m_previousHotbarPageButtonBounds;
 	sf::FloatRect m_nextHotbarPageButtonBounds;
 

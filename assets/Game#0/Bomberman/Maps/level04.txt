@@ -1,0 +1,14 @@
+#WORLD=2
+UQTTTTTTTTTTTTTYD
+JGP            IN
+JF M M M M M M HN
+JF        O    HN
+JF M M M M M M HN
+JF  O     A    HN
+JF M M M M M M HN
+JFM   M O    M HN
+JFMM M M M M M HN
+JF   M      A  HN
+JF M MMM M M M HN
+UL  A     A    RD
+ZVSSSSSSSSSSSSSWC
