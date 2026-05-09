@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 
 namespace
@@ -67,6 +69,27 @@ namespace
 
 		return a.filename().string() < b.filename().string();
 	}
+
+	bool TryParseWorldMetadata(const std::string& line, int& outWorldNumber)
+	{
+		const std::string prefix = "#WORLD=";
+
+		if (line.rfind(prefix, 0) != 0)
+			return false;
+
+		try
+		{
+			const int parsedWorld = std::stoi(line.substr(prefix.size()));
+
+			if (parsedWorld >= 1)
+				outWorldNumber = parsedWorld;
+		}
+		catch (...)
+		{
+		}
+
+		return true;
+	}
 }
 
 bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
@@ -128,6 +151,9 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 		return false;
 
 	if (!loadSound(m_placeBombBuffer, m_placeBombSound, (audioDirectory / "Place_Bomb.wav").string(), "place bomb"))
+		return false;
+
+	if (!loadSound(m_punchBombBuffer, m_punchBombSound, (audioDirectory / "Punch_Bomb.wav").string(), "punch bomb"))
 		return false;
 
 	if (!loadSound(m_walkingBuffer, m_walkingSound, (audioDirectory / "Walking_2.wav").string(), "walking"))
@@ -559,6 +585,7 @@ bool GAME1_BombermanWindow::loadLevelAndActors(bool resetPerks)
 
 	m_playState = PlayState::Playing;
 	m_spaceHeldLastFrame = false;
+	m_punchHeldLastFrame = false;
 	m_restartHeldLastFrame = false;
 
 	m_bombAnimationSequenceIndex = 0;
@@ -796,13 +823,27 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	if (m_playState == PlayState::Playing)
 	{
 		const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		const bool punchHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		if (spaceHeld && !m_spaceHeldLastFrame)
 		{
 			placeBomb();
 		}
 
+		if (punchHeld && !m_punchHeldLastFrame)
+		{
+			m_player.startPunch();
+
+			const bool punchedBomb = tryPunchBomb();
+
+			if (!punchedBomb)
+			{
+				tryPunchBreakableBlock();
+			}
+		}
+
 		m_spaceHeldLastFrame = spaceHeld;
+		m_punchHeldLastFrame = punchHeld;
 
 		m_player.update(
 			deltaTime,
@@ -829,6 +870,7 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 		m_playState == PlayState::TeleportingIn)
 	{
 		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		stopWalkingSound();
 
@@ -848,6 +890,7 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	else
 	{
 		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		stopWalkingSound();
 
@@ -901,11 +944,97 @@ void GAME1_BombermanWindow::placeBomb()
 	playSound(m_placeBombSound);
 }
 
+bool GAME1_BombermanWindow::tryPunchBomb()
+{
+	if (!m_player.isAlive())
+		return false;
+
+	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
+	const BombermanGridPosition punchDirection = m_player.getFacingDirectionDelta();
+
+	const BombermanGridPosition punchedTile{
+		playerGrid.col + punchDirection.col,
+		playerGrid.row + punchDirection.row
+	};
+
+	for (std::size_t bombIndex = 0; bombIndex < m_bombs.size(); ++bombIndex)
+	{
+		BombermanBomb& bomb = m_bombs[bombIndex];
+
+		if (bomb.hasExploded())
+			continue;
+
+		if (bomb.isSliding())
+			continue;
+
+		if (bomb.getGridPosition() != punchedTile)
+			continue;
+
+		const int maxTilesToSlide = std::max(0, static_cast<int>(std::round(m_punchForceTiles)));
+
+		BombermanGridPosition targetPosition = bomb.getGridPosition();
+
+		for (int step = 0; step < maxTilesToSlide; ++step)
+		{
+			const BombermanGridPosition nextPosition{
+				targetPosition.col + punchDirection.col,
+				targetPosition.row + punchDirection.row
+			};
+
+			if (isTileBlockedForSlidingBomb(nextPosition.col, nextPosition.row, bombIndex))
+				break;
+
+			targetPosition = nextPosition;
+		}
+
+		if (targetPosition == bomb.getGridPosition())
+			return false;
+
+		bomb.startSlide(targetPosition, m_punchedBombSlideSpeed);
+		playSound(m_punchBombSound);
+		return true;
+	}
+
+	return false;
+}
+
+bool GAME1_BombermanWindow::tryPunchBreakableBlock()
+{
+	if (!m_player.isAlive())
+		return false;
+
+	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
+	const BombermanGridPosition punchDirection = m_player.getFacingDirectionDelta();
+
+	const BombermanGridPosition punchedTile{
+		playerGrid.col + punchDirection.col,
+		playerGrid.row + punchDirection.row
+	};
+
+	return m_level.startBreakingBlock(punchedTile.col, punchedTile.row);
+}
+
 bool GAME1_BombermanWindow::isBombAtTile(BombermanGridPosition gridPosition) const
 {
 	for (const BombermanBomb& bomb : m_bombs)
 	{
-		if (!bomb.hasExploded() && bomb.getGridPosition() == gridPosition)
+		if (!bomb.hasExploded() && bomb.occupiesGridPosition(gridPosition))
+			return true;
+	}
+
+	return false;
+}
+
+bool GAME1_BombermanWindow::isBombAtTileIgnoringIndex(BombermanGridPosition gridPosition, std::size_t ignoredBombIndex) const
+{
+	for (std::size_t i = 0; i < m_bombs.size(); ++i)
+	{
+		if (i == ignoredBombIndex)
+			continue;
+
+		const BombermanBomb& bomb = m_bombs[i];
+
+		if (!bomb.hasExploded() && bomb.occupiesGridPosition(gridPosition))
 			return true;
 	}
 
@@ -922,9 +1051,7 @@ bool GAME1_BombermanWindow::isTileBlockedForPlayer(int col, int row) const
 		if (bomb.hasExploded())
 			continue;
 
-		const BombermanGridPosition bombGrid = bomb.getGridPosition();
-
-		if (bombGrid.col != col || bombGrid.row != row)
+		if (!bomb.occupiesGridPosition({ col, row }))
 			continue;
 
 		if (bomb.canPlayerPassThrough())
@@ -946,9 +1073,7 @@ bool GAME1_BombermanWindow::isTileBlockedForEnemies(int col, int row) const
 		if (bomb.hasExploded())
 			continue;
 
-		const BombermanGridPosition bombGrid = bomb.getGridPosition();
-
-		if (bombGrid.col == col && bombGrid.row == row)
+		if (bomb.occupiesGridPosition({ col, row }))
 			return true;
 	}
 
@@ -965,11 +1090,20 @@ bool GAME1_BombermanWindow::isTileBlockedForLamp(int col, int row) const
 		if (bomb.hasExploded())
 			continue;
 
-		const BombermanGridPosition bombGrid = bomb.getGridPosition();
-
-		if (bombGrid.col == col && bombGrid.row == row)
+		if (bomb.occupiesGridPosition({ col, row }))
 			return true;
 	}
+
+	return false;
+}
+
+bool GAME1_BombermanWindow::isTileBlockedForSlidingBomb(int col, int row, std::size_t ignoredBombIndex) const
+{
+	if (m_level.isBlockedForMovement(col, row))
+		return true;
+
+	if (isBombAtTileIgnoringIndex({ col, row }, ignoredBombIndex))
+		return true;
 
 	return false;
 }
@@ -1149,7 +1283,7 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 
 			for (BombermanBomb& otherBomb : m_bombs)
 			{
-				if (!otherBomb.hasExploded() && otherBomb.getGridPosition() == current)
+				if (!otherBomb.hasExploded() && otherBomb.occupiesGridPosition(current))
 				{
 					otherBomb.triggerNow();
 				}
@@ -1615,16 +1749,27 @@ bool GAME1_BombermanWindow::getNextLevelPath(std::string& outNextLevelPath) cons
 
 int GAME1_BombermanWindow::getWorldIndexForLevelPath(const std::string& levelPath) const
 {
-	const int levelNumber = extractLevelNumber(std::filesystem::path(levelPath));
+	std::ifstream file(levelPath);
 
-	if (levelNumber <= 0)
-		return 0;
+	if (!file.is_open())
+		return 1;
 
-	// World grouping:
-	// level01 + level02 = world 0
-	// level03 + level04 = world 1
-	// level05 + level06 = world 2
-	return (levelNumber - 1) / 2;
+	std::string line;
+	int worldNumber = 1;
+
+	while (std::getline(file, line))
+	{
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+
+		if (TryParseWorldMetadata(line, worldNumber))
+			return worldNumber;
+
+		if (!line.empty() && line[0] != '#')
+			break;
+	}
+
+	return worldNumber;
 }
 
 bool GAME1_BombermanWindow::isValidPlayableLevelFile(const std::filesystem::path& path)
@@ -1721,6 +1866,26 @@ void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
 		drawY += static_cast<float>(BombermanLevel::TileSize);
 
 	sprite.setPosition({ drawX, drawY });
+
+	target.draw(sprite);
+}
+
+void GAME1_BombermanWindow::drawTextureAtWorldPosition(sf::RenderTarget& target,
+	const sf::Texture& texture,
+	sf::Vector2f worldPosition) const
+{
+	sf::Sprite sprite(texture);
+
+	const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+		return;
+
+	const float scaleX = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x;
+	const float scaleY = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y;
+
+	sprite.setScale({ scaleX, scaleY });
+	sprite.setPosition(worldPosition);
 
 	target.draw(sprite);
 }
@@ -1916,9 +2081,13 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 		{
 			for (const BombermanBomb& bomb : m_bombs)
 			{
-				if (bomb.getGridPosition().row == row)
+				const int bombDrawRow = static_cast<int>(
+					std::floor((bomb.getDrawPosition().y + static_cast<float>(BombermanLevel::TileSize) * 0.5f) /
+						static_cast<float>(BombermanLevel::TileSize)));
+
+				if (bombDrawRow == row)
 				{
-					drawTextureInTile(window, *currentBombTexture, bomb.getGridPosition());
+					drawTextureAtWorldPosition(window, *currentBombTexture, bomb.getDrawPosition());
 				}
 			}
 		}
@@ -2028,6 +2197,7 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		m_statsText->setString(
 			"Level: " + levelName +
+			"   World: " + std::to_string(m_level.getWorldNumber()) +
 			"   Lives: " + std::to_string(std::max(0, m_playerLives)) +
 			"   Bombs: " + std::to_string(m_maxActiveBombs) +
 			"   Range: " + std::to_string(m_bombRange) +
@@ -2077,7 +2247,7 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 	if (m_helpText)
 	{
-		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    R: Restart Current Level    ESC: Menu");
+		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    E: Punch Bomb / Break Block    R: Restart Current Level    ESC: Menu");
 
 		const sf::FloatRect bounds = m_helpText->getLocalBounds();
 

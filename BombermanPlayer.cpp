@@ -116,9 +116,45 @@ bool BombermanPlayer::load(const std::string& playerDirectory)
 		return false;
 	}
 
+	if (!loadPunchTexture(
+		m_punchDownAnimation,
+		(baseDirectory / "Punch" / "punchdown.png").string(),
+		"player punch down"))
+	{
+		return false;
+	}
+
+	if (!loadPunchTexture(
+		m_punchRightAnimation,
+		(baseDirectory / "Punch" / "punchright.png").string(),
+		"player punch right"))
+	{
+		return false;
+	}
+
+	if (!loadPunchTexture(
+		m_punchUpAnimation,
+		(baseDirectory / "Punch" / "punchup.png").string(),
+		"player punch up"))
+	{
+		return false;
+	}
+
+	if (!loadPunchTexture(
+		m_punchLeftAnimation,
+		(baseDirectory / "Punch" / "punchleft.png").string(),
+		"player punch left"))
+	{
+		return false;
+	}
+
 	m_facing = Direction::Front;
 	m_animationTimer = 0.f;
 	m_animationSequenceIndex = 0;
+
+	m_isPunching = false;
+	m_punchTimer = 0.f;
+	m_punchSequenceIndex = 0;
 
 	return true;
 }
@@ -178,6 +214,22 @@ bool BombermanPlayer::loadAnimationFramesFromDirectory(AnimationSet& animation,
 	return true;
 }
 
+bool BombermanPlayer::loadPunchTexture(PunchAnimationSet& punchAnimation,
+	const std::string& texturePath,
+	const std::string& readableName)
+{
+	punchAnimation.loaded = false;
+
+	if (!punchAnimation.texture.loadFromFile(texturePath))
+	{
+		m_lastError = "Failed to load Bomberman " + readableName + " texture: " + texturePath;
+		return false;
+	}
+
+	punchAnimation.loaded = true;
+	return true;
+}
+
 void BombermanPlayer::reset(BombermanGridPosition spawnPosition, const BombermanLevel& level)
 {
 	m_position = level.gridToWorldTopLeft(spawnPosition);
@@ -193,6 +245,10 @@ void BombermanPlayer::reset(BombermanGridPosition spawnPosition, const Bomberman
 	m_animationTimer = 0.f;
 	m_animationSequenceIndex = 0;
 
+	m_isPunching = false;
+	m_punchTimer = 0.f;
+	m_punchSequenceIndex = 0;
+
 	m_previousInputState = {};
 }
 
@@ -206,6 +262,8 @@ void BombermanPlayer::update(float deltaTime,
 	{
 		m_invincibilityTimer = std::max(0.f, m_invincibilityTimer - deltaTime);
 	}
+
+	updatePunchAnimation(deltaTime);
 
 	if (!m_alive)
 		return;
@@ -257,8 +315,6 @@ sf::Vector2f BombermanPlayer::resolveMovementInput(const HeldInputState& inputSt
 	const bool leftPressed = inputState.left && !m_previousInputState.left;
 	const bool rightPressed = inputState.right && !m_previousInputState.right;
 
-	// New inputs immediately take priority. This fixes the old issue where
-	// pressing A/D during vertical movement felt unresponsive.
 	if (leftPressed)
 	{
 		setFacing(Direction::Left);
@@ -283,7 +339,6 @@ sf::Vector2f BombermanPlayer::resolveMovementInput(const HeldInputState& inputSt
 		return { 0.f, 1.f };
 	}
 
-	// If the current direction is still held, keep moving that way.
 	if (isDirectionHeld(m_facing, inputState))
 	{
 		switch (m_facing)
@@ -303,7 +358,6 @@ sf::Vector2f BombermanPlayer::resolveMovementInput(const HeldInputState& inputSt
 		}
 	}
 
-	// Fallback when multiple keys are already held before this frame.
 	if (inputState.left)
 	{
 		setFacing(Direction::Left);
@@ -361,6 +415,69 @@ void BombermanPlayer::setFacing(Direction direction)
 	m_animationSequenceIndex = 0;
 }
 
+bool BombermanPlayer::startPunch()
+{
+	if (!m_alive)
+		return false;
+
+	const PunchAnimationSet& punchAnimation = getCurrentPunchAnimation();
+
+	if (!punchAnimation.loaded)
+		return false;
+
+	m_isPunching = true;
+	m_punchTimer = 0.f;
+	m_punchSequenceIndex = 0;
+
+	return true;
+}
+
+bool BombermanPlayer::isPunching() const
+{
+	return m_isPunching;
+}
+
+BombermanGridPosition BombermanPlayer::getFacingDirectionDelta() const
+{
+	switch (m_facing)
+	{
+	case Direction::Left:
+		return { -1, 0 };
+
+	case Direction::Right:
+		return { 1, 0 };
+
+	case Direction::Back:
+		return { 0, -1 };
+
+	case Direction::Front:
+	default:
+		return { 0, 1 };
+	}
+}
+
+void BombermanPlayer::updatePunchAnimation(float deltaTime)
+{
+	if (!m_isPunching)
+		return;
+
+	m_punchTimer += deltaTime;
+
+	while (m_punchTimer >= m_punchFrameDuration)
+	{
+		m_punchTimer -= m_punchFrameDuration;
+		++m_punchSequenceIndex;
+
+		if (m_punchSequenceIndex >= 4)
+		{
+			m_isPunching = false;
+			m_punchTimer = 0.f;
+			m_punchSequenceIndex = 0;
+			return;
+		}
+	}
+}
+
 void BombermanPlayer::tryMove(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked)
 {
 	if (tryMoveDirect(movement, isTileBlocked))
@@ -398,9 +515,6 @@ bool BombermanPlayer::tryMoveWithEdgeCorrection(sf::Vector2f movement, const Til
 			const sf::Vector2f correctedStart = m_position + correction;
 			const sf::Vector2f correctedEnd = correctedStart + movement;
 
-			// Important:
-			// Do not pull the player sideways unless the correction fully clears
-			// both the starting position and the final movement.
 			if (wouldCollideAt(correctedStart, isTileBlocked))
 				continue;
 
@@ -492,6 +606,25 @@ const BombermanPlayer::AnimationSet& BombermanPlayer::getCurrentAnimation() cons
 	}
 }
 
+const BombermanPlayer::PunchAnimationSet& BombermanPlayer::getCurrentPunchAnimation() const
+{
+	switch (m_facing)
+	{
+	case Direction::Back:
+		return m_punchUpAnimation;
+
+	case Direction::Left:
+		return m_punchLeftAnimation;
+
+	case Direction::Right:
+		return m_punchRightAnimation;
+
+	case Direction::Front:
+	default:
+		return m_punchDownAnimation;
+	}
+}
+
 std::size_t BombermanPlayer::getCurrentFrameIndex() const
 {
 	const AnimationSet& animation = getCurrentAnimation();
@@ -502,14 +635,11 @@ std::size_t BombermanPlayer::getCurrentFrameIndex() const
 	if (animation.frames.size() == 1)
 		return 0;
 
-	// Idle frame should be _1 when available.
 	if (!m_isMoving)
 	{
 		return animation.frames.size() > 1 ? 1 : 0;
 	}
 
-	// Desired movement loop:
-	// _1 > _2 > _1 > _0 > _1, repeat.
 	if (animation.frames.size() >= 3)
 	{
 		static constexpr std::size_t sequence[] = { 1, 2, 1, 0, 1 };
@@ -517,9 +647,22 @@ std::size_t BombermanPlayer::getCurrentFrameIndex() const
 		return sequence[sequenceIndex];
 	}
 
-	// Fallback for 2-frame animations.
 	static constexpr std::size_t twoFrameSequence[] = { 0, 1, 0 };
 	return twoFrameSequence[m_animationSequenceIndex % 3];
+}
+
+bool BombermanPlayer::shouldDrawPunchSprite() const
+{
+	if (!m_isPunching)
+		return false;
+
+	// Punch animation pattern:
+	// Facing > Punch > Facing > Punch
+	// Sequence index 0 = facing
+	// Sequence index 1 = punch
+	// Sequence index 2 = facing
+	// Sequence index 3 = punch
+	return m_punchSequenceIndex == 1 || m_punchSequenceIndex == 3;
 }
 
 void BombermanPlayer::draw(sf::RenderTarget& target) const
@@ -535,14 +678,27 @@ void BombermanPlayer::draw(sf::RenderTarget& target) const
 			return;
 	}
 
-	const AnimationSet& animation = getCurrentAnimation();
+	const sf::Texture* textureToDraw = nullptr;
 
-	if (animation.frames.empty())
-		return;
+	if (shouldDrawPunchSprite())
+	{
+		const PunchAnimationSet& punchAnimation = getCurrentPunchAnimation();
 
-	const sf::Texture& texture = animation.frames[getCurrentFrameIndex()];
+		if (punchAnimation.loaded)
+			textureToDraw = &punchAnimation.texture;
+	}
 
-	sf::Sprite sprite(texture);
+	if (textureToDraw == nullptr)
+	{
+		const AnimationSet& animation = getCurrentAnimation();
+
+		if (animation.frames.empty())
+			return;
+
+		textureToDraw = &animation.frames[getCurrentFrameIndex()];
+	}
+
+	sf::Sprite sprite(*textureToDraw);
 
 	const sf::FloatRect localBounds = sprite.getLocalBounds();
 
@@ -566,6 +722,7 @@ bool BombermanPlayer::isAlive() const
 void BombermanPlayer::kill()
 {
 	m_alive = false;
+	m_isPunching = false;
 }
 
 void BombermanPlayer::beginInvincibility(float duration)

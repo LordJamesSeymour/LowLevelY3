@@ -34,6 +34,10 @@ public:
 	void setMoveSpeed(float moveSpeed);
 	float getMoveSpeed() const;
 
+	bool startPunch();
+	bool isPunching() const;
+	BombermanGridPosition getFacingDirectionDelta() const;
+
 	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
 
 	sf::FloatRect getBounds() const;
@@ -55,6 +59,12 @@ private:
 		std::vector<sf::Texture> frames;
 	};
 
+	struct PunchAnimationSet
+	{
+		sf::Texture texture;
+		bool loaded = false;
+	};
+
 	struct HeldInputState
 	{
 		bool up = false;
@@ -68,14 +78,23 @@ private:
 		const std::string& directoryPath,
 		const std::string& readableName);
 
+	bool loadPunchTexture(PunchAnimationSet& punchAnimation,
+		const std::string& texturePath,
+		const std::string& readableName);
+
 	HeldInputState readInputState() const;
 	sf::Vector2f resolveMovementInput(const HeldInputState& inputState);
 	bool isDirectionHeld(Direction direction, const HeldInputState& inputState) const;
 
 	void updateAnimation(float deltaTime, bool isMoving);
+	void updatePunchAnimation(float deltaTime);
+
 	void setFacing(Direction direction);
 	const AnimationSet& getCurrentAnimation() const;
+	const PunchAnimationSet& getCurrentPunchAnimation() const;
+
 	std::size_t getCurrentFrameIndex() const;
+	bool shouldDrawPunchSprite() const;
 
 	void tryMove(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked);
 	bool tryMoveDirect(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked);
@@ -93,6 +112,11 @@ private:
 	AnimationSet m_leftAnimation;
 	AnimationSet m_rightAnimation;
 
+	PunchAnimationSet m_punchDownAnimation;
+	PunchAnimationSet m_punchUpAnimation;
+	PunchAnimationSet m_punchLeftAnimation;
+	PunchAnimationSet m_punchRightAnimation;
+
 	sf::Vector2f m_position{ 0.f, 0.f };
 
 	Direction m_facing = Direction::Front;
@@ -109,6 +133,11 @@ private:
 	float m_animationTimer = 0.f;
 	float m_animationFrameDuration = 0.11f;
 	std::size_t m_animationSequenceIndex = 0;
+
+	bool m_isPunching = false;
+	float m_punchTimer = 0.f;
+	float m_punchFrameDuration = 0.075f;
+	std::size_t m_punchSequenceIndex = 0;
 
 	HeldInputState m_previousInputState;
 

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <sstream>
 
 namespace
 {
@@ -66,6 +67,29 @@ namespace
 
 		return a.filename().string() < b.filename().string();
 	}
+
+	bool TryParseWorldMetadata(const std::string& line, int& outWorldNumber)
+	{
+		const std::string prefix = "#WORLD=";
+
+		if (line.rfind(prefix, 0) != 0)
+			return false;
+
+		try
+		{
+			const int parsedWorld = std::stoi(line.substr(prefix.size()));
+
+			if (parsedWorld >= 1)
+			{
+				outWorldNumber = parsedWorld;
+			}
+		}
+		catch (...)
+		{
+		}
+
+		return true;
+	}
 }
 
 bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string& resourcesDirectory)
@@ -79,6 +103,9 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	m_playerSpawn = { 1, 1 };
 	m_hasExit = false;
 	m_exitPosition = { 0, 0 };
+	m_worldNumber = 1;
+
+	m_wallTextures.clear();
 
 	m_exitFrames.clear();
 	m_exitCurrentFrame = 0;
@@ -91,51 +118,6 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	m_brokenFrames.clear();
 	m_activeBrokenBlocks.clear();
 	m_completedBrokenBlocks.clear();
-
-	const fs::path resourcesPath(resourcesDirectory);
-	const fs::path tilesPath = resourcesPath / "Tiles";
-
-	if (!loadTexture(m_floorTexture, (tilesPath / "floor.png").string(), "floor"))
-		return false;
-
-	if (!loadAnimationFramesFromDirectory(m_exitFrames, (tilesPath / "Exit").string(), "exit animation"))
-		return false;
-
-	if (!loadAnimationFramesFromDirectory(m_breakableFrames, (tilesPath / "Breakable").string(), "breakable block animation"))
-		return false;
-
-	if (!loadAnimationFramesFromDirectory(m_brokenFrames, (tilesPath / "Broken").string(), "broken block animation"))
-		return false;
-
-	if (!loadTexture(m_solidBlockTexture, (tilesPath / "solidblock.png").string(), "solid block"))
-		return false;
-
-	if (!loadTexture(m_wallUpTexture, (tilesPath / "solidwall_up.png").string(), "solid wall up"))
-		return false;
-
-	if (!loadTexture(m_wallDownTexture, (tilesPath / "solidwall_down.png").string(), "solid wall down"))
-		return false;
-
-	if (!loadTexture(m_wallLeftTexture, (tilesPath / "solidwall_left.png").string(), "solid wall left"))
-		return false;
-
-	if (!loadTexture(m_wallRightTexture, (tilesPath / "solidwall_right.png").string(), "solid wall right"))
-		return false;
-
-	if (!loadTexture(m_wallTopTexture, (tilesPath / "solidwall_top.png").string(), "solid wall top"))
-		return false;
-
-	if (!loadTexture(m_wallTopLeftTexture, (tilesPath / "solidwall_topleft.png").string(), "solid wall top-left"))
-		return false;
-
-	if (!loadTexture(m_wallTopRightTexture, (tilesPath / "solidwall_topright.png").string(), "solid wall top-right"))
-		return false;
-
-	if (!loadTexture(m_wallBotLeftTexture, (tilesPath / "solidwall_botleft.png").string(), "solid wall bottom-left"))
-		return false;
-
-	if (!loadTexture(m_wallBotRightTexture, (tilesPath / "solidwall_botright.png").string(), "solid wall bottom-right"))
-		return false;
 
 	std::ifstream file(mapPath);
 
@@ -157,6 +139,12 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 		if (line.empty())
 			continue;
 
+		if (TryParseWorldMetadata(line, m_worldNumber))
+			continue;
+
+		if (!line.empty() && line[0] == '#')
+			continue;
+
 		widestLine = std::max(widestLine, line.size());
 		rawLines.push_back(line);
 	}
@@ -166,6 +154,21 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 		m_lastError = "Bomberman map file is empty: " + mapPath;
 		return false;
 	}
+
+	const fs::path resourcesPath(resourcesDirectory);
+	const fs::path tilesPath = resourcesPath / "Tiles";
+
+	if (!loadWorldTileTextures(resourcesDirectory))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_exitFrames, (tilesPath / "Exit").string(), "exit animation"))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_breakableFrames, (tilesPath / "Breakable").string(), "breakable block animation"))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_brokenFrames, (tilesPath / "Broken").string(), "broken block animation"))
+		return false;
 
 	bool foundPlayerSpawn = false;
 
@@ -232,7 +235,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				m_lastError =
 					"Bomberman map error: unsupported character '" +
 					std::string(1, tile) +
-					"'. Allowed wall chars: M U D L R T Q Y Z C. Also allowed: X legacy, B, P, O Copter, A Lamp, E legacy, and space.";
+					"'. Allowed wall chars include: M S U D L R T Q Y Z C F G H I J N V W. Also allowed: X legacy, B, P, O Copter, A Lamp, E legacy, and space.";
 				return false;
 			}
 		}
@@ -246,6 +249,80 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 		return false;
 	}
 
+	return true;
+}
+
+bool BombermanLevel::loadWorldTileTextures(const std::string& resourcesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	const fs::path tilesPath = fs::path(resourcesDirectory) / "Tiles";
+
+	fs::path worldTilesPath = tilesPath / ("World" + std::to_string(m_worldNumber));
+
+	if (!fs::exists(worldTilesPath) || !fs::is_directory(worldTilesPath))
+	{
+		worldTilesPath = tilesPath;
+	}
+
+	if (!loadTexture(m_floorTexture, (worldTilesPath / "floor.png").string(), "world floor"))
+		return false;
+
+	if (m_worldNumber == 2)
+	{
+		if (!loadWorldWallTexture('M', (worldTilesPath / "solidblock.png").string(), "world 2 solid block")) return false;
+		if (!loadWorldWallTexture('S', (worldTilesPath / "solidwall_bot.png").string(), "world 2 bottom wall")) return false;
+		if (!loadWorldWallTexture('T', (worldTilesPath / "solidwall_top.png").string(), "world 2 top wall")) return false;
+
+		if (!loadWorldWallTexture('Q', (worldTilesPath / "solidwall_topleft_0.png").string(), "world 2 top-left wall")) return false;
+		if (!loadWorldWallTexture('Y', (worldTilesPath / "solidwall_topright_0.png").string(), "world 2 top-right wall")) return false;
+
+		if (!loadWorldWallTexture('Z', (worldTilesPath / "solidwall_botleft_0.png").string(), "world 2 bottom-left wall 0")) return false;
+		if (!loadWorldWallTexture('C', (worldTilesPath / "solidwall_botright_0.png").string(), "world 2 bottom-right wall 0")) return false;
+
+		if (!loadWorldWallTexture('L', (worldTilesPath / "solidwall_left_0.png").string(), "world 2 left wall 0")) return false;
+		if (!loadWorldWallTexture('R', (worldTilesPath / "solidwall_right_0.png").string(), "world 2 right wall 0")) return false;
+
+		if (!loadWorldWallTexture('U', (worldTilesPath / "solidwall_backleft_0.png").string(), "world 2 back-left wall 0")) return false;
+		if (!loadWorldWallTexture('D', (worldTilesPath / "solidwall_backright_0.png").string(), "world 2 back-right wall 0")) return false;
+
+		if (!loadWorldWallTexture('F', (worldTilesPath / "solidwall_left_1.png").string(), "world 2 left wall 1")) return false;
+		if (!loadWorldWallTexture('G', (worldTilesPath / "solidwall_left_2.png").string(), "world 2 left wall 2")) return false;
+
+		if (!loadWorldWallTexture('H', (worldTilesPath / "solidwall_right_1.png").string(), "world 2 right wall 1")) return false;
+		if (!loadWorldWallTexture('I', (worldTilesPath / "solidwall_right_2.png").string(), "world 2 right wall 2")) return false;
+
+		if (!loadWorldWallTexture('J', (worldTilesPath / "solidwall_backleft_1.png").string(), "world 2 back-left wall 1")) return false;
+		if (!loadWorldWallTexture('N', (worldTilesPath / "solidwall_backright_1.png").string(), "world 2 back-right wall 1")) return false;
+
+		if (!loadWorldWallTexture('V', (worldTilesPath / "solidwall_botleft_1.png").string(), "world 2 bottom-left wall 1")) return false;
+		if (!loadWorldWallTexture('W', (worldTilesPath / "solidwall_botright_1.png").string(), "world 2 bottom-right wall 1")) return false;
+
+		return true;
+	}
+
+	if (!loadWorldWallTexture('M', (worldTilesPath / "solidblock.png").string(), "solid block")) return false;
+	if (!loadWorldWallTexture('U', (worldTilesPath / "solidwall_up.png").string(), "solid wall up")) return false;
+	if (!loadWorldWallTexture('D', (worldTilesPath / "solidwall_down.png").string(), "solid wall down")) return false;
+	if (!loadWorldWallTexture('L', (worldTilesPath / "solidwall_left.png").string(), "solid wall left")) return false;
+	if (!loadWorldWallTexture('R', (worldTilesPath / "solidwall_right.png").string(), "solid wall right")) return false;
+	if (!loadWorldWallTexture('T', (worldTilesPath / "solidwall_top.png").string(), "solid wall top")) return false;
+	if (!loadWorldWallTexture('Q', (worldTilesPath / "solidwall_topleft.png").string(), "solid wall top-left")) return false;
+	if (!loadWorldWallTexture('Y', (worldTilesPath / "solidwall_topright.png").string(), "solid wall top-right")) return false;
+	if (!loadWorldWallTexture('Z', (worldTilesPath / "solidwall_botleft.png").string(), "solid wall bottom-left")) return false;
+	if (!loadWorldWallTexture('C', (worldTilesPath / "solidwall_botright.png").string(), "solid wall bottom-right")) return false;
+
+	return true;
+}
+
+bool BombermanLevel::loadWorldWallTexture(char tile, const std::string& texturePath, const std::string& readableName)
+{
+	sf::Texture texture;
+
+	if (!loadTexture(texture, texturePath, readableName))
+		return false;
+
+	m_wallTextures[tile] = std::move(texture);
 	return true;
 }
 
@@ -445,6 +522,7 @@ bool BombermanLevel::isSolidWallCharacter(char tile) const
 	switch (tile)
 	{
 	case 'M':
+	case 'S':
 	case 'U':
 	case 'D':
 	case 'L':
@@ -454,6 +532,14 @@ bool BombermanLevel::isSolidWallCharacter(char tile) const
 	case 'Y':
 	case 'Z':
 	case 'C':
+	case 'F':
+	case 'G':
+	case 'H':
+	case 'I':
+	case 'J':
+	case 'N':
+	case 'V':
+	case 'W':
 		return true;
 
 	default:
@@ -463,41 +549,12 @@ bool BombermanLevel::isSolidWallCharacter(char tile) const
 
 const sf::Texture* BombermanLevel::getWallTextureForTile(char tile) const
 {
-	switch (tile)
-	{
-	case 'M':
-		return &m_solidBlockTexture;
+	const auto found = m_wallTextures.find(tile);
 
-	case 'U':
-		return &m_wallUpTexture;
-
-	case 'D':
-		return &m_wallDownTexture;
-
-	case 'L':
-		return &m_wallLeftTexture;
-
-	case 'R':
-		return &m_wallRightTexture;
-
-	case 'T':
-		return &m_wallTopTexture;
-
-	case 'Q':
-		return &m_wallTopLeftTexture;
-
-	case 'Y':
-		return &m_wallTopRightTexture;
-
-	case 'Z':
-		return &m_wallBotLeftTexture;
-
-	case 'C':
-		return &m_wallBotRightTexture;
-
-	default:
+	if (found == m_wallTextures.end())
 		return nullptr;
-	}
+
+	return &found->second;
 }
 
 const sf::Texture* BombermanLevel::getCurrentBreakableTexture() const
@@ -788,6 +845,11 @@ bool BombermanLevel::hasExit() const
 BombermanGridPosition BombermanLevel::getExitPosition() const
 {
 	return m_exitPosition;
+}
+
+int BombermanLevel::getWorldNumber() const
+{
+	return m_worldNumber;
 }
 
 int BombermanLevel::getWidthInTiles() const

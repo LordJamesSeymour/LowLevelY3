@@ -1,13 +1,13 @@
-QTTTTTTTTTTTTTY
-L             R
-L             R
-LP           OR
-L             R
-L   M M M M   R
-L             R
-L   M M M M   R
-L             R
-L             R
-L             R
-L            OR
-ZDUDDDDDDDDDDDC
+TQTTTTTTTTTTTTTYT
+LL             RR
+LL             RR
+LLP           ORR
+LL             RR
+LL   M M M M   RR
+LL             RR
+LL   M M M M   RR
+LL             RR
+LL             RR
+LL             RR
+LL            ORR
+DZDDDDDDDDDDDDDCD

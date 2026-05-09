@@ -109,11 +109,16 @@ private:
 	const AnimationFrames& getExplosionAnimationForTile(BombermanExplosionTileType type) const;
 
 	void placeBomb();
+	bool tryPunchBomb();
+	bool tryPunchBreakableBlock();
+
 	bool isBombAtTile(BombermanGridPosition gridPosition) const;
+	bool isBombAtTileIgnoringIndex(BombermanGridPosition gridPosition, std::size_t ignoredBombIndex) const;
 
 	bool isTileBlockedForPlayer(int col, int row) const;
 	bool isTileBlockedForEnemies(int col, int row) const;
 	bool isTileBlockedForLamp(int col, int row) const;
+	bool isTileBlockedForSlidingBomb(int col, int row, std::size_t ignoredBombIndex) const;
 
 	void refreshBombPassThroughState();
 
@@ -172,6 +177,10 @@ private:
 		bool flipX,
 		bool flipY) const;
 
+	void drawTextureAtWorldPosition(sf::RenderTarget& target,
+		const sf::Texture& texture,
+		sf::Vector2f worldPosition) const;
+
 	void drawPowerUpInTile(sf::RenderTarget& target, const ActivePowerUp& powerUp) const;
 	void drawPowerUpIcon(sf::RenderTarget& target, PowerUpType type, sf::Vector2f position, float size) const;
 
@@ -225,12 +234,14 @@ private:
 	sf::SoundBuffer m_bombermanDiesBuffer;
 	sf::SoundBuffer m_itemGetBuffer;
 	sf::SoundBuffer m_placeBombBuffer;
+	sf::SoundBuffer m_punchBombBuffer;
 	sf::SoundBuffer m_walkingBuffer;
 
 	std::optional<sf::Sound> m_bombExplodesSound;
 	std::optional<sf::Sound> m_bombermanDiesSound;
 	std::optional<sf::Sound> m_itemGetSound;
 	std::optional<sf::Sound> m_placeBombSound;
+	std::optional<sf::Sound> m_punchBombSound;
 
 	std::optional<sf::Sound> m_walkingSound;
 	std::optional<sf::Sound> m_walkingSecondSound;
@@ -273,12 +284,16 @@ private:
 
 	float m_powerUpDropChance = 0.35f;
 
+	float m_punchForceTiles = 3.f;
+	float m_punchedBombSlideSpeed = 480.f;
+
 	BombermanGridPosition m_hiddenExitPosition{ 0, 0 };
 	bool m_hiddenExitAssigned = false;
 
 	std::mt19937 m_rng{ std::random_device{}() };
 
 	bool m_spaceHeldLastFrame = false;
+	bool m_punchHeldLastFrame = false;
 	bool m_restartHeldLastFrame = false;
 
 	std::string m_lastError;

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class BombermanLevel
@@ -52,6 +53,8 @@ public:
 	bool hasExit() const;
 	BombermanGridPosition getExitPosition() const;
 
+	int getWorldNumber() const;
+
 	int getWidthInTiles() const;
 	int getHeightInTiles() const;
 
@@ -78,6 +81,9 @@ private:
 		const std::string& directoryPath,
 		const std::string& readableName);
 
+	bool loadWorldTileTextures(const std::string& resourcesDirectory);
+	bool loadWorldWallTexture(char tile, const std::string& texturePath, const std::string& readableName);
+
 	void drawTextureInTile(sf::RenderTarget& target, const sf::Texture& texture, int col, int row) const;
 
 	bool isSolidWallCharacter(char tile) const;
@@ -97,7 +103,10 @@ private:
 private:
 	std::vector<std::string> m_rows;
 
+	int m_worldNumber = 1;
+
 	sf::Texture m_floorTexture;
+	std::unordered_map<char, sf::Texture> m_wallTextures;
 
 	std::vector<sf::Texture> m_exitFrames;
 	std::size_t m_exitCurrentFrame = 0;
@@ -113,18 +122,6 @@ private:
 	std::vector<ActiveBrokenBlock> m_activeBrokenBlocks;
 	std::vector<BombermanGridPosition> m_completedBrokenBlocks;
 	float m_brokenFrameDuration = 0.14f;
-
-	sf::Texture m_solidBlockTexture;
-
-	sf::Texture m_wallUpTexture;
-	sf::Texture m_wallDownTexture;
-	sf::Texture m_wallLeftTexture;
-	sf::Texture m_wallRightTexture;
-	sf::Texture m_wallTopTexture;
-	sf::Texture m_wallTopLeftTexture;
-	sf::Texture m_wallTopRightTexture;
-	sf::Texture m_wallBotLeftTexture;
-	sf::Texture m_wallBotRightTexture;
 
 	BombermanGridPosition m_playerSpawn{ 1, 1 };
 	std::vector<BombermanGridPosition> m_enemySpawns;

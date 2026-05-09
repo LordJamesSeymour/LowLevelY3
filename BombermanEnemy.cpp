@@ -92,7 +92,7 @@ bool BombermanEnemy::load(const std::string& enemyDirectory,
 
 	if (m_type == BombermanEnemyType::Lamp)
 	{
-		m_moveSpeed = 175.f;
+		m_moveSpeed = 87.5f;
 		m_animationFrameDuration = 0.10f;
 		return loadLampAnimation(enemyDirectory);
 	}

@@ -68,6 +68,27 @@ namespace
 
 		return a.filename().string() < b.filename().string();
 	}
+
+	bool TryParseWorldMetadata(const std::string& line, int& outWorldNumber)
+	{
+		const std::string prefix = "#WORLD=";
+
+		if (line.rfind(prefix, 0) != 0)
+			return false;
+
+		try
+		{
+			const int parsedWorld = std::stoi(line.substr(prefix.size()));
+
+			if (parsedWorld == 1 || parsedWorld == 2)
+				outWorldNumber = parsedWorld;
+		}
+		catch (...)
+		{
+		}
+
+		return true;
+	}
 }
 
 bool GAME1_BombermanLevelEditor::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
@@ -86,8 +107,6 @@ bool GAME1_BombermanLevelEditor::load(const std::string& fontPath, const std::st
 		m_lastError = "Failed to load Bomberman editor font: " + fontPath;
 		return false;
 	}
-
-	buildTools();
 
 	if (!resetFromTemplate())
 		return false;
@@ -108,7 +127,11 @@ bool GAME1_BombermanLevelEditor::resetFromTemplate()
 	if (!loadRowsFromFile(getTemplatePath().string()))
 		return false;
 
+	buildTools();
+
 	m_selectedToolIndex = 0;
+	m_hotbarPage = 0;
+	rebuildVisibleToolbar();
 
 	return true;
 }
@@ -121,54 +144,19 @@ void GAME1_BombermanLevelEditor::buildTools()
 
 	const fs::path resourcesPath = fs::path(m_resourcesDirectory);
 	const fs::path tilesPath = resourcesPath / "Tiles";
+	const fs::path worldTilesPath = getCurrentWorldTilesDirectory();
 	const fs::path enemiesPath = resourcesPath / "Enemies";
 	const fs::path playerPath = resourcesPath / "Player" / "Blue";
 
-	auto addTool = [this](char tile,
-		const std::string& label,
-		const std::string& description,
-		const std::string& texturePath,
-		sf::Color fallback)
-		{
-			Tool tool;
-			tool.tile = tile;
-			tool.label = label;
-			tool.description = description;
-			tool.fallbackColor = fallback;
-
-			if (!texturePath.empty())
-			{
-				tool.hasTexture = loadTexture(tool.texture, texturePath);
-			}
-
-			m_tools.push_back(std::move(tool));
-		};
-
-	auto addDirectoryTool = [this](char tile,
-		const std::string& label,
-		const std::string& description,
-		const std::string& directoryPath,
-		sf::Color fallback)
-		{
-			Tool tool;
-			tool.tile = tile;
-			tool.label = label;
-			tool.description = description;
-			tool.fallbackColor = fallback;
-			tool.hasTexture = loadFirstTextureFromDirectory(tool.texture, directoryPath);
-
-			m_tools.push_back(std::move(tool));
-		};
-
-	addTool(
+	addFixedTool(
 		' ',
 		"EMPTY",
 		"Empty floor / erase",
-		(tilesPath / "floor.png").string(),
+		(worldTilesPath / "floor.png").string(),
 		sf::Color(55, 120, 55)
 	);
 
-	addDirectoryTool(
+	addFixedDirectoryTool(
 		'B',
 		"B",
 		"Breakable block",
@@ -176,7 +164,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(150, 90, 40)
 	);
 
-	addDirectoryTool(
+	addFixedDirectoryTool(
 		'P',
 		"P",
 		"Player spawn",
@@ -184,7 +172,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(70, 150, 255)
 	);
 
-	addDirectoryTool(
+	addFixedDirectoryTool(
 		'O',
 		"O",
 		"Copter enemy",
@@ -192,7 +180,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 80, 80)
 	);
 
-	addDirectoryTool(
+	addFixedDirectoryTool(
 		'A',
 		"A",
 		"Lamp enemy",
@@ -200,7 +188,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 220, 70)
 	);
 
-	addDirectoryTool(
+	addFixedDirectoryTool(
 		'E',
 		"E",
 		"Exit marker",
@@ -208,85 +196,142 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 230, 80)
 	);
 
-	addTool(
-		'M',
-		"M",
-		"Solid block",
-		(tilesPath / "solidblock.png").string(),
-		sf::Color(120, 120, 120)
-	);
+	if (m_worldNumber == 2)
+	{
+		addWorldTool('M', "M", "World 2 solid block", (worldTilesPath / "solidblock.png").string(), sf::Color(120, 120, 120));
+		addWorldTool('S', "S", "World 2 bottom wall", (worldTilesPath / "solidwall_bot.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('T', "T", "World 2 top wall", (worldTilesPath / "solidwall_top.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'U',
-		"U",
-		"Solid wall up",
-		(tilesPath / "solidwall_up.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('Q', "Q", "World 2 top-left", (worldTilesPath / "solidwall_topleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Y', "Y", "World 2 top-right", (worldTilesPath / "solidwall_topright_0.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'D',
-		"D",
-		"Solid wall down",
-		(tilesPath / "solidwall_down.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('Z', "Z", "World 2 bottom-left 0", (worldTilesPath / "solidwall_botleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('C', "C", "World 2 bottom-right 0", (worldTilesPath / "solidwall_botright_0.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'L',
-		"L",
-		"Solid wall left",
-		(tilesPath / "solidwall_left.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('L', "L", "World 2 left 0", (worldTilesPath / "solidwall_left_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('R', "R", "World 2 right 0", (worldTilesPath / "solidwall_right_0.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'R',
-		"R",
-		"Solid wall right",
-		(tilesPath / "solidwall_right.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('U', "U", "World 2 back-left 0", (worldTilesPath / "solidwall_backleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('D', "D", "World 2 back-right 0", (worldTilesPath / "solidwall_backright_0.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'T',
-		"T",
-		"Solid wall top",
-		(tilesPath / "solidwall_top.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('F', "F", "World 2 left 1", (worldTilesPath / "solidwall_left_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('G', "G", "World 2 left 2", (worldTilesPath / "solidwall_left_2.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'Q',
-		"Q",
-		"Solid wall top-left",
-		(tilesPath / "solidwall_topleft.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('H', "H", "World 2 right 1", (worldTilesPath / "solidwall_right_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('I', "I", "World 2 right 2", (worldTilesPath / "solidwall_right_2.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'Y',
-		"Y",
-		"Solid wall top-right",
-		(tilesPath / "solidwall_topright.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('J', "J", "World 2 back-left 1", (worldTilesPath / "solidwall_backleft_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('N', "N", "World 2 back-right 1", (worldTilesPath / "solidwall_backright_1.png").string(), sf::Color(130, 130, 130));
 
-	addTool(
-		'Z',
-		"Z",
-		"Solid wall bottom-left",
-		(tilesPath / "solidwall_botleft.png").string(),
-		sf::Color(130, 130, 130)
-	);
+		addWorldTool('V', "V", "World 2 bottom-left 1", (worldTilesPath / "solidwall_botleft_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('W', "W", "World 2 bottom-right 1", (worldTilesPath / "solidwall_botright_1.png").string(), sf::Color(130, 130, 130));
+	}
+	else
+	{
+		addWorldTool('M', "M", "Solid block", (worldTilesPath / "solidblock.png").string(), sf::Color(120, 120, 120));
+		addWorldTool('U', "U", "Solid wall up", (worldTilesPath / "solidwall_up.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('D', "D", "Solid wall down", (worldTilesPath / "solidwall_down.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('L', "L", "Solid wall left", (worldTilesPath / "solidwall_left.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('R', "R", "Solid wall right", (worldTilesPath / "solidwall_right.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('T', "T", "Solid wall top", (worldTilesPath / "solidwall_top.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Q', "Q", "Solid wall top-left", (worldTilesPath / "solidwall_topleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Y', "Y", "Solid wall top-right", (worldTilesPath / "solidwall_topright.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Z', "Z", "Solid wall bottom-left", (worldTilesPath / "solidwall_botleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('C', "C", "Solid wall bottom-right", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
+	}
 
-	addTool(
-		'C',
-		"C",
-		"Solid wall bottom-right",
-		(tilesPath / "solidwall_botright.png").string(),
-		sf::Color(130, 130, 130)
-	);
+	m_fixedToolCount = 6;
+	rebuildVisibleToolbar();
+}
+
+void GAME1_BombermanLevelEditor::addFixedTool(char tile,
+	const std::string& label,
+	const std::string& description,
+	const std::string& texturePath,
+	sf::Color fallback)
+{
+	Tool tool;
+	tool.tile = tile;
+	tool.label = label;
+	tool.description = description;
+	tool.fallbackColor = fallback;
+	tool.isWorldTile = false;
+	tool.isFixedTool = true;
+
+	if (!texturePath.empty())
+		tool.hasTexture = loadTexture(tool.texture, texturePath);
+
+	m_tools.push_back(std::move(tool));
+}
+
+void GAME1_BombermanLevelEditor::addFixedDirectoryTool(char tile,
+	const std::string& label,
+	const std::string& description,
+	const std::string& directoryPath,
+	sf::Color fallback)
+{
+	Tool tool;
+	tool.tile = tile;
+	tool.label = label;
+	tool.description = description;
+	tool.fallbackColor = fallback;
+	tool.isWorldTile = false;
+	tool.isFixedTool = true;
+	tool.hasTexture = loadFirstTextureFromDirectory(tool.texture, directoryPath);
+
+	m_tools.push_back(std::move(tool));
+}
+
+void GAME1_BombermanLevelEditor::addWorldTool(char tile,
+	const std::string& label,
+	const std::string& description,
+	const std::string& texturePath,
+	sf::Color fallback)
+{
+	Tool tool;
+	tool.tile = tile;
+	tool.label = label;
+	tool.description = description;
+	tool.fallbackColor = fallback;
+	tool.isWorldTile = true;
+	tool.isFixedTool = false;
+
+	if (!texturePath.empty())
+		tool.hasTexture = loadTexture(tool.texture, texturePath);
+
+	m_tools.push_back(std::move(tool));
+}
+
+void GAME1_BombermanLevelEditor::rebuildVisibleToolbar()
+{
+	m_visibleToolbarToolIndices.clear();
+
+	const int totalTools = static_cast<int>(m_tools.size());
+
+	for (int i = 0; i < std::min(m_fixedToolCount, totalTools); ++i)
+	{
+		m_visibleToolbarToolIndices.push_back(i);
+	}
+
+	const int worldToolStart = m_fixedToolCount;
+	const int worldToolCount = std::max(0, totalTools - worldToolStart);
+	const int maxPage = worldToolCount <= 0
+		? 0
+		: static_cast<int>((worldToolCount - 1) / m_worldToolsPerPage);
+
+	if (m_hotbarPage > maxPage)
+		m_hotbarPage = maxPage;
+
+	if (m_hotbarPage < 0)
+		m_hotbarPage = 0;
+
+	const int firstWorldTool = worldToolStart + m_hotbarPage * m_worldToolsPerPage;
+	const int lastWorldToolExclusive = std::min(totalTools, firstWorldTool + m_worldToolsPerPage);
+
+	for (int i = firstWorldTool; i < lastWorldToolExclusive; ++i)
+	{
+		m_visibleToolbarToolIndices.push_back(i);
+	}
 }
 
 bool GAME1_BombermanLevelEditor::loadRowsFromFile(const std::string& mapPath)
@@ -314,6 +359,12 @@ bool GAME1_BombermanLevelEditor::loadRowsFromFile(const std::string& mapPath)
 			line.pop_back();
 
 		if (line.empty())
+			continue;
+
+		if (TryParseWorldMetadata(line, m_worldNumber))
+			continue;
+
+		if (!line.empty() && line[0] == '#')
 			continue;
 
 		widestLine = std::max(widestLine, line.size());
@@ -367,6 +418,7 @@ bool GAME1_BombermanLevelEditor::validateTileCharacter(char tile) const
 	case 'A':
 	case 'E':
 	case 'M':
+	case 'S':
 	case 'U':
 	case 'D':
 	case 'L':
@@ -376,6 +428,14 @@ bool GAME1_BombermanLevelEditor::validateTileCharacter(char tile) const
 	case 'Y':
 	case 'Z':
 	case 'C':
+	case 'F':
+	case 'G':
+	case 'H':
+	case 'I':
+	case 'J':
+	case 'N':
+	case 'V':
+	case 'W':
 	case 'X':
 		return true;
 
@@ -419,6 +479,8 @@ bool GAME1_BombermanLevelEditor::loadFirstTextureFromDirectory(sf::Texture& text
 
 void GAME1_BombermanLevelEditor::layout(const sf::RenderWindow& window)
 {
+	rebuildVisibleToolbar();
+
 	m_lastWindowSize = window.getSize();
 
 	const float windowWidth = static_cast<float>(m_lastWindowSize.x);
@@ -463,19 +525,61 @@ void GAME1_BombermanLevelEditor::layout(const sf::RenderWindow& window)
 		{ 150.f, 44.f }
 	);
 
+	m_worldSelectorBounds = sf::FloatRect(
+		{ 24.f, 22.f },
+		{ 150.f, 44.f }
+	);
+
+	m_worldNextButtonBounds = sf::FloatRect(
+		{ 178.f, 22.f },
+		{ 44.f, 44.f }
+	);
+
+	const float hotbarArrowWidth = 40.f;
+	const float visibleToolbarWidth =
+		static_cast<float>(m_visibleToolbarToolIndices.size()) * m_toolbarSlotSize +
+		static_cast<float>(m_visibleToolbarToolIndices.size() > 0 ? m_visibleToolbarToolIndices.size() - 1 : 0) * m_toolbarSlotGap;
+
 	const float totalToolbarWidth =
-		static_cast<float>(m_tools.size()) * m_toolbarSlotSize +
-		static_cast<float>(m_tools.size() > 0 ? m_tools.size() - 1 : 0) * m_toolbarSlotGap;
+		hotbarArrowWidth +
+		m_toolbarSlotGap +
+		visibleToolbarWidth +
+		m_toolbarSlotGap +
+		hotbarArrowWidth;
 
 	float toolbarY = m_gridOrigin.y + gridHeight + 12.f;
 
 	if (toolbarY + m_toolbarSlotSize > windowHeight - 12.f)
 		toolbarY = windowHeight - m_toolbarSlotSize - 12.f;
 
+	const float toolbarStartX = (windowWidth - totalToolbarWidth) * 0.5f;
+
+	m_previousHotbarPageButtonBounds = sf::FloatRect(
+		{
+			toolbarStartX,
+			toolbarY
+		},
+		{
+			hotbarArrowWidth,
+			m_toolbarSlotSize
+		}
+	);
+
 	m_toolbarOrigin = {
-		(windowWidth - totalToolbarWidth) * 0.5f,
+		toolbarStartX + hotbarArrowWidth + m_toolbarSlotGap,
 		toolbarY
 	};
+
+	m_nextHotbarPageButtonBounds = sf::FloatRect(
+		{
+			m_toolbarOrigin.x + visibleToolbarWidth + m_toolbarSlotGap,
+			m_toolbarOrigin.y
+		},
+		{
+			hotbarArrowWidth,
+			m_toolbarSlotSize
+		}
+	);
 }
 
 void GAME1_BombermanLevelEditor::update(float deltaTime, sf::Vector2u windowSize)
@@ -532,6 +636,31 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 		sf::FloatRect({ 0.f, 14.f }, { windowWidth, 36.f }),
 		sf::Color::White
 	);
+
+	sf::RectangleShape worldBox;
+	worldBox.setPosition(m_worldSelectorBounds.position);
+	worldBox.setSize(m_worldSelectorBounds.size);
+	worldBox.setFillColor(sf::Color(45, 45, 65));
+	worldBox.setOutlineColor(sf::Color::White);
+	worldBox.setOutlineThickness(2.f);
+	window.draw(worldBox);
+
+	drawTextCentered(
+		"<World " + std::to_string(m_worldNumber) + ">",
+		19,
+		m_worldSelectorBounds,
+		sf::Color(255, 230, 120)
+	);
+
+	sf::RectangleShape worldNextButton;
+	worldNextButton.setPosition(m_worldNextButtonBounds.position);
+	worldNextButton.setSize(m_worldNextButtonBounds.size);
+	worldNextButton.setFillColor(sf::Color(45, 45, 70));
+	worldNextButton.setOutlineColor(sf::Color::White);
+	worldNextButton.setOutlineThickness(2.f);
+	window.draw(worldNextButton);
+
+	drawTextCentered(">", 28, m_worldNextButtonBounds, sf::Color::White);
 
 	sf::RectangleShape saveButton;
 	saveButton.setPosition(m_saveButtonBounds.position);
@@ -627,11 +756,26 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 		window.draw(hoverRect);
 	}
 
-	for (std::size_t i = 0; i < m_tools.size(); ++i)
+	sf::RectangleShape previousPageButton;
+	previousPageButton.setPosition(m_previousHotbarPageButtonBounds.position);
+	previousPageButton.setSize(m_previousHotbarPageButtonBounds.size);
+	previousPageButton.setFillColor(sf::Color(45, 45, 70));
+	previousPageButton.setOutlineColor(sf::Color::White);
+	previousPageButton.setOutlineThickness(2.f);
+	window.draw(previousPageButton);
+
+	drawTextCentered("<", 28, m_previousHotbarPageButtonBounds, sf::Color::White);
+
+	for (std::size_t visibleIndex = 0; visibleIndex < m_visibleToolbarToolIndices.size(); ++visibleIndex)
 	{
+		const int toolIndex = m_visibleToolbarToolIndices[visibleIndex];
+
+		if (toolIndex < 0 || toolIndex >= static_cast<int>(m_tools.size()))
+			continue;
+
 		const sf::FloatRect slotRect(
 			{
-				m_toolbarOrigin.x + static_cast<float>(i) * (m_toolbarSlotSize + m_toolbarSlotGap),
+				m_toolbarOrigin.x + static_cast<float>(visibleIndex) * (m_toolbarSlotSize + m_toolbarSlotGap),
 				m_toolbarOrigin.y
 			},
 			{
@@ -640,14 +784,14 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 			}
 		);
 
-		const Tool& tool = m_tools[i];
+		const Tool& tool = m_tools[toolIndex];
 
 		sf::RectangleShape slot;
 		slot.setPosition(slotRect.position);
 		slot.setSize(slotRect.size);
 		slot.setFillColor(sf::Color(42, 42, 50));
 
-		if (static_cast<int>(i) == m_selectedToolIndex)
+		if (toolIndex == m_selectedToolIndex)
 		{
 			slot.setOutlineColor(sf::Color::Yellow);
 			slot.setOutlineThickness(3.f);
@@ -676,10 +820,20 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 		);
 	}
 
+	sf::RectangleShape nextPageButton;
+	nextPageButton.setPosition(m_nextHotbarPageButtonBounds.position);
+	nextPageButton.setSize(m_nextHotbarPageButtonBounds.size);
+	nextPageButton.setFillColor(sf::Color(45, 45, 70));
+	nextPageButton.setOutlineColor(sf::Color::White);
+	nextPageButton.setOutlineThickness(2.f);
+	window.draw(nextPageButton);
+
+	drawTextCentered(">", 28, m_nextHotbarPageButtonBounds, sf::Color::White);
+
 	const float controlsY = std::min(windowHeight - 28.f, m_toolbarOrigin.y + m_toolbarSlotSize + 8.f);
 
 	drawTextCentered(
-		"Controls: Left Click = place/select toolbar    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle tools    Letter keys = select tile    Enter = save    Backspace = reset",
+		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    Letter keys = select tile    Enter = save    Backspace = reset",
 		14,
 		sf::FloatRect({ 0.f, controlsY }, { windowWidth, 24.f }),
 		sf::Color(220, 220, 220),
@@ -699,6 +853,25 @@ void GAME1_BombermanLevelEditor::handleMousePressed(sf::Mouse::Button button, sf
 		if (containsPoint(m_saveButtonBounds, mousePosition))
 		{
 			saveToNextLevelFile();
+			return;
+		}
+
+		if (containsPoint(m_worldNextButtonBounds, mousePosition) ||
+			containsPoint(m_worldSelectorBounds, mousePosition))
+		{
+			selectNextWorld();
+			return;
+		}
+
+		if (containsPoint(m_previousHotbarPageButtonBounds, mousePosition))
+		{
+			selectPreviousHotbarPage();
+			return;
+		}
+
+		if (containsPoint(m_nextHotbarPageButtonBounds, mousePosition))
+		{
+			selectNextHotbarPage();
 			return;
 		}
 
@@ -750,6 +923,10 @@ void GAME1_BombermanLevelEditor::handleKeyReleased(sf::Keyboard::Key key)
 		selectToolByTile(' ');
 		break;
 
+	case sf::Keyboard::Key::Tab:
+		selectNextHotbarPage();
+		break;
+
 	default:
 		selectToolByHotkey(key);
 		break;
@@ -786,6 +963,7 @@ void GAME1_BombermanLevelEditor::pickAtPixel(sf::Vector2i pixelPosition)
 	if (toolbarIndex.has_value())
 	{
 		m_selectedToolIndex = *toolbarIndex;
+		ensureSelectedToolVisible();
 		return;
 	}
 
@@ -808,12 +986,12 @@ void GAME1_BombermanLevelEditor::pickAtPixel(sf::Vector2i pixelPosition)
 
 void GAME1_BombermanLevelEditor::selectToolbarSlot(int slotNumber)
 {
-	const int index = slotNumber - 1;
+	const int visibleIndex = slotNumber - 1;
 
-	if (index < 0 || index >= static_cast<int>(m_tools.size()))
+	if (visibleIndex < 0 || visibleIndex >= static_cast<int>(m_visibleToolbarToolIndices.size()))
 		return;
 
-	m_selectedToolIndex = index;
+	m_selectedToolIndex = m_visibleToolbarToolIndices[visibleIndex];
 }
 
 std::optional<sf::Vector2i> GAME1_BombermanLevelEditor::getTileAtPixel(sf::Vector2i pixelPosition) const
@@ -856,11 +1034,11 @@ std::optional<int> GAME1_BombermanLevelEditor::getToolbarIndexAtPixel(sf::Vector
 		static_cast<float>(pixelPosition.y)
 	};
 
-	for (std::size_t i = 0; i < m_tools.size(); ++i)
+	for (std::size_t visibleIndex = 0; visibleIndex < m_visibleToolbarToolIndices.size(); ++visibleIndex)
 	{
 		const sf::FloatRect slotRect(
 			{
-				m_toolbarOrigin.x + static_cast<float>(i) * (m_toolbarSlotSize + m_toolbarSlotGap),
+				m_toolbarOrigin.x + static_cast<float>(visibleIndex) * (m_toolbarSlotSize + m_toolbarSlotGap),
 				m_toolbarOrigin.y
 			},
 			{
@@ -870,7 +1048,7 @@ std::optional<int> GAME1_BombermanLevelEditor::getToolbarIndexAtPixel(sf::Vector
 		);
 
 		if (containsPoint(slotRect, mousePosition))
-			return static_cast<int>(i);
+			return m_visibleToolbarToolIndices[visibleIndex];
 	}
 
 	return std::nullopt;
@@ -892,71 +1070,37 @@ void GAME1_BombermanLevelEditor::selectToolByTile(char tile)
 		return;
 
 	m_selectedToolIndex = index;
+	ensureSelectedToolVisible();
 }
 
 void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
 {
 	switch (key)
 	{
-	case sf::Keyboard::Key::A:
-		selectToolByTile('A');
-		break;
-
-	case sf::Keyboard::Key::B:
-		selectToolByTile('B');
-		break;
-
-	case sf::Keyboard::Key::C:
-		selectToolByTile('C');
-		break;
-
-	case sf::Keyboard::Key::D:
-		selectToolByTile('D');
-		break;
-
-	case sf::Keyboard::Key::E:
-		selectToolByTile('E');
-		break;
-
-	case sf::Keyboard::Key::L:
-		selectToolByTile('L');
-		break;
-
-	case sf::Keyboard::Key::M:
-		selectToolByTile('M');
-		break;
-
-	case sf::Keyboard::Key::O:
-		selectToolByTile('O');
-		break;
-
-	case sf::Keyboard::Key::P:
-		selectToolByTile('P');
-		break;
-
-	case sf::Keyboard::Key::Q:
-		selectToolByTile('Q');
-		break;
-
-	case sf::Keyboard::Key::R:
-		selectToolByTile('R');
-		break;
-
-	case sf::Keyboard::Key::T:
-		selectToolByTile('T');
-		break;
-
-	case sf::Keyboard::Key::U:
-		selectToolByTile('U');
-		break;
-
-	case sf::Keyboard::Key::Y:
-		selectToolByTile('Y');
-		break;
-
-	case sf::Keyboard::Key::Z:
-		selectToolByTile('Z');
-		break;
+	case sf::Keyboard::Key::A: selectToolByTile('A'); break;
+	case sf::Keyboard::Key::B: selectToolByTile('B'); break;
+	case sf::Keyboard::Key::C: selectToolByTile('C'); break;
+	case sf::Keyboard::Key::D: selectToolByTile('D'); break;
+	case sf::Keyboard::Key::E: selectToolByTile('E'); break;
+	case sf::Keyboard::Key::F: selectToolByTile('F'); break;
+	case sf::Keyboard::Key::G: selectToolByTile('G'); break;
+	case sf::Keyboard::Key::H: selectToolByTile('H'); break;
+	case sf::Keyboard::Key::I: selectToolByTile('I'); break;
+	case sf::Keyboard::Key::J: selectToolByTile('J'); break;
+	case sf::Keyboard::Key::L: selectToolByTile('L'); break;
+	case sf::Keyboard::Key::M: selectToolByTile('M'); break;
+	case sf::Keyboard::Key::N: selectToolByTile('N'); break;
+	case sf::Keyboard::Key::O: selectToolByTile('O'); break;
+	case sf::Keyboard::Key::P: selectToolByTile('P'); break;
+	case sf::Keyboard::Key::Q: selectToolByTile('Q'); break;
+	case sf::Keyboard::Key::R: selectToolByTile('R'); break;
+	case sf::Keyboard::Key::S: selectToolByTile('S'); break;
+	case sf::Keyboard::Key::T: selectToolByTile('T'); break;
+	case sf::Keyboard::Key::U: selectToolByTile('U'); break;
+	case sf::Keyboard::Key::V: selectToolByTile('V'); break;
+	case sf::Keyboard::Key::W: selectToolByTile('W'); break;
+	case sf::Keyboard::Key::Y: selectToolByTile('Y'); break;
+	case sf::Keyboard::Key::Z: selectToolByTile('Z'); break;
 
 	default:
 		break;
@@ -965,24 +1109,131 @@ void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
 
 void GAME1_BombermanLevelEditor::selectNextTool()
 {
-	if (m_tools.empty())
+	if (m_visibleToolbarToolIndices.empty())
 		return;
 
-	++m_selectedToolIndex;
+	int visiblePosition = findVisibleToolbarPositionForToolIndex(m_selectedToolIndex);
 
-	if (m_selectedToolIndex >= static_cast<int>(m_tools.size()))
-		m_selectedToolIndex = 0;
+	if (visiblePosition < 0)
+	{
+		m_selectedToolIndex = m_visibleToolbarToolIndices.front();
+		return;
+	}
+
+	visiblePosition = (visiblePosition + 1) % static_cast<int>(m_visibleToolbarToolIndices.size());
+	m_selectedToolIndex = m_visibleToolbarToolIndices[visiblePosition];
 }
 
 void GAME1_BombermanLevelEditor::selectPreviousTool()
 {
-	if (m_tools.empty())
+	if (m_visibleToolbarToolIndices.empty())
 		return;
 
-	--m_selectedToolIndex;
+	int visiblePosition = findVisibleToolbarPositionForToolIndex(m_selectedToolIndex);
 
-	if (m_selectedToolIndex < 0)
-		m_selectedToolIndex = static_cast<int>(m_tools.size()) - 1;
+	if (visiblePosition < 0)
+	{
+		m_selectedToolIndex = m_visibleToolbarToolIndices.front();
+		return;
+	}
+
+	--visiblePosition;
+
+	if (visiblePosition < 0)
+		visiblePosition = static_cast<int>(m_visibleToolbarToolIndices.size()) - 1;
+
+	m_selectedToolIndex = m_visibleToolbarToolIndices[visiblePosition];
+}
+
+void GAME1_BombermanLevelEditor::selectNextWorld()
+{
+	const int previousWorld = m_worldNumber;
+	const int previousSelectedToolIndex = m_selectedToolIndex;
+	const int previousHotbarPage = m_hotbarPage;
+	const std::vector<std::string> previousRows = m_rows;
+
+	m_worldNumber = m_worldNumber == 1 ? 2 : 1;
+	m_hotbarPage = 0;
+
+	if (!loadRowsFromFile(getTemplatePath().string()))
+	{
+		m_worldNumber = previousWorld;
+		m_selectedToolIndex = previousSelectedToolIndex;
+		m_hotbarPage = previousHotbarPage;
+		m_rows = previousRows;
+		buildTools();
+		rebuildVisibleToolbar();
+		return;
+	}
+
+	buildTools();
+
+	m_selectedToolIndex = 0;
+	m_hotbarPage = 0;
+
+	rebuildVisibleToolbar();
+}
+
+void GAME1_BombermanLevelEditor::selectNextHotbarPage()
+{
+	const int worldToolCount = std::max(0, static_cast<int>(m_tools.size()) - m_fixedToolCount);
+
+	if (worldToolCount <= 0)
+		return;
+
+	const int maxPage = static_cast<int>((worldToolCount - 1) / m_worldToolsPerPage);
+
+	++m_hotbarPage;
+
+	if (m_hotbarPage > maxPage)
+		m_hotbarPage = 0;
+
+	rebuildVisibleToolbar();
+
+	if (findVisibleToolbarPositionForToolIndex(m_selectedToolIndex) < 0 &&
+		!m_visibleToolbarToolIndices.empty())
+	{
+		m_selectedToolIndex = m_visibleToolbarToolIndices.front();
+	}
+}
+
+void GAME1_BombermanLevelEditor::selectPreviousHotbarPage()
+{
+	const int worldToolCount = std::max(0, static_cast<int>(m_tools.size()) - m_fixedToolCount);
+
+	if (worldToolCount <= 0)
+		return;
+
+	const int maxPage = static_cast<int>((worldToolCount - 1) / m_worldToolsPerPage);
+
+	--m_hotbarPage;
+
+	if (m_hotbarPage < 0)
+		m_hotbarPage = maxPage;
+
+	rebuildVisibleToolbar();
+
+	if (findVisibleToolbarPositionForToolIndex(m_selectedToolIndex) < 0 &&
+		!m_visibleToolbarToolIndices.empty())
+	{
+		m_selectedToolIndex = m_visibleToolbarToolIndices.front();
+	}
+}
+
+void GAME1_BombermanLevelEditor::ensureSelectedToolVisible()
+{
+	if (m_selectedToolIndex < 0 || m_selectedToolIndex >= static_cast<int>(m_tools.size()))
+		return;
+
+	if (m_selectedToolIndex < m_fixedToolCount)
+	{
+		rebuildVisibleToolbar();
+		return;
+	}
+
+	const int worldToolIndex = m_selectedToolIndex - m_fixedToolCount;
+	m_hotbarPage = worldToolIndex / m_worldToolsPerPage;
+	rebuildVisibleToolbar();
 }
 
 int GAME1_BombermanLevelEditor::findToolIndexForTile(char tile) const
@@ -990,6 +1241,17 @@ int GAME1_BombermanLevelEditor::findToolIndexForTile(char tile) const
 	for (int i = 0; i < static_cast<int>(m_tools.size()); ++i)
 	{
 		if (m_tools[i].tile == tile)
+			return i;
+	}
+
+	return -1;
+}
+
+int GAME1_BombermanLevelEditor::findVisibleToolbarPositionForToolIndex(int toolIndex) const
+{
+	for (int i = 0; i < static_cast<int>(m_visibleToolbarToolIndices.size()); ++i)
+	{
+		if (m_visibleToolbarToolIndices[i] == toolIndex)
 			return i;
 	}
 
@@ -1081,6 +1343,8 @@ bool GAME1_BombermanLevelEditor::saveToNextLevelFile()
 			return false;
 		}
 
+		file << "#WORLD=" << m_worldNumber << '\n';
+
 		for (std::size_t row = 0; row < m_rows.size(); ++row)
 		{
 			file << m_rows[row];
@@ -1156,7 +1420,7 @@ void GAME1_BombermanLevelEditor::drawTilePreview(sf::RenderTarget& target,
 		if (!m_tools[toolIndex].hasTexture || tile == 'P' || tile == 'O' || tile == 'A' || tile == 'E')
 		{
 			sf::Text label(m_font);
-			label.setString(std::string(1, tile));
+			label.setString(tile == ' ' ? "" : std::string(1, tile));
 			label.setCharacterSize(static_cast<unsigned int>(std::max(12.f, bounds.size.y * 0.42f)));
 			label.setFillColor(sf::Color::White);
 			label.setOutlineColor(sf::Color::Black);
@@ -1208,12 +1472,27 @@ void GAME1_BombermanLevelEditor::drawTextureFitted(sf::RenderTarget& target,
 
 std::filesystem::path GAME1_BombermanLevelEditor::getTemplatePath() const
 {
+	if (m_worldNumber == 2)
+	{
+		return getMapsDirectory() / "leveltemplate2.txt";
+	}
+
 	return getMapsDirectory() / "leveltemplate.txt";
 }
 
 std::filesystem::path GAME1_BombermanLevelEditor::getMapsDirectory() const
 {
 	return std::filesystem::path(m_mapsDirectory);
+}
+
+std::filesystem::path GAME1_BombermanLevelEditor::getTilesDirectory() const
+{
+	return std::filesystem::path(m_resourcesDirectory) / "Tiles";
+}
+
+std::filesystem::path GAME1_BombermanLevelEditor::getCurrentWorldTilesDirectory() const
+{
+	return getTilesDirectory() / ("World" + std::to_string(m_worldNumber));
 }
 
 bool GAME1_BombermanLevelEditor::isValidLevelFile(const std::filesystem::path& path) const
@@ -1224,6 +1503,9 @@ bool GAME1_BombermanLevelEditor::isValidLevelFile(const std::filesystem::path& p
 	const std::string stem = path.stem().string();
 
 	if (stem == "leveltemplate")
+		return false;
+
+	if (stem == "leveltemplate2")
 		return false;
 
 	if (stem.rfind("level", 0) != 0)

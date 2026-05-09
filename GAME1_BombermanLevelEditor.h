@@ -47,10 +47,31 @@ private:
 		bool hasTexture = false;
 
 		sf::Color fallbackColor = sf::Color::White;
+		bool isWorldTile = false;
+		bool isFixedTool = false;
 	};
 
 private:
 	void buildTools();
+	void rebuildVisibleToolbar();
+
+	void addFixedTool(char tile,
+		const std::string& label,
+		const std::string& description,
+		const std::string& texturePath,
+		sf::Color fallback);
+
+	void addFixedDirectoryTool(char tile,
+		const std::string& label,
+		const std::string& description,
+		const std::string& directoryPath,
+		sf::Color fallback);
+
+	void addWorldTool(char tile,
+		const std::string& label,
+		const std::string& description,
+		const std::string& texturePath,
+		sf::Color fallback);
 
 	bool loadRowsFromFile(const std::string& mapPath);
 	bool validateTileCharacter(char tile) const;
@@ -68,7 +89,13 @@ private:
 	void selectNextTool();
 	void selectPreviousTool();
 
+	void selectNextWorld();
+	void selectNextHotbarPage();
+	void selectPreviousHotbarPage();
+	void ensureSelectedToolVisible();
+
 	int findToolIndexForTile(char tile) const;
+	int findVisibleToolbarPositionForToolIndex(int toolIndex) const;
 
 	void placeTileAt(int col, int row, char tile);
 
@@ -93,6 +120,8 @@ private:
 
 	std::filesystem::path getTemplatePath() const;
 	std::filesystem::path getMapsDirectory() const;
+	std::filesystem::path getTilesDirectory() const;
+	std::filesystem::path getCurrentWorldTilesDirectory() const;
 
 	bool isValidLevelFile(const std::filesystem::path& path) const;
 	int extractLevelNumber(const std::filesystem::path& path) const;
@@ -106,8 +135,14 @@ private:
 
 	std::vector<std::string> m_rows;
 	std::vector<Tool> m_tools;
+	std::vector<int> m_visibleToolbarToolIndices;
 
 	int m_selectedToolIndex = 0;
+	int m_worldNumber = 1;
+	int m_hotbarPage = 0;
+
+	int m_fixedToolCount = 6;
+	int m_worldToolsPerPage = 8;
 
 	sf::Vector2f m_gridOrigin{ 70.f, 70.f };
 	sf::Vector2f m_toolbarOrigin{ 70.f, 555.f };
@@ -117,6 +152,10 @@ private:
 	float m_toolbarSlotGap = 6.f;
 
 	sf::FloatRect m_saveButtonBounds;
+	sf::FloatRect m_worldSelectorBounds;
+	sf::FloatRect m_worldNextButtonBounds;
+	sf::FloatRect m_previousHotbarPageButtonBounds;
+	sf::FloatRect m_nextHotbarPageButtonBounds;
 
 	sf::Vector2u m_lastWindowSize{ 1024, 640 };
 
