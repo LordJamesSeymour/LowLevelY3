@@ -266,6 +266,22 @@ void GAME1_BombermanLevelEditor::buildTools()
 	);
 
 	addFixedDirectoryTool(
+		't',
+		"t",
+		"Tree enemy",
+		(enemiesPath / "Tree" / "Front").string(),
+		sf::Color(120, 255, 120)
+	);
+
+	addFixedDirectoryTool(
+		'k',
+		"k",
+		"Bomber enemy",
+		(enemiesPath / "Bomber" / "Front").string(),
+		sf::Color(255, 140, 70)
+	);
+
+	addFixedDirectoryTool(
 		'E',
 		"E",
 		"Exit marker",
@@ -344,7 +360,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		addWorldTool('C', "C", "Solid wall bottom-right", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
 	}
 
-	m_fixedToolCount = 6;
+	m_fixedToolCount = 8;
 	rebuildVisibleToolbar();
 }
 
@@ -520,6 +536,8 @@ bool GAME1_BombermanLevelEditor::validateTileCharacter(char tile) const
 	case 'P':
 	case 'O':
 	case 'A':
+	case 't':
+	case 'k':
 	case 'E':
 	case 'M':
 	case 'S':
@@ -1019,7 +1037,7 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 	const float controlsY = std::min(windowHeight - 28.f, m_toolbarOrigin.y + m_toolbarSlotSize + 8.f);
 
 	drawTextCentered(
-		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    Letter keys = select tile    Enter = save    Backspace = reset",
+		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    T = Tree    K = Bomber    Enter = save    Backspace = reset",
 		14,
 		sf::FloatRect({ 0.f, controlsY }, { windowWidth, 24.f }),
 		sf::Color(220, 220, 220),
@@ -1297,6 +1315,7 @@ void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
 	case sf::Keyboard::Key::H: selectToolByTile('H'); break;
 	case sf::Keyboard::Key::I: selectToolByTile('I'); break;
 	case sf::Keyboard::Key::J: selectToolByTile('J'); break;
+	case sf::Keyboard::Key::K: selectToolByTile('k'); break;
 	case sf::Keyboard::Key::L: selectToolByTile('L'); break;
 	case sf::Keyboard::Key::M: selectToolByTile('M'); break;
 	case sf::Keyboard::Key::N: selectToolByTile('N'); break;
@@ -1305,7 +1324,7 @@ void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
 	case sf::Keyboard::Key::Q: selectToolByTile('Q'); break;
 	case sf::Keyboard::Key::R: selectToolByTile('R'); break;
 	case sf::Keyboard::Key::S: selectToolByTile('S'); break;
-	case sf::Keyboard::Key::T: selectToolByTile('T'); break;
+	case sf::Keyboard::Key::T: selectToolByTile('t'); break;
 	case sf::Keyboard::Key::U: selectToolByTile('U'); break;
 	case sf::Keyboard::Key::V: selectToolByTile('V'); break;
 	case sf::Keyboard::Key::W: selectToolByTile('W'); break;
@@ -1818,10 +1837,21 @@ void GAME1_BombermanLevelEditor::drawTilePreview(sf::RenderTarget& target,
 	{
 		drawToolPreview(target, m_tools[toolIndex], bounds);
 
-		if (!m_tools[toolIndex].hasTexture || tile == 'P' || tile == 'O' || tile == 'A' || tile == 'E')
+		if (!m_tools[toolIndex].hasTexture ||
+			tile == 'P' ||
+			tile == 'O' ||
+			tile == 'A' ||
+			tile == 't' ||
+			tile == 'k' ||
+			tile == 'E')
 		{
 			sf::Text label(m_font);
-			label.setString(tile == ' ' ? "" : std::string(1, tile));
+
+			if (tile == ' ')
+				label.setString("");
+			else
+				label.setString(std::string(1, tile));
+
 			label.setCharacterSize(static_cast<unsigned int>(std::max(12.f, bounds.size.y * 0.42f)));
 			label.setFillColor(sf::Color::White);
 			label.setOutlineColor(sf::Color::Black);

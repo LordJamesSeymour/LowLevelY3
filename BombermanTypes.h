@@ -36,7 +36,9 @@ struct BombermanExplosionTile
 enum class BombermanEnemyType
 {
 	Copter,
-	Lamp
+	Lamp,
+	Tree,
+	Bomber
 };
 
 struct BombermanEnemySpawn

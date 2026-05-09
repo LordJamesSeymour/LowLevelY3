@@ -2,13 +2,13 @@
 UQTTTTTTTTTTTTTYD
 JGP            IN
 JF M M M M M M HN
-JF        O    HN
+JF   O     A k HN
 JF M M M M M M HN
-JF  O     A    HN
+JF k    k      HN
 JF M M M M M M HN
-JFM   M O    M HN
-JFMM M M M M M HN
-JF   M      A  HN
+JFM   M  A   M HN
+JFMM MkM M M M HN
+JF   M     O   HN
 JF M MMM M M M HN
-UL  A     A    RD
+UL             RD
 ZVSSSSSSSSSSSSSWC

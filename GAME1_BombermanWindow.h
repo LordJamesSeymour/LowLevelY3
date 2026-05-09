@@ -117,8 +117,11 @@ private:
 
 	bool isTileBlockedForPlayer(int col, int row) const;
 	bool isTileBlockedForEnemies(int col, int row) const;
+	bool isTileBlockedForEnemy(int col, int row, std::size_t ignoredEnemyIndex) const;
 	bool isTileBlockedForLamp(int col, int row) const;
 	bool isTileBlockedForSlidingBomb(int col, int row, std::size_t ignoredBombIndex) const;
+
+	bool isEnemyAtTileIgnoringIndex(BombermanGridPosition gridPosition, std::size_t ignoredEnemyIndex) const;
 
 	void refreshBombPassThroughState();
 
@@ -127,6 +130,7 @@ private:
 
 	void updateBombs(float deltaTime);
 	void explodeBomb(BombermanBomb& bomb);
+	void explodeEnemyBombAt(BombermanGridPosition gridPosition, int explosionRange);
 
 	void maybeSpawnPowerUpAt(BombermanGridPosition gridPosition);
 	bool isPowerUpAtTile(BombermanGridPosition gridPosition) const;
@@ -145,6 +149,7 @@ private:
 	bool isGridPositionCurrentlyExploding(BombermanGridPosition gridPosition) const;
 
 	void updateEnemies(float deltaTime);
+	void processBomberEnemyExplosions();
 	void checkPlayerEnemyCollision();
 
 	void updateWinLoseState();

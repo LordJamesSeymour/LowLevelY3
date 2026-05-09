@@ -32,9 +32,16 @@ public:
 	void kill();
 
 	bool canPassThroughBreakableBlocks() const;
+	bool canBeKilledByExplosion() const;
+
+	bool shouldDrawAsBomb() const;
+	bool hasPendingBomberExplosion() const;
+	int getBomberExplosionRange() const;
+	void consumePendingBomberExplosion();
 
 	BombermanEnemyType getType() const;
 	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
+	sf::Vector2f getDrawPosition() const;
 	sf::FloatRect getBounds() const;
 
 	const std::string& getLastError() const;
@@ -54,8 +61,11 @@ private:
 	};
 
 private:
+	bool loadDirectionalAnimations(const std::string& enemyDirectory, const std::string& readableName);
 	bool loadCopterAnimations(const std::string& enemyDirectory);
 	bool loadLampAnimation(const std::string& enemyDirectory);
+	bool loadTreeAnimations(const std::string& enemyDirectory);
+	bool loadBomberAnimations(const std::string& enemyDirectory);
 
 	bool loadAnimationFramesFromDirectory(AnimationSet& animation,
 		const std::string& directoryPath,
@@ -67,13 +77,27 @@ private:
 	void chooseCopterMove(const TileBlockedCallback& isTileBlocked);
 	void chooseLampMove(BombermanGridPosition playerGridPosition,
 		const TileBlockedCallback& isTileBlocked);
+	void chooseStraightLineMove(const TileBlockedCallback& isTileBlocked);
+	void chooseBomberMove(const TileBlockedCallback& isTileBlocked);
 
 	bool tryStartMove(int colDelta,
 		int rowDelta,
 		const TileBlockedCallback& isTileBlocked);
 
+	bool canMoveInDirection(int colDelta,
+		int rowDelta,
+		const TileBlockedCallback& isTileBlocked) const;
+
 	void updateMovement(float deltaTime);
 	void updateAnimation(float deltaTime);
+	void updateBomberDetonation(float deltaTime);
+
+	void startBomberDetonation();
+	void finishBomberDetonation();
+
+	void setRandomStraightLineDirection();
+	void reverseFacingDirection();
+	BombermanGridPosition getFacingDirectionDelta() const;
 
 	const AnimationSet& getCurrentAnimation() const;
 	std::size_t getCurrentFrameIndex() const;
@@ -105,6 +129,17 @@ private:
 	float m_animationTimer = 0.f;
 	float m_animationFrameDuration = 0.14f;
 	std::size_t m_animationFrameIndex = 0;
+
+	bool m_hasInitialStraightLineDirection = false;
+
+	bool m_isBomberDetonating = false;
+	bool m_bomberExplosionPending = false;
+	float m_bomberCooldownTimer = 4.0f;
+	float m_bomberCooldownMin = 4.0f;
+	float m_bomberCooldownMax = 7.0f;
+	float m_bomberDetonationTimer = 0.f;
+	float m_bomberFuseTime = 3.5f;
+	int m_bomberExplosionRange = 3;
 
 	std::mt19937 m_rng{ std::random_device{}() };
 

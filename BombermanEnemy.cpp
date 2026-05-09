@@ -68,6 +68,11 @@ namespace
 
 		return a.filename().string() < b.filename().string();
 	}
+
+	bool DirectoryExists(const std::filesystem::path& path)
+	{
+		return std::filesystem::exists(path) && std::filesystem::is_directory(path);
+	}
 }
 
 bool BombermanEnemy::load(const std::string& enemyDirectory,
@@ -90,6 +95,13 @@ bool BombermanEnemy::load(const std::string& enemyDirectory,
 	m_animationFrameIndex = 0;
 	m_facing = FacingDirection::Front;
 
+	m_hasInitialStraightLineDirection = false;
+
+	m_isBomberDetonating = false;
+	m_bomberExplosionPending = false;
+	m_bomberDetonationTimer = 0.f;
+	m_bomberCooldownTimer = m_bomberCooldownMin;
+
 	if (m_type == BombermanEnemyType::Lamp)
 	{
 		m_moveSpeed = 87.5f;
@@ -97,9 +109,65 @@ bool BombermanEnemy::load(const std::string& enemyDirectory,
 		return loadLampAnimation(enemyDirectory);
 	}
 
+	if (m_type == BombermanEnemyType::Tree)
+	{
+		// StarNut / Tree moves at roughly 2 tiles per second.
+		m_moveSpeed = static_cast<float>(BombermanLevel::TileSize) * 2.f;
+		m_animationFrameDuration = 0.12f;
+
+		setRandomStraightLineDirection();
+		return loadTreeAnimations(enemyDirectory);
+	}
+
+	if (m_type == BombermanEnemyType::Bomber)
+	{
+		// Bakuda / Bomber is intentionally slow.
+		m_moveSpeed = 62.f;
+		m_animationFrameDuration = 0.16f;
+
+		setRandomStraightLineDirection();
+		return loadBomberAnimations(enemyDirectory);
+	}
+
 	m_moveSpeed = 95.f;
 	m_animationFrameDuration = 0.14f;
 	return loadCopterAnimations(enemyDirectory);
+}
+
+bool BombermanEnemy::loadDirectionalAnimations(const std::string& enemyDirectory, const std::string& readableName)
+{
+	namespace fs = std::filesystem;
+
+	const fs::path base(enemyDirectory);
+
+	if (!loadAnimationFramesFromDirectory(m_frontAnimation, (base / "Front").string(), readableName + " front"))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_backAnimation, (base / "Back").string(), readableName + " back"))
+		return false;
+
+	if (DirectoryExists(base / "Side"))
+	{
+		if (!loadAnimationFramesFromDirectory(m_sideAnimation, (base / "Side").string(), readableName + " side"))
+			return false;
+	}
+	else if (DirectoryExists(base / "Left"))
+	{
+		if (!loadAnimationFramesFromDirectory(m_sideAnimation, (base / "Left").string(), readableName + " side"))
+			return false;
+	}
+	else if (DirectoryExists(base / "Right"))
+	{
+		if (!loadAnimationFramesFromDirectory(m_sideAnimation, (base / "Right").string(), readableName + " side"))
+			return false;
+	}
+	else
+	{
+		m_lastError = "Failed to load Bomberman enemy " + readableName + " side animation: expected Side, Left, or Right folder inside: " + enemyDirectory;
+		return false;
+	}
+
+	return true;
 }
 
 bool BombermanEnemy::loadCopterAnimations(const std::string& enemyDirectory)
@@ -126,6 +194,16 @@ bool BombermanEnemy::loadLampAnimation(const std::string& enemyDirectory)
 		return false;
 
 	return true;
+}
+
+bool BombermanEnemy::loadTreeAnimations(const std::string& enemyDirectory)
+{
+	return loadDirectionalAnimations(enemyDirectory, "Tree");
+}
+
+bool BombermanEnemy::loadBomberAnimations(const std::string& enemyDirectory)
+{
+	return loadDirectionalAnimations(enemyDirectory, "Bomber");
 }
 
 bool BombermanEnemy::loadAnimationFramesFromDirectory(AnimationSet& animation,
@@ -190,6 +268,17 @@ void BombermanEnemy::update(float deltaTime,
 	if (!m_alive)
 		return;
 
+	if (m_type == BombermanEnemyType::Bomber)
+	{
+		updateBomberDetonation(deltaTime);
+
+		if (m_isBomberDetonating)
+		{
+			updateAnimation(deltaTime);
+			return;
+		}
+	}
+
 	if (!m_isMoving)
 	{
 		chooseNextMove(playerGridPosition, isTileBlocked);
@@ -205,6 +294,18 @@ void BombermanEnemy::chooseNextMove(BombermanGridPosition playerGridPosition,
 	if (m_type == BombermanEnemyType::Lamp)
 	{
 		chooseLampMove(playerGridPosition, isTileBlocked);
+		return;
+	}
+
+	if (m_type == BombermanEnemyType::Tree)
+	{
+		chooseStraightLineMove(isTileBlocked);
+		return;
+	}
+
+	if (m_type == BombermanEnemyType::Bomber)
+	{
+		chooseBomberMove(isTileBlocked);
 		return;
 	}
 
@@ -265,6 +366,74 @@ void BombermanEnemy::chooseLampMove(BombermanGridPosition playerGridPosition,
 	}
 }
 
+void BombermanEnemy::chooseStraightLineMove(const TileBlockedCallback& isTileBlocked)
+{
+	if (!m_hasInitialStraightLineDirection)
+	{
+		setRandomStraightLineDirection();
+	}
+
+	const BombermanGridPosition direction = getFacingDirectionDelta();
+
+	if (tryStartMove(direction.col, direction.row, isTileBlocked))
+		return;
+
+	std::vector<std::pair<int, int>> directions =
+	{
+		{ 1, 0 },
+		{ -1, 0 },
+		{ 0, 1 },
+		{ 0, -1 }
+	};
+
+	std::shuffle(directions.begin(), directions.end(), m_rng);
+
+	for (const auto& candidate : directions)
+	{
+		if (candidate.first == direction.col && candidate.second == direction.row)
+			continue;
+
+		if (tryStartMove(candidate.first, candidate.second, isTileBlocked))
+			return;
+	}
+}
+
+void BombermanEnemy::chooseBomberMove(const TileBlockedCallback& isTileBlocked)
+{
+	if (!m_hasInitialStraightLineDirection)
+	{
+		setRandomStraightLineDirection();
+	}
+
+	const BombermanGridPosition direction = getFacingDirectionDelta();
+
+	if (tryStartMove(direction.col, direction.row, isTileBlocked))
+		return;
+
+	reverseFacingDirection();
+
+	const BombermanGridPosition reversedDirection = getFacingDirectionDelta();
+
+	if (tryStartMove(reversedDirection.col, reversedDirection.row, isTileBlocked))
+		return;
+
+	std::vector<std::pair<int, int>> directions =
+	{
+		{ 1, 0 },
+		{ -1, 0 },
+		{ 0, 1 },
+		{ 0, -1 }
+	};
+
+	std::shuffle(directions.begin(), directions.end(), m_rng);
+
+	for (const auto& candidate : directions)
+	{
+		if (tryStartMove(candidate.first, candidate.second, isTileBlocked))
+			return;
+	}
+}
+
 bool BombermanEnemy::tryStartMove(int colDelta,
 	int rowDelta,
 	const TileBlockedCallback& isTileBlocked)
@@ -289,7 +458,19 @@ bool BombermanEnemy::tryStartMove(int colDelta,
 	else if (rowDelta > 0)
 		m_facing = FacingDirection::Front;
 
+	m_hasInitialStraightLineDirection = true;
+
 	return true;
+}
+
+bool BombermanEnemy::canMoveInDirection(int colDelta,
+	int rowDelta,
+	const TileBlockedCallback& isTileBlocked) const
+{
+	const int targetCol = m_gridPosition.col + colDelta;
+	const int targetRow = m_gridPosition.row + rowDelta;
+
+	return !isTileBlocked(targetCol, targetRow);
 }
 
 void BombermanEnemy::updateMovement(float deltaTime)
@@ -335,6 +516,132 @@ void BombermanEnemy::updateAnimation(float deltaTime)
 	{
 		m_animationTimer -= m_animationFrameDuration;
 		++m_animationFrameIndex;
+	}
+}
+
+void BombermanEnemy::updateBomberDetonation(float deltaTime)
+{
+	if (m_type != BombermanEnemyType::Bomber)
+		return;
+
+	if (m_bomberExplosionPending)
+		return;
+
+	if (m_isBomberDetonating)
+	{
+		m_bomberDetonationTimer -= deltaTime;
+
+		if (m_bomberDetonationTimer <= 0.f)
+		{
+			finishBomberDetonation();
+		}
+
+		return;
+	}
+
+	if (m_isMoving)
+		return;
+
+	m_bomberCooldownTimer -= deltaTime;
+
+	if (m_bomberCooldownTimer <= 0.f)
+	{
+		startBomberDetonation();
+	}
+}
+
+void BombermanEnemy::startBomberDetonation()
+{
+	m_isMoving = false;
+	m_position = gridToWorldTopLeft(m_gridPosition);
+	m_targetPosition = m_position;
+	m_targetGridPosition = m_gridPosition;
+
+	m_isBomberDetonating = true;
+	m_bomberDetonationTimer = m_bomberFuseTime;
+	m_animationTimer = 0.f;
+	m_animationFrameIndex = 0;
+}
+
+void BombermanEnemy::finishBomberDetonation()
+{
+	m_isBomberDetonating = false;
+	m_bomberExplosionPending = true;
+
+	std::uniform_real_distribution<float> cooldownDistribution(m_bomberCooldownMin, m_bomberCooldownMax);
+	m_bomberCooldownTimer = cooldownDistribution(m_rng);
+
+	m_animationTimer = 0.f;
+	m_animationFrameIndex = 0;
+}
+
+void BombermanEnemy::setRandomStraightLineDirection()
+{
+	std::uniform_int_distribution<int> directionDistribution(0, 3);
+	const int chosenDirection = directionDistribution(m_rng);
+
+	switch (chosenDirection)
+	{
+	case 0:
+		m_facing = FacingDirection::Right;
+		break;
+
+	case 1:
+		m_facing = FacingDirection::Left;
+		break;
+
+	case 2:
+		m_facing = FacingDirection::Back;
+		break;
+
+	case 3:
+	default:
+		m_facing = FacingDirection::Front;
+		break;
+	}
+
+	m_hasInitialStraightLineDirection = true;
+}
+
+void BombermanEnemy::reverseFacingDirection()
+{
+	switch (m_facing)
+	{
+	case FacingDirection::Front:
+		m_facing = FacingDirection::Back;
+		break;
+
+	case FacingDirection::Back:
+		m_facing = FacingDirection::Front;
+		break;
+
+	case FacingDirection::Left:
+		m_facing = FacingDirection::Right;
+		break;
+
+	case FacingDirection::Right:
+	default:
+		m_facing = FacingDirection::Left;
+		break;
+	}
+}
+
+BombermanGridPosition BombermanEnemy::getFacingDirectionDelta() const
+{
+	switch (m_facing)
+	{
+	case FacingDirection::Left:
+		return { -1, 0 };
+
+	case FacingDirection::Right:
+		return { 1, 0 };
+
+	case FacingDirection::Back:
+		return { 0, -1 };
+
+	case FacingDirection::Front:
+	default:
+		return { 0, 1 };
 	}
 }
 
@@ -385,6 +692,9 @@ void BombermanEnemy::draw(sf::RenderTarget& target) const
 	if (!m_alive)
 		return;
 
+	if (shouldDrawAsBomb())
+		return;
+
 	const AnimationSet& animation = getCurrentAnimation();
 
 	if (animation.frames.empty())
@@ -403,8 +713,10 @@ void BombermanEnemy::draw(sf::RenderTarget& target) const
 	const float scaleY = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y;
 
 	const bool flipX =
-		m_type == BombermanEnemyType::Copter &&
-		m_facing == FacingDirection::Right;
+		m_facing == FacingDirection::Right &&
+		(m_type == BombermanEnemyType::Copter ||
+			m_type == BombermanEnemyType::Tree ||
+			m_type == BombermanEnemyType::Bomber);
 
 	sprite.setScale({
 		flipX ? -scaleX : scaleX,
@@ -437,6 +749,34 @@ bool BombermanEnemy::canPassThroughBreakableBlocks() const
 	return m_type == BombermanEnemyType::Lamp;
 }
 
+bool BombermanEnemy::canBeKilledByExplosion() const
+{
+	if (m_type == BombermanEnemyType::Bomber && m_isBomberDetonating)
+		return false;
+
+	return true;
+}
+
+bool BombermanEnemy::shouldDrawAsBomb() const
+{
+	return m_type == BombermanEnemyType::Bomber && m_isBomberDetonating;
+}
+
+bool BombermanEnemy::hasPendingBomberExplosion() const
+{
+	return m_type == BombermanEnemyType::Bomber && m_bomberExplosionPending;
+}
+
+int BombermanEnemy::getBomberExplosionRange() const
+{
+	return m_bomberExplosionRange;
+}
+
+void BombermanEnemy::consumePendingBomberExplosion()
+{
+	m_bomberExplosionPending = false;
+}
+
 BombermanEnemyType BombermanEnemy::getType() const
 {
 	return m_type;
@@ -452,6 +792,11 @@ BombermanGridPosition BombermanEnemy::getGridPosition(const BombermanLevel& leve
 	};
 
 	return level.worldToGrid(center);
+}
+
+sf::Vector2f BombermanEnemy::getDrawPosition() const
+{
+	return m_position;
 }
 
 sf::FloatRect BombermanEnemy::getBounds() const

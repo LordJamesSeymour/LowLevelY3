@@ -154,7 +154,7 @@ private:
 	int m_worldNumber = 1;
 	int m_hotbarPage = 0;
 
-	int m_fixedToolCount = 6;
+	int m_fixedToolCount = 8;
 	int m_worldToolsPerPage = 8;
 
 	sf::Vector2f m_gridOrigin{ 70.f, 70.f };
