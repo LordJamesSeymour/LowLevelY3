@@ -119,55 +119,25 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	const fs::path bombAnimationDirectory = bombsDirectory / "BombAnim";
 	const fs::path explosionAnimationDirectory = bombsDirectory / "ExplosionAnim";
 
-	if (!loadAnimationFramesFromDirectory(
-		m_bombAnimation,
-		bombAnimationDirectory.string(),
-		"bomb animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_bombAnimation, bombAnimationDirectory.string(), "bomb animation"))
 		return false;
-	}
 
 	buildBombAnimationSequence();
 
-	if (!loadAnimationFramesFromDirectory(
-		m_explosionCenterAnimation,
-		(explosionAnimationDirectory / "Center").string(),
-		"explosion center animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_explosionCenterAnimation, (explosionAnimationDirectory / "Center").string(), "explosion center animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_explosionHorizontalAnimation,
-		(explosionAnimationDirectory / "Horizontal").string(),
-		"explosion horizontal animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_explosionHorizontalAnimation, (explosionAnimationDirectory / "Horizontal").string(), "explosion horizontal animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_explosionHorizontalEndAnimation,
-		(explosionAnimationDirectory / "HorizontalEnd").string(),
-		"explosion horizontal end animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_explosionHorizontalEndAnimation, (explosionAnimationDirectory / "HorizontalEnd").string(), "explosion horizontal end animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_explosionVerticalAnimation,
-		(explosionAnimationDirectory / "Vertical").string(),
-		"explosion vertical animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_explosionVerticalAnimation, (explosionAnimationDirectory / "Vertical").string(), "explosion vertical animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_explosionVerticalEndAnimation,
-		(explosionAnimationDirectory / "VerticalEnd").string(),
-		"explosion vertical end animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_explosionVerticalEndAnimation, (explosionAnimationDirectory / "VerticalEnd").string(), "explosion vertical end animation"))
 		return false;
-	}
 
 	const fs::path powerUpsDirectory = fs::path(m_resourcesDirectory) / "PowerUps";
 
@@ -391,6 +361,27 @@ void GAME1_BombermanWindow::revealHiddenExitAt(BombermanGridPosition gridPositio
 	m_hiddenExitAssigned = false;
 }
 
+void GAME1_BombermanWindow::processCompletedBrokenBlocks()
+{
+	const std::vector<BombermanGridPosition> completedBlocks = m_level.consumeCompletedBrokenBlocks();
+
+	for (const BombermanGridPosition& gridPosition : completedBlocks)
+	{
+		handleCompletedBrokenBlock(gridPosition);
+	}
+}
+
+void GAME1_BombermanWindow::handleCompletedBrokenBlock(BombermanGridPosition gridPosition)
+{
+	if (isHiddenExitBlock(gridPosition))
+	{
+		revealHiddenExitAt(gridPosition);
+		return;
+	}
+
+	maybeSpawnPowerUpAt(gridPosition);
+}
+
 void GAME1_BombermanWindow::buildBombAnimationSequence()
 {
 	m_bombAnimationSequence.clear();
@@ -522,6 +513,7 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	m_restartHeldLastFrame = restartHeld;
 
 	m_level.updateAnimations(deltaTime);
+	processCompletedBrokenBlocks();
 	updateBombAnimation(deltaTime);
 
 	if (m_playState == PlayState::Playing)
@@ -786,9 +778,6 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 				if (shouldUseEndCap)
 				{
 					visualType = BombermanExplosionTileType::HorizontalEnd;
-
-					// HorizontalEnd faces right by default.
-					// Left side must be mirrored.
 					flipX = directionCol < 0;
 				}
 				else
@@ -801,9 +790,6 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 				if (shouldUseEndCap)
 				{
 					visualType = BombermanExplosionTileType::VerticalEnd;
-
-					// VerticalEnd faces upward by default.
-					// Bottom side must be mirrored vertically.
 					flipY = directionRow > 0;
 				}
 				else
@@ -824,19 +810,7 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 
 			if (isBreakable)
 			{
-				const bool destroyedHiddenExitBlock = isHiddenExitBlock(current);
-
-				m_level.destroyBreakableBlock(current.col, current.row);
-
-				if (destroyedHiddenExitBlock)
-				{
-					revealHiddenExitAt(current);
-				}
-				else
-				{
-					maybeSpawnPowerUpAt(current);
-				}
-
+				m_level.startBreakingBlock(current.col, current.row);
 				break;
 			}
 

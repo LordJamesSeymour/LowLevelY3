@@ -79,6 +79,9 @@ private:
 	bool isHiddenExitBlock(BombermanGridPosition gridPosition) const;
 	void revealHiddenExitAt(BombermanGridPosition gridPosition);
 
+	void processCompletedBrokenBlocks();
+	void handleCompletedBrokenBlock(BombermanGridPosition gridPosition);
+
 	void buildBombAnimationSequence();
 	void updateBombAnimation(float deltaTime);
 	const sf::Texture* getCurrentBombTexture() const;

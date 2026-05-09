@@ -80,11 +80,18 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	m_playerSpawn = { 1, 1 };
 	m_hasExit = false;
 	m_exitPosition = { 0, 0 };
-	m_hasExitTexture = false;
+
+	m_exitFrames.clear();
+	m_exitCurrentFrame = 0;
+	m_exitAnimationTimer = 0.f;
 
 	m_breakableFrames.clear();
 	m_breakableCurrentFrame = 0;
 	m_breakableAnimationTimer = 0.f;
+
+	m_brokenFrames.clear();
+	m_activeBrokenBlocks.clear();
+	m_completedBrokenBlocks.clear();
 
 	const fs::path resourcesPath(resourcesDirectory);
 	const fs::path tilesPath = resourcesPath / "Tiles";
@@ -93,9 +100,25 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 		return false;
 
 	if (!loadAnimationFramesFromDirectory(
+		m_exitFrames,
+		(tilesPath / "Exit").string(),
+		"exit animation"))
+	{
+		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
 		m_breakableFrames,
 		(tilesPath / "Breakable").string(),
 		"breakable block animation"))
+	{
+		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_brokenFrames,
+		(tilesPath / "Broken").string(),
+		"broken block animation"))
 	{
 		return false;
 	}
@@ -129,8 +152,6 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 
 	if (!loadTexture(m_wallBotRightTexture, (tilesPath / "solidwall_botright.png").string(), "solid wall bottom-right"))
 		return false;
-
-	m_hasExitTexture = m_exitTexture.loadFromFile((tilesPath / "exit.png").string());
 
 	std::ifstream file(mapPath);
 	if (!file.is_open())
@@ -229,16 +250,68 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 
 void BombermanLevel::updateAnimations(float deltaTime)
 {
-	if (m_breakableFrames.size() <= 1)
-		return;
-
-	m_breakableAnimationTimer += deltaTime;
-
-	while (m_breakableAnimationTimer >= m_breakableFrameDuration)
+	if (m_exitFrames.size() > 1)
 	{
-		m_breakableAnimationTimer -= m_breakableFrameDuration;
-		m_breakableCurrentFrame = (m_breakableCurrentFrame + 1) % m_breakableFrames.size();
+		m_exitAnimationTimer += deltaTime;
+
+		while (m_exitAnimationTimer >= m_exitFrameDuration)
+		{
+			m_exitAnimationTimer -= m_exitFrameDuration;
+			m_exitCurrentFrame = (m_exitCurrentFrame + 1) % m_exitFrames.size();
+		}
 	}
+
+	if (m_breakableFrames.size() > 1)
+	{
+		m_breakableAnimationTimer += deltaTime;
+
+		while (m_breakableAnimationTimer >= m_breakableFrameDuration)
+		{
+			m_breakableAnimationTimer -= m_breakableFrameDuration;
+			m_breakableCurrentFrame = (m_breakableCurrentFrame + 1) % m_breakableFrames.size();
+		}
+	}
+
+	if (!m_activeBrokenBlocks.empty())
+	{
+		const float brokenDuration = getBrokenAnimationDuration();
+
+		for (ActiveBrokenBlock& brokenBlock : m_activeBrokenBlocks)
+		{
+			brokenBlock.timer += deltaTime;
+		}
+
+		m_activeBrokenBlocks.erase(
+			std::remove_if(
+				m_activeBrokenBlocks.begin(),
+				m_activeBrokenBlocks.end(),
+				[this, brokenDuration](const ActiveBrokenBlock& brokenBlock)
+				{
+					if (brokenBlock.timer >= brokenDuration)
+					{
+						const BombermanGridPosition position = brokenBlock.gridPosition;
+
+						if (isInside(position.col, position.row) &&
+							m_rows[position.row][position.col] == 'K')
+						{
+							m_rows[position.row][position.col] = ' ';
+						}
+
+						m_completedBrokenBlocks.push_back(position);
+						return true;
+					}
+
+					return false;
+				}),
+			m_activeBrokenBlocks.end());
+	}
+}
+
+std::vector<BombermanGridPosition> BombermanLevel::consumeCompletedBrokenBlocks()
+{
+	std::vector<BombermanGridPosition> completed = std::move(m_completedBrokenBlocks);
+	m_completedBrokenBlocks.clear();
+	return completed;
 }
 
 void BombermanLevel::generateRandomBreakableBlocks(std::mt19937& rng,
@@ -271,13 +344,9 @@ void BombermanLevel::generateRandomBreakableBlocks(std::mt19937& rng,
 	std::shuffle(candidates.begin(), candidates.end(), rng);
 
 	const int availableEmptyTiles = static_cast<int>(candidates.size());
-
 	const int minimumPossible = std::min(std::max(0, minimumBlocks), availableEmptyTiles);
 
 	int maximumFromRatio = static_cast<int>(static_cast<float>(availableEmptyTiles) * maxEmptyTileRatio);
-
-	// If 20% of the available empty tiles is lower than the requested minimum,
-	// we still allow the minimum so small maps can function.
 	maximumFromRatio = std::max(maximumFromRatio, minimumPossible);
 	maximumFromRatio = std::clamp(maximumFromRatio, minimumPossible, availableEmptyTiles);
 
@@ -442,6 +511,49 @@ const sf::Texture* BombermanLevel::getCurrentBreakableTexture() const
 	return &m_breakableFrames[m_breakableCurrentFrame % m_breakableFrames.size()];
 }
 
+const sf::Texture* BombermanLevel::getCurrentExitTexture() const
+{
+	if (m_exitFrames.empty())
+		return nullptr;
+
+	return &m_exitFrames[m_exitCurrentFrame % m_exitFrames.size()];
+}
+
+const BombermanLevel::ActiveBrokenBlock* BombermanLevel::findActiveBrokenBlock(int col, int row) const
+{
+	for (const ActiveBrokenBlock& brokenBlock : m_activeBrokenBlocks)
+	{
+		if (brokenBlock.gridPosition.col == col && brokenBlock.gridPosition.row == row)
+			return &brokenBlock;
+	}
+
+	return nullptr;
+}
+
+std::size_t BombermanLevel::getBrokenAnimationFrameIndex(const ActiveBrokenBlock& brokenBlock) const
+{
+	if (m_brokenFrames.empty())
+		return 0;
+
+	if (m_brokenFrames.size() == 1)
+		return 0;
+
+	std::size_t frameIndex = static_cast<std::size_t>(brokenBlock.timer / m_brokenFrameDuration);
+
+	if (frameIndex >= m_brokenFrames.size())
+		frameIndex = m_brokenFrames.size() - 1;
+
+	return frameIndex;
+}
+
+float BombermanLevel::getBrokenAnimationDuration() const
+{
+	if (m_brokenFrames.empty())
+		return 0.f;
+
+	return static_cast<float>(m_brokenFrames.size()) * m_brokenFrameDuration;
+}
+
 void BombermanLevel::drawTextureInTile(sf::RenderTarget& target, const sf::Texture& texture, int col, int row) const
 {
 	sf::Sprite sprite(texture);
@@ -485,6 +597,17 @@ void BombermanLevel::drawWorldTileAt(sf::RenderTarget& target, int col, int row)
 	if (!isInside(col, row))
 		return;
 
+	if (const ActiveBrokenBlock* brokenBlock = findActiveBrokenBlock(col, row))
+	{
+		if (!m_brokenFrames.empty())
+		{
+			const std::size_t frameIndex = getBrokenAnimationFrameIndex(*brokenBlock);
+			drawTextureInTile(target, m_brokenFrames[frameIndex], col, row);
+		}
+
+		return;
+	}
+
 	const char tile = m_rows[row][col];
 
 	if (const sf::Texture* wallTexture = getWallTextureForTile(tile))
@@ -500,9 +623,9 @@ void BombermanLevel::drawWorldTileAt(sf::RenderTarget& target, int col, int row)
 	}
 	else if (tile == 'E')
 	{
-		if (m_hasExitTexture)
+		if (const sf::Texture* exitTexture = getCurrentExitTexture())
 		{
-			drawTextureInTile(target, m_exitTexture, col, row);
+			drawTextureInTile(target, *exitTexture, col, row);
 		}
 		else
 		{
@@ -595,7 +718,7 @@ bool BombermanLevel::isBlockedForMovement(int col, int row) const
 
 	const char tile = m_rows[row][col];
 
-	return isSolidWallCharacter(tile) || tile == 'B';
+	return isSolidWallCharacter(tile) || tile == 'B' || tile == 'K';
 }
 
 bool BombermanLevel::canExplosionPassThrough(int col, int row) const
@@ -604,6 +727,28 @@ bool BombermanLevel::canExplosionPassThrough(int col, int row) const
 		return false;
 
 	return !isSolidWallCharacter(m_rows[row][col]);
+}
+
+bool BombermanLevel::startBreakingBlock(int col, int row)
+{
+	if (!isBreakableBlock(col, row))
+		return false;
+
+	m_rows[row][col] = 'K';
+
+	if (m_brokenFrames.empty())
+	{
+		m_rows[row][col] = ' ';
+		m_completedBrokenBlocks.push_back({ col, row });
+		return true;
+	}
+
+	ActiveBrokenBlock brokenBlock;
+	brokenBlock.gridPosition = { col, row };
+	brokenBlock.timer = 0.f;
+
+	m_activeBrokenBlocks.push_back(brokenBlock);
+	return true;
 }
 
 void BombermanLevel::destroyBreakableBlock(int col, int row)
