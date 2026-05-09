@@ -22,6 +22,7 @@ public:
 	void draw(sf::RenderWindow& window, sf::Vector2i mousePixelPosition);
 
 	void handleMousePressed(sf::Mouse::Button button, sf::Vector2i mousePixelPosition);
+	void handleMouseWheelScrolled(float delta);
 	void handleKeyReleased(sf::Keyboard::Key key);
 
 	void paintAtPixel(sf::Vector2i pixelPosition);
@@ -58,10 +59,15 @@ private:
 	bool loadFirstTextureFromDirectory(sf::Texture& texture, const std::string& directoryPath);
 
 	std::optional<sf::Vector2i> getTileAtPixel(sf::Vector2i pixelPosition) const;
+	std::optional<int> getToolbarIndexAtPixel(sf::Vector2i pixelPosition) const;
 
 	bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point) const;
 
 	void selectToolByTile(char tile);
+	void selectToolByHotkey(sf::Keyboard::Key key);
+	void selectNextTool();
+	void selectPreviousTool();
+
 	int findToolIndexForTile(char tile) const;
 
 	void placeTileAt(int col, int row, char tile);

@@ -160,7 +160,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 			m_tools.push_back(std::move(tool));
 		};
 
-	// Slot 1
 	addTool(
 		' ',
 		"EMPTY",
@@ -169,7 +168,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(55, 120, 55)
 	);
 
-	// Slot 2
 	addDirectoryTool(
 		'B',
 		"B",
@@ -178,7 +176,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(150, 90, 40)
 	);
 
-	// Slot 3
 	addDirectoryTool(
 		'P',
 		"P",
@@ -187,7 +184,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(70, 150, 255)
 	);
 
-	// Slot 4
 	addDirectoryTool(
 		'O',
 		"O",
@@ -196,8 +192,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 80, 80)
 	);
 
-	// Slot 5
-	// A = Lamp enemy
 	addDirectoryTool(
 		'A',
 		"A",
@@ -206,7 +200,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 220, 70)
 	);
 
-	// Slot 6
 	addDirectoryTool(
 		'E',
 		"E",
@@ -215,7 +208,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(255, 230, 80)
 	);
 
-	// Slot 7
 	addTool(
 		'M',
 		"M",
@@ -224,7 +216,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(120, 120, 120)
 	);
 
-	// Slot 8
 	addTool(
 		'U',
 		"U",
@@ -233,7 +224,6 @@ void GAME1_BombermanLevelEditor::buildTools()
 		sf::Color(130, 130, 130)
 	);
 
-	// Slot 9
 	addTool(
 		'D',
 		"D",
@@ -689,7 +679,7 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 	const float controlsY = std::min(windowHeight - 28.f, m_toolbarOrigin.y + m_toolbarSlotSize + 8.f);
 
 	drawTextCentered(
-		"Controls: Left Click = place/select toolbar    Right Click = erase    Middle Mouse = color pick    P = save    R = reset template    1-9 = toolbar slots",
+		"Controls: Left Click = place/select toolbar    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle tools    Letter keys = select tile    Enter = save    Backspace = reset",
 		14,
 		sf::FloatRect({ 0.f, controlsY }, { windowWidth, 24.f }),
 		sf::Color(220, 220, 220),
@@ -712,24 +702,12 @@ void GAME1_BombermanLevelEditor::handleMousePressed(sf::Mouse::Button button, sf
 			return;
 		}
 
-		for (std::size_t i = 0; i < m_tools.size(); ++i)
-		{
-			const sf::FloatRect slotRect(
-				{
-					m_toolbarOrigin.x + static_cast<float>(i) * (m_toolbarSlotSize + m_toolbarSlotGap),
-					m_toolbarOrigin.y
-				},
-				{
-					m_toolbarSlotSize,
-					m_toolbarSlotSize
-				}
-			);
+		const std::optional<int> toolbarIndex = getToolbarIndexAtPixel(mousePixelPosition);
 
-			if (containsPoint(slotRect, mousePosition))
-			{
-				m_selectedToolIndex = static_cast<int>(i);
-				return;
-			}
+		if (toolbarIndex.has_value())
+		{
+			m_selectedToolIndex = *toolbarIndex;
+			return;
 		}
 
 		paintAtPixel(mousePixelPosition);
@@ -744,64 +722,36 @@ void GAME1_BombermanLevelEditor::handleMousePressed(sf::Mouse::Button button, sf
 	}
 }
 
+void GAME1_BombermanLevelEditor::handleMouseWheelScrolled(float delta)
+{
+	if (delta < 0.f)
+	{
+		selectNextTool();
+	}
+	else if (delta > 0.f)
+	{
+		selectPreviousTool();
+	}
+}
+
 void GAME1_BombermanLevelEditor::handleKeyReleased(sf::Keyboard::Key key)
 {
 	switch (key)
 	{
-	case sf::Keyboard::Key::P:
+	case sf::Keyboard::Key::Enter:
 		saveToNextLevelFile();
 		break;
 
-	case sf::Keyboard::Key::R:
+	case sf::Keyboard::Key::Backspace:
 		resetFromTemplate();
 		break;
 
-	case sf::Keyboard::Key::Num1:
-	case sf::Keyboard::Key::Numpad1:
-		selectToolbarSlot(1);
-		break;
-
-	case sf::Keyboard::Key::Num2:
-	case sf::Keyboard::Key::Numpad2:
-		selectToolbarSlot(2);
-		break;
-
-	case sf::Keyboard::Key::Num3:
-	case sf::Keyboard::Key::Numpad3:
-		selectToolbarSlot(3);
-		break;
-
-	case sf::Keyboard::Key::Num4:
-	case sf::Keyboard::Key::Numpad4:
-		selectToolbarSlot(4);
-		break;
-
-	case sf::Keyboard::Key::Num5:
-	case sf::Keyboard::Key::Numpad5:
-		selectToolbarSlot(5);
-		break;
-
-	case sf::Keyboard::Key::Num6:
-	case sf::Keyboard::Key::Numpad6:
-		selectToolbarSlot(6);
-		break;
-
-	case sf::Keyboard::Key::Num7:
-	case sf::Keyboard::Key::Numpad7:
-		selectToolbarSlot(7);
-		break;
-
-	case sf::Keyboard::Key::Num8:
-	case sf::Keyboard::Key::Numpad8:
-		selectToolbarSlot(8);
-		break;
-
-	case sf::Keyboard::Key::Num9:
-	case sf::Keyboard::Key::Numpad9:
-		selectToolbarSlot(9);
+	case sf::Keyboard::Key::Space:
+		selectToolByTile(' ');
 		break;
 
 	default:
+		selectToolByHotkey(key);
 		break;
 	}
 }
@@ -831,6 +781,14 @@ void GAME1_BombermanLevelEditor::eraseAtPixel(sf::Vector2i pixelPosition)
 
 void GAME1_BombermanLevelEditor::pickAtPixel(sf::Vector2i pixelPosition)
 {
+	const std::optional<int> toolbarIndex = getToolbarIndexAtPixel(pixelPosition);
+
+	if (toolbarIndex.has_value())
+	{
+		m_selectedToolIndex = *toolbarIndex;
+		return;
+	}
+
 	const std::optional<sf::Vector2i> tilePosition = getTileAtPixel(pixelPosition);
 
 	if (!tilePosition.has_value())
@@ -891,6 +849,33 @@ std::optional<sf::Vector2i> GAME1_BombermanLevelEditor::getTileAtPixel(sf::Vecto
 	return sf::Vector2i{ col, row };
 }
 
+std::optional<int> GAME1_BombermanLevelEditor::getToolbarIndexAtPixel(sf::Vector2i pixelPosition) const
+{
+	const sf::Vector2f mousePosition{
+		static_cast<float>(pixelPosition.x),
+		static_cast<float>(pixelPosition.y)
+	};
+
+	for (std::size_t i = 0; i < m_tools.size(); ++i)
+	{
+		const sf::FloatRect slotRect(
+			{
+				m_toolbarOrigin.x + static_cast<float>(i) * (m_toolbarSlotSize + m_toolbarSlotGap),
+				m_toolbarOrigin.y
+			},
+			{
+				m_toolbarSlotSize,
+				m_toolbarSlotSize
+			}
+		);
+
+		if (containsPoint(slotRect, mousePosition))
+			return static_cast<int>(i);
+	}
+
+	return std::nullopt;
+}
+
 bool GAME1_BombermanLevelEditor::containsPoint(const sf::FloatRect& bounds, sf::Vector2f point) const
 {
 	return point.x >= bounds.position.x &&
@@ -907,6 +892,97 @@ void GAME1_BombermanLevelEditor::selectToolByTile(char tile)
 		return;
 
 	m_selectedToolIndex = index;
+}
+
+void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
+{
+	switch (key)
+	{
+	case sf::Keyboard::Key::A:
+		selectToolByTile('A');
+		break;
+
+	case sf::Keyboard::Key::B:
+		selectToolByTile('B');
+		break;
+
+	case sf::Keyboard::Key::C:
+		selectToolByTile('C');
+		break;
+
+	case sf::Keyboard::Key::D:
+		selectToolByTile('D');
+		break;
+
+	case sf::Keyboard::Key::E:
+		selectToolByTile('E');
+		break;
+
+	case sf::Keyboard::Key::L:
+		selectToolByTile('L');
+		break;
+
+	case sf::Keyboard::Key::M:
+		selectToolByTile('M');
+		break;
+
+	case sf::Keyboard::Key::O:
+		selectToolByTile('O');
+		break;
+
+	case sf::Keyboard::Key::P:
+		selectToolByTile('P');
+		break;
+
+	case sf::Keyboard::Key::Q:
+		selectToolByTile('Q');
+		break;
+
+	case sf::Keyboard::Key::R:
+		selectToolByTile('R');
+		break;
+
+	case sf::Keyboard::Key::T:
+		selectToolByTile('T');
+		break;
+
+	case sf::Keyboard::Key::U:
+		selectToolByTile('U');
+		break;
+
+	case sf::Keyboard::Key::Y:
+		selectToolByTile('Y');
+		break;
+
+	case sf::Keyboard::Key::Z:
+		selectToolByTile('Z');
+		break;
+
+	default:
+		break;
+	}
+}
+
+void GAME1_BombermanLevelEditor::selectNextTool()
+{
+	if (m_tools.empty())
+		return;
+
+	++m_selectedToolIndex;
+
+	if (m_selectedToolIndex >= static_cast<int>(m_tools.size()))
+		m_selectedToolIndex = 0;
+}
+
+void GAME1_BombermanLevelEditor::selectPreviousTool()
+{
+	if (m_tools.empty())
+		return;
+
+	--m_selectedToolIndex;
+
+	if (m_selectedToolIndex < 0)
+		m_selectedToolIndex = static_cast<int>(m_tools.size()) - 1;
 }
 
 int GAME1_BombermanLevelEditor::findToolIndexForTile(char tile) const

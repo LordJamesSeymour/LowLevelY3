@@ -778,7 +778,15 @@ int main()
 
 					ReportBombermanEditorResult(previousSavedPath, previousError);
 				}
-			}
+
+				if (const auto* mouseWheelScrolled = event->getIf<sf::Event::MouseWheelScrolled>())
+				{
+					if (mouseWheelScrolled->wheel == sf::Mouse::Wheel::Vertical)
+					{
+						bombermanEditor.handleMouseWheelScrolled(mouseWheelScrolled->delta);
+					}
+				}
+}
 			else if (appState == AppState::GAME1_Bomberman)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
