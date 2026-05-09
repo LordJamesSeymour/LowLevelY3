@@ -87,6 +87,15 @@
     <ClInclude Include="BombermanBomb.h">
       <Filter>Header Files\Bomberman</Filter>
     </ClInclude>
+    <ClInclude Include="GAME1_BombermanMenu.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_BombermanLevelSelect.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_BombermanLevelEditor.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -138,6 +147,15 @@
       <Filter>Source Files\Bomberman</Filter>
     </ClCompile>
     <ClCompile Include="BombermanEnemy.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_BombermanMenu.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_BombermanLevelSelect.cpp">
+      <Filter>Source Files\Bomberman</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_BombermanLevelEditor.cpp">
       <Filter>Source Files\Bomberman</Filter>
     </ClCompile>
   </ItemGroup>

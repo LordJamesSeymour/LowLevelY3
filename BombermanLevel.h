@@ -47,6 +47,7 @@ public:
 
 	BombermanGridPosition getPlayerSpawn() const;
 	const std::vector<BombermanGridPosition>& getEnemySpawns() const;
+	const std::vector<BombermanEnemySpawn>& getEnemySpawnEntries() const;
 
 	bool hasExit() const;
 	BombermanGridPosition getExitPosition() const;
@@ -106,12 +107,12 @@ private:
 	std::vector<sf::Texture> m_breakableFrames;
 	std::size_t m_breakableCurrentFrame = 0;
 	float m_breakableAnimationTimer = 0.f;
-	float m_breakableFrameDuration = 0.12f;
+	float m_breakableFrameDuration = 0.24f;
 
 	std::vector<sf::Texture> m_brokenFrames;
 	std::vector<ActiveBrokenBlock> m_activeBrokenBlocks;
 	std::vector<BombermanGridPosition> m_completedBrokenBlocks;
-	float m_brokenFrameDuration = 0.07f;
+	float m_brokenFrameDuration = 0.14f;
 
 	sf::Texture m_solidBlockTexture;
 
@@ -127,6 +128,7 @@ private:
 
 	BombermanGridPosition m_playerSpawn{ 1, 1 };
 	std::vector<BombermanGridPosition> m_enemySpawns;
+	std::vector<BombermanEnemySpawn> m_enemySpawnEntries;
 
 	bool m_hasExit = false;
 	BombermanGridPosition m_exitPosition{ 0, 0 };

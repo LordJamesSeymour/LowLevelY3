@@ -6,8 +6,10 @@
 #include "BombermanPlayer.h"
 #include "BombermanTypes.h"
 
+#include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <random>
 #include <string>
@@ -17,6 +19,8 @@ class GAME1_BombermanWindow
 {
 public:
 	bool load(const std::string& fontPath, const std::string& bombermanRootDirectory);
+
+	bool loadMapFromFile(const std::string& mapPath);
 
 	void reset();
 
@@ -30,6 +34,8 @@ private:
 	enum class PlayState
 	{
 		Playing,
+		TeleportingOut,
+		TeleportingIn,
 		GameOver,
 		Victory
 	};
@@ -71,9 +77,20 @@ private:
 		const std::string& directoryPath,
 		const std::string& readableName);
 
+	bool loadSound(sf::SoundBuffer& buffer,
+		std::optional<sf::Sound>& sound,
+		const std::string& path,
+		const std::string& readableName);
+
+	void playSound(std::optional<sf::Sound>& sound);
+	void updateWalkingSound(float deltaTime);
+	void stopWalkingSound();
+	bool isWalkingInputHeld() const;
+
 	bool tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths);
 
-	bool loadLevelAndActors();
+	bool loadLevelAndActors(bool resetPerks = true);
+	void resetPerksToDefaults();
 
 	bool assignHiddenExitToBreakableBlock();
 	bool isHiddenExitBlock(BombermanGridPosition gridPosition) const;
@@ -96,6 +113,7 @@ private:
 
 	bool isTileBlockedForPlayer(int col, int row) const;
 	bool isTileBlockedForEnemies(int col, int row) const;
+	bool isTileBlockedForLamp(int col, int row) const;
 
 	void refreshBombPassThroughState();
 
@@ -127,6 +145,23 @@ private:
 	void updateWinLoseState();
 	bool isPlayerStandingOnExit() const;
 
+	void beginTeleportOut();
+	void updateTeleport(float deltaTime);
+	void finishTeleportOut();
+	void beginTeleportIn();
+	void finishTeleportIn();
+
+	const sf::Texture* getCurrentTeleportTexture() const;
+	std::size_t getCurrentTeleportFrameIndex() const;
+
+	std::vector<std::string> getSortedLevelPaths() const;
+	bool getNextLevelPath(std::string& outNextLevelPath) const;
+	int getWorldIndexForLevelPath(const std::string& levelPath) const;
+
+	static bool isValidPlayableLevelFile(const std::filesystem::path& path);
+	static int extractLevelNumber(const std::filesystem::path& path);
+	static std::string normalizePathForCompare(const std::filesystem::path& path);
+
 	void drawTextureInTile(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		BombermanGridPosition gridPosition) const;
@@ -153,6 +188,7 @@ private:
 	std::string m_bombermanRootDirectory;
 	std::string m_resourcesDirectory;
 	std::string m_mapsDirectory;
+	std::string m_currentMapPath;
 
 	BombermanLevel m_level;
 	BombermanPlayer m_player;
@@ -176,9 +212,42 @@ private:
 
 	float m_explosionDuration = 0.38f;
 
+	AnimationFrames m_teleportAnimation;
+	BombermanGridPosition m_teleportGridPosition{ 0, 0 };
+	float m_teleportTimer = 0.f;
+	float m_teleportFrameDuration = 0.08f;
+
 	PowerUpTexture m_fireUpTexture;
 	PowerUpTexture m_bombUpTexture;
 	PowerUpTexture m_speedUpTexture;
+
+	sf::SoundBuffer m_bombExplodesBuffer;
+	sf::SoundBuffer m_bombermanDiesBuffer;
+	sf::SoundBuffer m_itemGetBuffer;
+	sf::SoundBuffer m_placeBombBuffer;
+	sf::SoundBuffer m_walkingBuffer;
+
+	std::optional<sf::Sound> m_bombExplodesSound;
+	std::optional<sf::Sound> m_bombermanDiesSound;
+	std::optional<sf::Sound> m_itemGetSound;
+	std::optional<sf::Sound> m_placeBombSound;
+
+	std::optional<sf::Sound> m_walkingSound;
+	std::optional<sf::Sound> m_walkingSecondSound;
+	std::optional<sf::Sound> m_walkingThirdSound;
+	std::optional<sf::Sound> m_walkingFourthSound;
+
+	float m_footstepTimer = 0.f;
+	float m_footstepInterval = 1.0f;
+	float m_extraFootstepDelay = 0.25f;
+
+	float m_secondFootstepTimer = 0.f;
+	float m_thirdFootstepTimer = 0.f;
+	float m_fourthFootstepTimer = 0.f;
+
+	bool m_secondFootstepPending = false;
+	bool m_thirdFootstepPending = false;
+	bool m_fourthFootstepPending = false;
 
 	sf::Font m_font;
 

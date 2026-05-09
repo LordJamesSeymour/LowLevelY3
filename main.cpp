@@ -9,12 +9,18 @@
 #include <windows.h>
 
 #include "ArcadeHub.h"
+
 #include "GAME1_BombermanWindow.h"
+#include "GAME1_BombermanMenu.h"
+#include "GAME1_BombermanLevelSelect.h"
+#include "GAME1_BombermanLevelEditor.h"
+
 #include "GAME1_Level.h"
 #include "GAME1_Player.h"
 #include "GAME1_Menu.h"
 #include "GAME1_LevelEditor.h"
 #include "GAME1_LevelSelect.h"
+
 #include "GAME2_Menu.h"
 #include "GAME2_Game.h"
 
@@ -25,6 +31,7 @@ namespace
 	const std::filesystem::path kLockedImagePath = "assets/LockedImage.png";
 
 	const std::filesystem::path kBombermanRootDirectory = "assets/Game#0/Bomberman";
+	const std::filesystem::path kBombermanMapsDirectory = "assets/Game#0/Bomberman/Maps";
 	const std::filesystem::path kBombermanSplashStillImagePath = "assets/Game#0/SplashScreen/BombermanSplashScreen.png";
 
 	const std::filesystem::path kGame1ResourcesDirectory = "assets/Game#1/Resources";
@@ -38,6 +45,9 @@ namespace
 	{
 		Hub,
 
+		GAME1_BombermanMenu,
+		GAME1_BombermanLevelSelect,
+		GAME1_BombermanEditor,
 		GAME1_Bomberman,
 
 		GAME1_Menu,
@@ -338,6 +348,45 @@ int main()
 		return -1;
 	}
 
+	GAME1_BombermanMenu bombermanMenu;
+	if (!bombermanMenu.load(kGlobalFontPath.string(), kBombermanRootDirectory.string()))
+	{
+		std::string msg =
+			"Bomberman menu failed to load.\n\n" +
+			bombermanMenu.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	GAME1_BombermanLevelSelect bombermanLevelSelect;
+	if (!bombermanLevelSelect.load(kGlobalFontPath.string(), kBombermanMapsDirectory.string()))
+	{
+		std::string msg =
+			"Bomberman level select failed to load.\n\n" +
+			bombermanLevelSelect.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	GAME1_BombermanLevelEditor bombermanEditor;
+	if (!bombermanEditor.load(kGlobalFontPath.string(), kBombermanRootDirectory.string()))
+	{
+		std::string msg =
+			"Bomberman level editor failed to load.\n\n" +
+			bombermanEditor.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
 	GAME1_BombermanWindow bombermanWindow;
 	if (!bombermanWindow.load(kGlobalFontPath.string(), kBombermanRootDirectory.string()))
 	{
@@ -448,6 +497,22 @@ int main()
 
 	AppState appState = AppState::Hub;
 
+	auto SetAppState = [&](AppState newState)
+		{
+			if (appState == AppState::GAME1_BombermanMenu &&
+				newState != AppState::GAME1_BombermanMenu)
+			{
+				bombermanMenu.stopMusic();
+			}
+
+			appState = newState;
+
+			if (appState == AppState::GAME1_BombermanMenu)
+			{
+				bombermanMenu.startMusic();
+			}
+		};
+
 	auto TryLaunchSelectedHubGame = [&]()
 		{
 			if (hub.isSelectedGameLocked())
@@ -455,16 +520,34 @@ int main()
 
 			if (hub.getSelectedIndex() == 0)
 			{
-				bombermanWindow.reset();
-				appState = AppState::GAME1_Bomberman;
+				SetAppState(AppState::GAME1_BombermanMenu);
 			}
 			else if (hub.getSelectedIndex() == 1)
 			{
-				appState = AppState::GAME1_Menu;
+				SetAppState(AppState::GAME1_Menu);
 			}
 			else if (hub.getSelectedIndex() == 2)
 			{
-				appState = AppState::GAME2_Menu;
+				SetAppState(AppState::GAME2_Menu);
+			}
+		};
+
+	auto ReportBombermanEditorResult =
+		[&](const std::string& previousSavedPath, const std::string& previousError)
+		{
+			const std::string currentError = bombermanEditor.getLastError();
+			const std::string currentSavedPath = bombermanEditor.getLastSavedPath();
+
+			if (!currentError.empty() && currentError != previousError)
+			{
+				ShowError(currentError);
+				return;
+			}
+
+			if (!currentSavedPath.empty() && currentSavedPath != previousSavedPath)
+			{
+				ShowInfo("Bomberman level saved successfully.\n\n" + currentSavedPath);
+				bombermanLevelSelect.refreshLevelList();
 			}
 		};
 
@@ -474,6 +557,10 @@ int main()
 	{
 		const float deltaTime = clock.restart().asSeconds();
 		totalAppTime += deltaTime;
+
+		bombermanEditor.layout(window);
+		bombermanLevelSelect.layout(window);
+		bombermanMenu.layout(window);
 
 		while (const std::optional event = window.pollEvent())
 		{
@@ -554,13 +641,151 @@ int main()
 					}
 				}
 			}
+			else if (appState == AppState::GAME1_BombermanMenu)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						SetAppState(AppState::Hub);
+					}
+				}
+
+				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+				{
+					if (mousePressed->button == sf::Mouse::Button::Left)
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mousePressed->position.x),
+							static_cast<float>(mousePressed->position.y)
+						);
+
+						switch (bombermanMenu.handleClick(mousePosition))
+						{
+						case GAME1_BombermanMenuAction::PlayLevels:
+							bombermanLevelSelect.refreshLevelList();
+							SetAppState(AppState::GAME1_BombermanLevelSelect);
+							break;
+
+						case GAME1_BombermanMenuAction::LevelEditor:
+							bombermanEditor.reset();
+
+							if (!bombermanEditor.getLastError().empty())
+							{
+								ShowError(bombermanEditor.getLastError());
+							}
+							else
+							{
+								SetAppState(AppState::GAME1_BombermanEditor);
+							}
+
+							break;
+
+						case GAME1_BombermanMenuAction::BackToHub:
+							SetAppState(AppState::Hub);
+							break;
+
+						case GAME1_BombermanMenuAction::None:
+						default:
+							break;
+						}
+					}
+				}
+			}
+			else if (appState == AppState::GAME1_BombermanLevelSelect)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						SetAppState(AppState::GAME1_BombermanMenu);
+					}
+				}
+
+				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+				{
+					if (mousePressed->button == sf::Mouse::Button::Left)
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mousePressed->position.x),
+							static_cast<float>(mousePressed->position.y)
+						);
+
+						const GAME1_BombermanLevelSelectAction action =
+							bombermanLevelSelect.handleClick(mousePosition);
+
+						switch (action)
+						{
+						case GAME1_BombermanLevelSelectAction::Back:
+							SetAppState(AppState::GAME1_BombermanMenu);
+							break;
+
+						case GAME1_BombermanLevelSelectAction::SelectedLevel:
+							if (!bombermanWindow.loadMapFromFile(bombermanLevelSelect.getSelectedLevelPath()))
+							{
+								std::string msg =
+									"Bomberman level failed to load.\n\n" +
+									bombermanWindow.getLastError() +
+									"\n\nCurrent working directory:\n" +
+									std::filesystem::current_path().string();
+
+								ShowError(msg);
+								return -1;
+							}
+
+							SetAppState(AppState::GAME1_Bomberman);
+							break;
+
+						case GAME1_BombermanLevelSelectAction::PreviousPage:
+						case GAME1_BombermanLevelSelectAction::NextPage:
+						case GAME1_BombermanLevelSelectAction::None:
+						default:
+							break;
+						}
+					}
+				}
+			}
+			else if (appState == AppState::GAME1_BombermanEditor)
+			{
+				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				{
+					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					{
+						SetAppState(AppState::GAME1_BombermanMenu);
+					}
+					else
+					{
+						const std::string previousSavedPath = bombermanEditor.getLastSavedPath();
+						const std::string previousError = bombermanEditor.getLastError();
+
+						bombermanEditor.handleKeyReleased(keyReleased->code);
+
+						ReportBombermanEditorResult(previousSavedPath, previousError);
+					}
+				}
+
+				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+				{
+					const sf::Vector2i mousePixelPosition{
+						mousePressed->position.x,
+						mousePressed->position.y
+					};
+
+					const std::string previousSavedPath = bombermanEditor.getLastSavedPath();
+					const std::string previousError = bombermanEditor.getLastError();
+
+					bombermanEditor.handleMousePressed(mousePressed->button, mousePixelPosition);
+
+					ReportBombermanEditorResult(previousSavedPath, previousError);
+				}
+			}
 			else if (appState == AppState::GAME1_Bomberman)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::Hub;
+						SetAppState(AppState::GAME1_BombermanMenu);
 					}
 				}
 			}
@@ -570,7 +795,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::Hub;
+						SetAppState(AppState::Hub);
 					}
 				}
 
@@ -586,17 +811,17 @@ int main()
 						switch (game1Menu.handleClick(mousePosition))
 						{
 						case GAME1_MenuAction::Quit:
-							appState = AppState::Hub;
+							SetAppState(AppState::Hub);
 							break;
 
 						case GAME1_MenuAction::Play:
 							game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
-							appState = AppState::GAME1_LevelSelect;
+							SetAppState(AppState::GAME1_LevelSelect);
 							break;
 
 						case GAME1_MenuAction::LevelEditor:
 							game1Editor.resetEmpty();
-							appState = AppState::GAME1_Editor;
+							SetAppState(AppState::GAME1_Editor);
 							break;
 
 						case GAME1_MenuAction::None:
@@ -612,7 +837,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::GAME1_Menu;
+						SetAppState(AppState::GAME1_Menu);
 					}
 				}
 
@@ -632,7 +857,7 @@ int main()
 							if (!LoadGame1(game1Level, game1Player, game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
 
-							appState = AppState::GAME1_Game;
+							SetAppState(AppState::GAME1_Game);
 						}
 					}
 				}
@@ -643,7 +868,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::GAME1_Menu;
+						SetAppState(AppState::GAME1_Menu);
 					}
 				}
 			}
@@ -653,7 +878,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::GAME1_Menu;
+						SetAppState(AppState::GAME1_Menu);
 					}
 					else if (keyReleased->code == sf::Keyboard::Key::P)
 					{
@@ -699,7 +924,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::Hub;
+						SetAppState(AppState::Hub);
 					}
 				}
 
@@ -716,7 +941,7 @@ int main()
 						{
 						case GAME2_MenuAction::Play:
 							game2Game.reset(window.getSize());
-							appState = AppState::GAME2_Game;
+							SetAppState(AppState::GAME2_Game);
 							break;
 
 						case GAME2_MenuAction::None:
@@ -732,7 +957,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						appState = AppState::GAME2_Menu;
+						SetAppState(AppState::GAME2_Menu);
 					}
 				}
 
@@ -748,7 +973,7 @@ int main()
 						switch (game2Game.handleClick(mousePosition, window.getSize()))
 						{
 						case GAME2_GameAction::BackToMenu:
-							appState = AppState::GAME2_Menu;
+							SetAppState(AppState::GAME2_Menu);
 							break;
 
 						case GAME2_GameAction::None:
@@ -803,6 +1028,30 @@ int main()
 				hub.draw(window);
 				window.display();
 			}
+		}
+		else if (appState == AppState::GAME1_BombermanMenu)
+		{
+			bombermanMenu.layout(window);
+
+			window.clear(sf::Color::Black);
+			bombermanMenu.draw(window);
+			window.display();
+		}
+		else if (appState == AppState::GAME1_BombermanLevelSelect)
+		{
+			bombermanLevelSelect.layout(window);
+
+			window.clear(sf::Color::Black);
+			bombermanLevelSelect.draw(window);
+			window.display();
+		}
+		else if (appState == AppState::GAME1_BombermanEditor)
+		{
+			bombermanEditor.layout(window);
+
+			window.clear(sf::Color::Black);
+			bombermanEditor.draw(window, sf::Mouse::getPosition(window));
+			window.display();
 		}
 		else if (appState == AppState::GAME1_Bomberman)
 		{

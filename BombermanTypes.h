@@ -16,14 +16,6 @@ struct BombermanGridPosition
 	}
 };
 
-enum class BombermanDirection
-{
-	Up,
-	Down,
-	Left,
-	Right
-};
-
 enum class BombermanExplosionTileType
 {
 	Center,
@@ -37,7 +29,18 @@ struct BombermanExplosionTile
 {
 	BombermanGridPosition gridPosition{ 0, 0 };
 	BombermanExplosionTileType type = BombermanExplosionTileType::Center;
-
 	bool flipX = false;
 	bool flipY = false;
+};
+
+enum class BombermanEnemyType
+{
+	Copter,
+	Lamp
+};
+
+struct BombermanEnemySpawn
+{
+	BombermanEnemyType type = BombermanEnemyType::Copter;
+	BombermanGridPosition gridPosition{ 0, 0 };
 };

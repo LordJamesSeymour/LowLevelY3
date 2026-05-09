@@ -78,6 +78,7 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	m_bombermanRootDirectory = bombermanRootDirectory;
 	m_resourcesDirectory = (fs::path(m_bombermanRootDirectory) / "Resources").string();
 	m_mapsDirectory = (fs::path(m_bombermanRootDirectory) / "Maps").string();
+	m_currentMapPath = (fs::path(m_mapsDirectory) / "level01.txt").string();
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -115,6 +116,44 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	m_powerUpHudText->setOutlineColor(sf::Color::Black);
 	m_powerUpHudText->setOutlineThickness(2.f);
 
+	const fs::path audioDirectory = fs::path(m_resourcesDirectory) / "Audio";
+
+	if (!loadSound(m_bombExplodesBuffer, m_bombExplodesSound, (audioDirectory / "Bomb_Explodes.wav").string(), "bomb explosion"))
+		return false;
+
+	if (!loadSound(m_bombermanDiesBuffer, m_bombermanDiesSound, (audioDirectory / "Bomberman_Dies.wav").string(), "Bomberman death"))
+		return false;
+
+	if (!loadSound(m_itemGetBuffer, m_itemGetSound, (audioDirectory / "Item_Get.wav").string(), "item pickup"))
+		return false;
+
+	if (!loadSound(m_placeBombBuffer, m_placeBombSound, (audioDirectory / "Place_Bomb.wav").string(), "place bomb"))
+		return false;
+
+	if (!loadSound(m_walkingBuffer, m_walkingSound, (audioDirectory / "Walking_2.wav").string(), "walking"))
+		return false;
+
+	if (m_walkingSound.has_value())
+	{
+		m_walkingSound->setLooping(false);
+		m_walkingSound->setPitch(1.f);
+
+		m_walkingSecondSound.emplace(m_walkingBuffer);
+		m_walkingSecondSound->setVolume(100.f);
+		m_walkingSecondSound->setPitch(1.f);
+		m_walkingSecondSound->setLooping(false);
+
+		m_walkingThirdSound.emplace(m_walkingBuffer);
+		m_walkingThirdSound->setVolume(100.f);
+		m_walkingThirdSound->setPitch(1.f);
+		m_walkingThirdSound->setLooping(false);
+
+		m_walkingFourthSound.emplace(m_walkingBuffer);
+		m_walkingFourthSound->setVolume(100.f);
+		m_walkingFourthSound->setPitch(1.f);
+		m_walkingFourthSound->setLooping(false);
+	}
+
 	const fs::path bombsDirectory = fs::path(m_resourcesDirectory) / "Bombs";
 	const fs::path bombAnimationDirectory = bombsDirectory / "BombAnim";
 	const fs::path explosionAnimationDirectory = bombsDirectory / "ExplosionAnim";
@@ -137,6 +176,11 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 		return false;
 
 	if (!loadAnimationFramesFromDirectory(m_explosionVerticalEndAnimation, (explosionAnimationDirectory / "VerticalEnd").string(), "explosion vertical end animation"))
+		return false;
+
+	const fs::path teleportDirectory = fs::path(m_resourcesDirectory) / "Player" / "Blue" / "Teleport";
+
+	if (!loadAnimationFramesFromDirectory(m_teleportAnimation, teleportDirectory.string(), "player teleport animation"))
 		return false;
 
 	const fs::path powerUpsDirectory = fs::path(m_resourcesDirectory) / "PowerUps";
@@ -171,12 +215,18 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 		return false;
 	}
 
-	if (!loadLevelAndActors())
+	if (!loadLevelAndActors(true))
 		return false;
 
 	refreshUiText({ 1024, 640 });
 
 	return true;
+}
+
+bool GAME1_BombermanWindow::loadMapFromFile(const std::string& mapPath)
+{
+	m_currentMapPath = mapPath;
+	return loadLevelAndActors(true);
 }
 
 bool GAME1_BombermanWindow::loadAnimationFramesFromDirectory(AnimationFrames& animation,
@@ -234,6 +284,170 @@ bool GAME1_BombermanWindow::loadAnimationFramesFromDirectory(AnimationFrames& an
 	return true;
 }
 
+bool GAME1_BombermanWindow::loadSound(sf::SoundBuffer& buffer,
+	std::optional<sf::Sound>& sound,
+	const std::string& path,
+	const std::string& readableName)
+{
+	if (!buffer.loadFromFile(path))
+	{
+		m_lastError = "Failed to load Bomberman " + readableName + " sound: " + path;
+		return false;
+	}
+
+	sound.emplace(buffer);
+	sound->setVolume(100.f);
+	sound->setPitch(1.f);
+
+	return true;
+}
+
+void GAME1_BombermanWindow::playSound(std::optional<sf::Sound>& sound)
+{
+	if (!sound.has_value())
+		return;
+
+	sound->stop();
+	sound->setPitch(1.f);
+	sound->play();
+}
+
+void GAME1_BombermanWindow::updateWalkingSound(float deltaTime)
+{
+	if (!m_walkingSound.has_value() ||
+		!m_walkingSecondSound.has_value() ||
+		!m_walkingThirdSound.has_value() ||
+		!m_walkingFourthSound.has_value())
+	{
+		return;
+	}
+
+	const bool shouldPlayWalking =
+		m_playState == PlayState::Playing &&
+		m_player.isAlive() &&
+		isWalkingInputHeld();
+
+	if (!shouldPlayWalking)
+	{
+		stopWalkingSound();
+
+		m_footstepTimer = 0.f;
+
+		m_secondFootstepTimer = 0.f;
+		m_thirdFootstepTimer = 0.f;
+		m_fourthFootstepTimer = 0.f;
+
+		m_secondFootstepPending = false;
+		m_thirdFootstepPending = false;
+		m_fourthFootstepPending = false;
+
+		return;
+	}
+
+	auto playFootstepChannel = [](std::optional<sf::Sound>& sound)
+		{
+			if (!sound.has_value())
+				return;
+
+			sound->stop();
+			sound->setPitch(1.f);
+			sound->play();
+		};
+
+	if (m_secondFootstepPending)
+	{
+		m_secondFootstepTimer -= deltaTime;
+
+		if (m_secondFootstepTimer <= 0.f)
+		{
+			playFootstepChannel(m_walkingSecondSound);
+			m_secondFootstepPending = false;
+			m_secondFootstepTimer = 0.f;
+		}
+	}
+
+	if (m_thirdFootstepPending)
+	{
+		m_thirdFootstepTimer -= deltaTime;
+
+		if (m_thirdFootstepTimer <= 0.f)
+		{
+			playFootstepChannel(m_walkingThirdSound);
+			m_thirdFootstepPending = false;
+			m_thirdFootstepTimer = 0.f;
+		}
+	}
+
+	if (m_fourthFootstepPending)
+	{
+		m_fourthFootstepTimer -= deltaTime;
+
+		if (m_fourthFootstepTimer <= 0.f)
+		{
+			playFootstepChannel(m_walkingFourthSound);
+			m_fourthFootstepPending = false;
+			m_fourthFootstepTimer = 0.f;
+		}
+	}
+
+	m_footstepTimer -= deltaTime;
+
+	if (m_footstepTimer <= 0.f)
+	{
+		playFootstepChannel(m_walkingSound);
+
+		m_secondFootstepPending = true;
+		m_thirdFootstepPending = true;
+		m_fourthFootstepPending = true;
+
+		m_secondFootstepTimer = m_extraFootstepDelay;
+		m_thirdFootstepTimer = m_extraFootstepDelay * 2.f;
+		m_fourthFootstepTimer = m_extraFootstepDelay * 3.f;
+
+		m_footstepTimer = m_footstepInterval;
+	}
+}
+
+void GAME1_BombermanWindow::stopWalkingSound()
+{
+	if (m_walkingSound.has_value() &&
+		m_walkingSound->getStatus() == sf::SoundSource::Status::Playing)
+	{
+		m_walkingSound->stop();
+	}
+
+	if (m_walkingSecondSound.has_value() &&
+		m_walkingSecondSound->getStatus() == sf::SoundSource::Status::Playing)
+	{
+		m_walkingSecondSound->stop();
+	}
+
+	if (m_walkingThirdSound.has_value() &&
+		m_walkingThirdSound->getStatus() == sf::SoundSource::Status::Playing)
+	{
+		m_walkingThirdSound->stop();
+	}
+
+	if (m_walkingFourthSound.has_value() &&
+		m_walkingFourthSound->getStatus() == sf::SoundSource::Status::Playing)
+	{
+		m_walkingFourthSound->stop();
+	}
+}
+
+bool GAME1_BombermanWindow::isWalkingInputHeld() const
+{
+	return
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+}
+
 bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
 	const std::vector<std::string>& candidatePaths)
 {
@@ -250,9 +464,16 @@ bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
 	return false;
 }
 
-bool GAME1_BombermanWindow::loadLevelAndActors()
+bool GAME1_BombermanWindow::loadLevelAndActors(bool resetPerks)
 {
 	namespace fs = std::filesystem;
+
+	const int savedBombRange = m_bombRange;
+	const int savedMaxActiveBombs = m_maxActiveBombs;
+	const int savedFireUpLevel = m_fireUpLevel;
+	const int savedBombUpLevel = m_bombUpLevel;
+	const int savedSpeedUpLevel = m_speedUpLevel;
+	const float savedPlayerSpeed = m_player.getMoveSpeed();
 
 	m_bombs.clear();
 	m_explosions.clear();
@@ -262,9 +483,15 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	m_hiddenExitPosition = { 0, 0 };
 	m_hiddenExitAssigned = false;
 
-	const fs::path levelPath = fs::path(m_mapsDirectory) / "level01.txt";
+	m_teleportTimer = 0.f;
+	m_teleportGridPosition = { 0, 0 };
 
-	if (!m_level.loadFromFile(levelPath.string(), m_resourcesDirectory))
+	if (m_currentMapPath.empty())
+	{
+		m_currentMapPath = (fs::path(m_mapsDirectory) / "level01.txt").string();
+	}
+
+	if (!m_level.loadFromFile(m_currentMapPath, m_resourcesDirectory))
 	{
 		m_lastError = m_level.getLastError();
 		return false;
@@ -290,26 +517,39 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	m_player.reset(m_level.getPlayerSpawn(), m_level);
 
 	m_playerLives = 3;
-	m_bombRange = 2;
-	m_maxActiveBombs = 1;
 
-	m_fireUpLevel = 0;
-	m_bombUpLevel = 0;
-	m_speedUpLevel = 0;
-
-	m_player.setMoveSpeed(m_basePlayerSpeed);
-
-	const fs::path copterEnemyDirectory = fs::path(m_resourcesDirectory) / "Enemies" / "Copter";
-
-	const std::vector<BombermanGridPosition>& enemySpawns = m_level.getEnemySpawns();
-
-	m_enemies.reserve(enemySpawns.size());
-
-	for (const BombermanGridPosition& spawn : enemySpawns)
+	if (resetPerks)
 	{
+		resetPerksToDefaults();
+	}
+	else
+	{
+		m_bombRange = savedBombRange;
+		m_maxActiveBombs = savedMaxActiveBombs;
+		m_fireUpLevel = savedFireUpLevel;
+		m_bombUpLevel = savedBombUpLevel;
+		m_speedUpLevel = savedSpeedUpLevel;
+		m_player.setMoveSpeed(savedPlayerSpeed);
+	}
+
+	const fs::path enemiesDirectory = fs::path(m_resourcesDirectory) / "Enemies";
+
+	for (const BombermanEnemySpawn& spawnEntry : m_level.getEnemySpawnEntries())
+	{
+		const std::string enemyFolderName =
+			spawnEntry.type == BombermanEnemyType::Lamp
+			? "Lamp"
+			: "Copter";
+
+		const fs::path enemyDirectory = enemiesDirectory / enemyFolderName;
+
 		m_enemies.emplace_back();
 
-		if (!m_enemies.back().load(copterEnemyDirectory.string(), spawn, m_level))
+		if (!m_enemies.back().load(
+			enemyDirectory.string(),
+			spawnEntry.type,
+			spawnEntry.gridPosition,
+			m_level))
 		{
 			m_lastError = m_enemies.back().getLastError();
 			m_enemies.pop_back();
@@ -324,7 +564,31 @@ bool GAME1_BombermanWindow::loadLevelAndActors()
 	m_bombAnimationSequenceIndex = 0;
 	m_bombAnimationTimer = 0.f;
 
+	stopWalkingSound();
+
+	m_footstepTimer = 0.f;
+
+	m_secondFootstepTimer = 0.f;
+	m_thirdFootstepTimer = 0.f;
+	m_fourthFootstepTimer = 0.f;
+
+	m_secondFootstepPending = false;
+	m_thirdFootstepPending = false;
+	m_fourthFootstepPending = false;
+
 	return true;
+}
+
+void GAME1_BombermanWindow::resetPerksToDefaults()
+{
+	m_bombRange = 2;
+	m_maxActiveBombs = 1;
+
+	m_fireUpLevel = 0;
+	m_bombUpLevel = 0;
+	m_speedUpLevel = 0;
+
+	m_player.setMoveSpeed(m_basePlayerSpeed);
 }
 
 bool GAME1_BombermanWindow::assignHiddenExitToBreakableBlock()
@@ -498,7 +762,20 @@ const GAME1_BombermanWindow::AnimationFrames& GAME1_BombermanWindow::getExplosio
 void GAME1_BombermanWindow::reset()
 {
 	m_lastError.clear();
-	loadLevelAndActors();
+
+	stopWalkingSound();
+
+	m_footstepTimer = 0.f;
+
+	m_secondFootstepTimer = 0.f;
+	m_thirdFootstepTimer = 0.f;
+	m_fourthFootstepTimer = 0.f;
+
+	m_secondFootstepPending = false;
+	m_thirdFootstepPending = false;
+	m_fourthFootstepPending = false;
+
+	loadLevelAndActors(true);
 }
 
 void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
@@ -535,6 +812,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 				return isTileBlockedForPlayer(col, row);
 			});
 
+		updateWalkingSound(deltaTime);
+
 		refreshBombPassThroughState();
 		collectPowerUps();
 
@@ -546,9 +825,42 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 		checkPlayerEnemyCollision();
 		updateWinLoseState();
 	}
+	else if (m_playState == PlayState::TeleportingOut ||
+		m_playState == PlayState::TeleportingIn)
+	{
+		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
+		stopWalkingSound();
+
+		m_footstepTimer = 0.f;
+
+		m_secondFootstepTimer = 0.f;
+		m_thirdFootstepTimer = 0.f;
+		m_fourthFootstepTimer = 0.f;
+
+		m_secondFootstepPending = false;
+		m_thirdFootstepPending = false;
+		m_fourthFootstepPending = false;
+
+		updateTeleport(deltaTime);
+		updateExplosions(deltaTime);
+	}
 	else
 	{
 		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
+		stopWalkingSound();
+
+		m_footstepTimer = 0.f;
+
+		m_secondFootstepTimer = 0.f;
+		m_thirdFootstepTimer = 0.f;
+		m_fourthFootstepTimer = 0.f;
+
+		m_secondFootstepPending = false;
+		m_thirdFootstepPending = false;
+		m_fourthFootstepPending = false;
+
 		updateExplosions(deltaTime);
 	}
 
@@ -585,6 +897,8 @@ void GAME1_BombermanWindow::placeBomb()
 	bomb.setPlayerCanPassThrough(true);
 
 	m_bombs.push_back(bomb);
+
+	playSound(m_placeBombSound);
 }
 
 bool GAME1_BombermanWindow::isBombAtTile(BombermanGridPosition gridPosition) const
@@ -641,6 +955,25 @@ bool GAME1_BombermanWindow::isTileBlockedForEnemies(int col, int row) const
 	return false;
 }
 
+bool GAME1_BombermanWindow::isTileBlockedForLamp(int col, int row) const
+{
+	if (m_level.isWall(col, row))
+		return true;
+
+	for (const BombermanBomb& bomb : m_bombs)
+	{
+		if (bomb.hasExploded())
+			continue;
+
+		const BombermanGridPosition bombGrid = bomb.getGridPosition();
+
+		if (bombGrid.col == col && bombGrid.row == row)
+			return true;
+	}
+
+	return false;
+}
+
 void GAME1_BombermanWindow::refreshBombPassThroughState()
 {
 	if (!m_player.isAlive())
@@ -672,6 +1005,20 @@ void GAME1_BombermanWindow::damagePlayer()
 
 	if (m_player.isInvincible())
 		return;
+
+	stopWalkingSound();
+
+	m_footstepTimer = 0.f;
+
+	m_secondFootstepTimer = 0.f;
+	m_thirdFootstepTimer = 0.f;
+	m_fourthFootstepTimer = 0.f;
+
+	m_secondFootstepPending = false;
+	m_thirdFootstepPending = false;
+	m_fourthFootstepPending = false;
+
+	playSound(m_bombermanDiesSound);
 
 	m_player.kill();
 	--m_playerLives;
@@ -820,6 +1167,8 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 	}
 
 	m_explosions.push_back(std::move(explosion));
+
+	playSound(m_bombExplodesSound);
 }
 
 void GAME1_BombermanWindow::maybeSpawnPowerUpAt(BombermanGridPosition gridPosition)
@@ -877,6 +1226,7 @@ void GAME1_BombermanWindow::collectPowerUps()
 		{
 			powerUp.collected = true;
 			applyPowerUp(powerUp.type);
+			playSound(m_itemGetSound);
 		}
 	}
 
@@ -998,14 +1348,30 @@ bool GAME1_BombermanWindow::isGridPositionCurrentlyExploding(BombermanGridPositi
 
 void GAME1_BombermanWindow::updateEnemies(float deltaTime)
 {
+	const BombermanGridPosition playerGridPosition = m_player.getGridPosition(m_level);
+
 	for (BombermanEnemy& enemy : m_enemies)
 	{
-		enemy.update(
-			deltaTime,
-			[this](int col, int row)
-			{
-				return isTileBlockedForEnemies(col, row);
-			});
+		if (enemy.canPassThroughBreakableBlocks())
+		{
+			enemy.update(
+				deltaTime,
+				playerGridPosition,
+				[this](int col, int row)
+				{
+					return isTileBlockedForLamp(col, row);
+				});
+		}
+		else
+		{
+			enemy.update(
+				deltaTime,
+				playerGridPosition,
+				[this](int col, int row)
+				{
+					return isTileBlockedForEnemies(col, row);
+				});
+		}
 	}
 }
 
@@ -1029,12 +1395,17 @@ void GAME1_BombermanWindow::checkPlayerEnemyCollision()
 
 void GAME1_BombermanWindow::updateWinLoseState()
 {
-	if (m_playState == PlayState::GameOver)
+	if (m_playState == PlayState::GameOver ||
+		m_playState == PlayState::Victory ||
+		m_playState == PlayState::TeleportingOut ||
+		m_playState == PlayState::TeleportingIn)
+	{
 		return;
+	}
 
 	if (m_level.hasExit() && isPlayerStandingOnExit())
 	{
-		m_playState = PlayState::Victory;
+		beginTeleportOut();
 	}
 }
 
@@ -1047,6 +1418,269 @@ bool GAME1_BombermanWindow::isPlayerStandingOnExit() const
 		return false;
 
 	return m_player.getGridPosition(m_level) == m_level.getExitPosition();
+}
+
+void GAME1_BombermanWindow::beginTeleportOut()
+{
+	stopWalkingSound();
+
+	m_bombs.clear();
+	m_explosions.clear();
+
+	m_teleportGridPosition = m_player.getGridPosition(m_level);
+	m_teleportTimer = 0.f;
+	m_playState = PlayState::TeleportingOut;
+}
+
+void GAME1_BombermanWindow::updateTeleport(float deltaTime)
+{
+	if (m_teleportAnimation.frames.empty())
+	{
+		if (m_playState == PlayState::TeleportingOut)
+			finishTeleportOut();
+		else if (m_playState == PlayState::TeleportingIn)
+			finishTeleportIn();
+
+		return;
+	}
+
+	m_teleportTimer += deltaTime;
+
+	const float totalDuration =
+		static_cast<float>(m_teleportAnimation.frames.size()) * m_teleportFrameDuration;
+
+	if (m_teleportTimer >= totalDuration)
+	{
+		if (m_playState == PlayState::TeleportingOut)
+		{
+			finishTeleportOut();
+		}
+		else if (m_playState == PlayState::TeleportingIn)
+		{
+			finishTeleportIn();
+		}
+	}
+}
+
+void GAME1_BombermanWindow::finishTeleportOut()
+{
+	std::string nextLevelPath;
+
+	if (!getNextLevelPath(nextLevelPath))
+	{
+		m_playState = PlayState::Victory;
+		return;
+	}
+
+	const int currentWorldIndex = getWorldIndexForLevelPath(m_currentMapPath);
+	const int nextWorldIndex = getWorldIndexForLevelPath(nextLevelPath);
+
+	const bool sameWorld = currentWorldIndex == nextWorldIndex;
+
+	m_currentMapPath = nextLevelPath;
+
+	if (!loadLevelAndActors(!sameWorld))
+	{
+		m_playState = PlayState::GameOver;
+		return;
+	}
+
+	beginTeleportIn();
+}
+
+void GAME1_BombermanWindow::beginTeleportIn()
+{
+	stopWalkingSound();
+
+	m_bombs.clear();
+	m_explosions.clear();
+
+	m_teleportGridPosition = m_level.getPlayerSpawn();
+	m_teleportTimer = 0.f;
+	m_playState = PlayState::TeleportingIn;
+}
+
+void GAME1_BombermanWindow::finishTeleportIn()
+{
+	m_teleportTimer = 0.f;
+	m_playState = PlayState::Playing;
+	m_player.beginInvincibility(1.0f);
+}
+
+const sf::Texture* GAME1_BombermanWindow::getCurrentTeleportTexture() const
+{
+	if (m_teleportAnimation.frames.empty())
+		return nullptr;
+
+	return &m_teleportAnimation.frames[getCurrentTeleportFrameIndex()];
+}
+
+std::size_t GAME1_BombermanWindow::getCurrentTeleportFrameIndex() const
+{
+	if (m_teleportAnimation.frames.empty())
+		return 0;
+
+	const std::size_t frameCount = m_teleportAnimation.frames.size();
+
+	std::size_t forwardIndex = static_cast<std::size_t>(m_teleportTimer / m_teleportFrameDuration);
+
+	if (forwardIndex >= frameCount)
+		forwardIndex = frameCount - 1;
+
+	if (m_playState == PlayState::TeleportingIn)
+	{
+		return frameCount - 1 - forwardIndex;
+	}
+
+	return forwardIndex;
+}
+
+std::vector<std::string> GAME1_BombermanWindow::getSortedLevelPaths() const
+{
+	namespace fs = std::filesystem;
+
+	std::vector<fs::path> paths;
+
+	const fs::path mapsDirectory(m_mapsDirectory);
+
+	if (!fs::exists(mapsDirectory) || !fs::is_directory(mapsDirectory))
+		return {};
+
+	for (const auto& entry : fs::directory_iterator(mapsDirectory))
+	{
+		if (entry.is_regular_file() && isValidPlayableLevelFile(entry.path()))
+		{
+			paths.push_back(entry.path());
+		}
+	}
+
+	std::sort(paths.begin(), paths.end(),
+		[](const fs::path& a, const fs::path& b)
+		{
+			return extractLevelNumber(a) < extractLevelNumber(b);
+		});
+
+	std::vector<std::string> result;
+	result.reserve(paths.size());
+
+	for (const fs::path& path : paths)
+	{
+		result.push_back(path.string());
+	}
+
+	return result;
+}
+
+bool GAME1_BombermanWindow::getNextLevelPath(std::string& outNextLevelPath) const
+{
+	const std::vector<std::string> levels = getSortedLevelPaths();
+
+	if (levels.empty())
+		return false;
+
+	const std::string currentNormalized = normalizePathForCompare(m_currentMapPath);
+
+	for (std::size_t i = 0; i < levels.size(); ++i)
+	{
+		if (normalizePathForCompare(levels[i]) == currentNormalized)
+		{
+			if (i + 1 < levels.size())
+			{
+				outNextLevelPath = levels[i + 1];
+				return true;
+			}
+
+			return false;
+		}
+	}
+
+	const int currentNumber = extractLevelNumber(std::filesystem::path(m_currentMapPath));
+
+	for (std::size_t i = 0; i < levels.size(); ++i)
+	{
+		if (extractLevelNumber(std::filesystem::path(levels[i])) == currentNumber)
+		{
+			if (i + 1 < levels.size())
+			{
+				outNextLevelPath = levels[i + 1];
+				return true;
+			}
+
+			return false;
+		}
+	}
+
+	return false;
+}
+
+int GAME1_BombermanWindow::getWorldIndexForLevelPath(const std::string& levelPath) const
+{
+	const int levelNumber = extractLevelNumber(std::filesystem::path(levelPath));
+
+	if (levelNumber <= 0)
+		return 0;
+
+	// World grouping:
+	// level01 + level02 = world 0
+	// level03 + level04 = world 1
+	// level05 + level06 = world 2
+	return (levelNumber - 1) / 2;
+}
+
+bool GAME1_BombermanWindow::isValidPlayableLevelFile(const std::filesystem::path& path)
+{
+	if (!path.has_filename() || path.extension() != ".txt")
+		return false;
+
+	const std::string stem = path.stem().string();
+
+	if (stem == "leveltemplate")
+		return false;
+
+	if (stem.rfind("level", 0) != 0)
+		return false;
+
+	if (stem.size() <= 5)
+		return false;
+
+	for (std::size_t i = 5; i < stem.size(); ++i)
+	{
+		if (!std::isdigit(static_cast<unsigned char>(stem[i])))
+			return false;
+	}
+
+	return true;
+}
+
+int GAME1_BombermanWindow::extractLevelNumber(const std::filesystem::path& path)
+{
+	const std::string stem = path.stem().string();
+
+	if (stem.rfind("level", 0) != 0 || stem.size() <= 5)
+		return 0;
+
+	try
+	{
+		return std::stoi(stem.substr(5));
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
+std::string GAME1_BombermanWindow::normalizePathForCompare(const std::filesystem::path& path)
+{
+	namespace fs = std::filesystem;
+
+	try
+	{
+		return fs::absolute(path).lexically_normal().generic_string();
+	}
+	catch (...)
+	{
+		return path.lexically_normal().generic_string();
+	}
 }
 
 void GAME1_BombermanWindow::drawTextureInTile(sf::RenderTarget& target,
@@ -1261,6 +1895,7 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 
 	const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
 	const sf::Texture* currentBombTexture = getCurrentBombTexture();
+	const sf::Texture* currentTeleportTexture = getCurrentTeleportTexture();
 
 	for (int row = 0; row < m_level.getHeightInTiles(); ++row)
 	{
@@ -1299,9 +1934,20 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 			}
 		}
 
-		if (m_player.isAlive() && playerGrid.row == row)
+		if (m_playState != PlayState::TeleportingOut &&
+			m_playState != PlayState::TeleportingIn &&
+			m_player.isAlive() &&
+			playerGrid.row == row)
 		{
 			m_player.draw(window);
+		}
+
+		if ((m_playState == PlayState::TeleportingOut ||
+			m_playState == PlayState::TeleportingIn) &&
+			currentTeleportTexture != nullptr &&
+			m_teleportGridPosition.row == row)
+		{
+			drawTextureInTile(window, *currentTeleportTexture, m_teleportGridPosition);
 		}
 
 		for (const ActiveExplosion& explosion : m_explosions)
@@ -1346,7 +1992,10 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 	if (m_helpText)
 		window.draw(*m_helpText);
 
-	if (m_playState != PlayState::Playing && m_statusText)
+	if (m_playState != PlayState::Playing &&
+		m_playState != PlayState::TeleportingOut &&
+		m_playState != PlayState::TeleportingIn &&
+		m_statusText)
 	{
 		sf::RectangleShape overlay;
 		overlay.setPosition({ 0.f, 0.f });
@@ -1373,10 +2022,13 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 			return enemy.isAlive();
 		}));
 
+	const std::string levelName = std::filesystem::path(m_currentMapPath).stem().string();
+
 	if (m_statsText)
 	{
 		m_statsText->setString(
-			"Lives: " + std::to_string(std::max(0, m_playerLives)) +
+			"Level: " + levelName +
+			"   Lives: " + std::to_string(std::max(0, m_playerLives)) +
 			"   Bombs: " + std::to_string(m_maxActiveBombs) +
 			"   Range: " + std::to_string(m_bombRange) +
 			"   Speed: " + std::to_string(static_cast<int>(m_player.getMoveSpeed())) +
@@ -1388,7 +2040,17 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 	if (m_objectiveText)
 	{
-		if (!m_level.hasExit())
+		if (m_playState == PlayState::TeleportingOut)
+		{
+			m_objectiveText->setString("Objective complete: Teleporting...");
+			m_objectiveText->setFillColor(sf::Color(120, 255, 255));
+		}
+		else if (m_playState == PlayState::TeleportingIn)
+		{
+			m_objectiveText->setString("Entering next level...");
+			m_objectiveText->setFillColor(sf::Color(120, 255, 255));
+		}
+		else if (!m_level.hasExit())
 		{
 			m_objectiveText->setString("Objective: Destroy blocks to find the hidden exit");
 			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
@@ -1415,7 +2077,7 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 	if (m_helpText)
 	{
-		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    R: Restart    ESC: Hub");
+		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    R: Restart Current Level    ESC: Menu");
 
 		const sf::FloatRect bounds = m_helpText->getLocalBounds();
 
@@ -1429,7 +2091,7 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		if (m_playState == PlayState::Victory)
 		{
-			m_statusText->setString("VICTORY!\nYou found the hidden exit\nPress R to restart");
+			m_statusText->setString("VICTORY!\nAll levels completed\nPress R to restart this level");
 		}
 		else if (m_playState == PlayState::GameOver)
 		{

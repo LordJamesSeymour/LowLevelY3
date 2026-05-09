@@ -1,5 +1,7 @@
 #include "BombermanEnemy.h"
 
+#include "BombermanLevel.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -42,9 +44,7 @@ namespace
 		int start = end;
 
 		while (start > 0 && std::isdigit(static_cast<unsigned char>(stem[start - 1])))
-		{
 			--start;
-		}
 
 		try
 		{
@@ -70,86 +70,77 @@ namespace
 	}
 }
 
-bool BombermanEnemy::load(const std::string& enemyAssetPath,
+bool BombermanEnemy::load(const std::string& enemyDirectory,
+	BombermanEnemyType type,
 	BombermanGridPosition spawnPosition,
 	const BombermanLevel& level)
 {
-	namespace fs = std::filesystem;
-
 	m_lastError.clear();
 
-	fs::path copterDirectory(enemyAssetPath);
-
-	// Compatibility with the old call:
-	// GAME1_BombermanWindow may still pass:
-	// assets/Game#0/Bomberman/Resources/Enemies/enemy_basic.png
-	//
-	// If a file path is passed, we move to its parent folder and look for /Copter.
-	if (copterDirectory.has_extension())
-	{
-		copterDirectory = copterDirectory.parent_path() / "Copter";
-	}
-
-	// If the caller passes the Enemies folder directly, also find /Copter.
-	if (copterDirectory.filename().string() == "Enemies")
-	{
-		copterDirectory /= "Copter";
-	}
-
-	const fs::path frontDirectory = copterDirectory / "Front";
-	const fs::path backDirectory = copterDirectory / "Back";
-	const fs::path sideDirectory = copterDirectory / "Side";
-
-	if (!loadAnimationFolder(m_frontAnimation, frontDirectory.string(), "Copter front animation"))
-		return false;
-
-	if (!loadAnimationFolder(m_backAnimation, backDirectory.string(), "Copter back animation"))
-		return false;
-
-	if (!loadAnimationFolder(m_sideAnimation, sideDirectory.string(), "Copter side animation"))
-		return false;
-
-	m_alive = true;
-	m_isMoving = false;
-
+	m_type = type;
 	m_gridPosition = spawnPosition;
 	m_targetGridPosition = spawnPosition;
 
 	m_position = level.gridToWorldTopLeft(spawnPosition);
 	m_targetPosition = m_position;
 
-	m_facingDirection = BombermanDirection::Down;
-	m_lastMoveDirection = BombermanDirection::Down;
+	m_isMoving = false;
+	m_alive = true;
+	m_animationTimer = 0.f;
+	m_animationFrameIndex = 0;
+	m_facing = FacingDirection::Front;
 
-	const sf::Texture* startTexture = getCurrentTexture();
-
-	if (startTexture == nullptr)
+	if (m_type == BombermanEnemyType::Lamp)
 	{
-		m_lastError = "Copter enemy has no valid starting animation frame.";
-		return false;
+		m_moveSpeed = 175.f;
+		m_animationFrameDuration = 0.10f;
+		return loadLampAnimation(enemyDirectory);
 	}
 
-	m_sprite.emplace(*startTexture);
-	snapSpriteToPosition();
+	m_moveSpeed = 95.f;
+	m_animationFrameDuration = 0.14f;
+	return loadCopterAnimations(enemyDirectory);
+}
+
+bool BombermanEnemy::loadCopterAnimations(const std::string& enemyDirectory)
+{
+	namespace fs = std::filesystem;
+
+	const fs::path base(enemyDirectory);
+
+	if (!loadAnimationFramesFromDirectory(m_frontAnimation, (base / "Front").string(), "Copter front"))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_backAnimation, (base / "Back").string(), "Copter back"))
+		return false;
+
+	if (!loadAnimationFramesFromDirectory(m_sideAnimation, (base / "Side").string(), "Copter side"))
+		return false;
 
 	return true;
 }
 
-bool BombermanEnemy::loadAnimationFolder(AnimationSet& animationSet,
+bool BombermanEnemy::loadLampAnimation(const std::string& enemyDirectory)
+{
+	if (!loadAnimationFramesFromDirectory(m_lampAnimation, enemyDirectory, "Lamp"))
+		return false;
+
+	return true;
+}
+
+bool BombermanEnemy::loadAnimationFramesFromDirectory(AnimationSet& animation,
 	const std::string& directoryPath,
 	const std::string& readableName)
 {
 	namespace fs = std::filesystem;
 
-	animationSet.frames.clear();
-	animationSet.currentFrame = 0;
-	animationSet.timer = 0.f;
+	animation.frames.clear();
 
 	const fs::path directory(directoryPath);
 
 	if (!fs::exists(directory) || !fs::is_directory(directory))
 	{
-		m_lastError = "Failed to load " + readableName + ": folder does not exist: " + directoryPath;
+		m_lastError = "Failed to load Bomberman enemy " + readableName + " animation: folder does not exist: " + directoryPath;
 		return false;
 	}
 
@@ -170,11 +161,11 @@ bool BombermanEnemy::loadAnimationFolder(AnimationSet& animationSet,
 
 	if (framePaths.empty())
 	{
-		m_lastError = "Failed to load " + readableName + ": no PNG files found in: " + directoryPath;
+		m_lastError = "Failed to load Bomberman enemy " + readableName + " animation: no PNG frames found in: " + directoryPath;
 		return false;
 	}
 
-	animationSet.frames.reserve(framePaths.size());
+	animation.frames.reserve(framePaths.size());
 
 	for (const fs::path& framePath : framePaths)
 	{
@@ -182,269 +173,228 @@ bool BombermanEnemy::loadAnimationFolder(AnimationSet& animationSet,
 
 		if (!texture.loadFromFile(framePath.string()))
 		{
-			m_lastError = "Failed to load " + readableName + " frame: " + framePath.string();
+			m_lastError = "Failed to load Bomberman enemy frame: " + framePath.string();
 			return false;
 		}
 
-		animationSet.frames.push_back(std::move(texture));
+		animation.frames.push_back(std::move(texture));
 	}
 
 	return true;
 }
 
 void BombermanEnemy::update(float deltaTime,
-	const std::function<bool(int col, int row)>& isTileBlocked)
+	BombermanGridPosition playerGridPosition,
+	const TileBlockedCallback& isTileBlocked)
 {
-	if (!m_alive || !m_sprite)
+	if (!m_alive)
 		return;
-
-	updateAnimation(deltaTime);
 
 	if (!m_isMoving)
 	{
-		chooseNewDirection(isTileBlocked);
-		applyCurrentAnimationFrame();
-		snapSpriteToPosition();
+		chooseNextMove(playerGridPosition, isTileBlocked);
+	}
+
+	updateMovement(deltaTime);
+	updateAnimation(deltaTime);
+}
+
+void BombermanEnemy::chooseNextMove(BombermanGridPosition playerGridPosition,
+	const TileBlockedCallback& isTileBlocked)
+{
+	if (m_type == BombermanEnemyType::Lamp)
+	{
+		chooseLampMove(playerGridPosition, isTileBlocked);
 		return;
 	}
 
-	const sf::Vector2f toTarget = m_targetPosition - m_position;
-	const float distanceToTarget = std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y);
-	const float movementThisFrame = m_moveSpeed * deltaTime;
+	chooseCopterMove(isTileBlocked);
+}
 
-	if (distanceToTarget <= movementThisFrame || distanceToTarget <= 0.01f)
+void BombermanEnemy::chooseCopterMove(const TileBlockedCallback& isTileBlocked)
+{
+	std::vector<std::pair<int, int>> directions =
 	{
-		m_position = m_targetPosition;
-		m_gridPosition = m_targetGridPosition;
-		m_isMoving = false;
+		{ 1, 0 },
+		{ -1, 0 },
+		{ 0, 1 },
+		{ 0, -1 }
+	};
+
+	std::shuffle(directions.begin(), directions.end(), m_rng);
+
+	for (const auto& direction : directions)
+	{
+		if (tryStartMove(direction.first, direction.second, isTileBlocked))
+			return;
+	}
+}
+
+void BombermanEnemy::chooseLampMove(BombermanGridPosition playerGridPosition,
+	const TileBlockedCallback& isTileBlocked)
+{
+	std::vector<std::pair<int, int>> preferredDirections;
+
+	const int horizontalDelta = playerGridPosition.col - m_gridPosition.col;
+	const int verticalDelta = playerGridPosition.row - m_gridPosition.row;
+
+	if (std::abs(horizontalDelta) >= std::abs(verticalDelta))
+	{
+		if (horizontalDelta > 0) preferredDirections.push_back({ 1, 0 });
+		if (horizontalDelta < 0) preferredDirections.push_back({ -1, 0 });
+		if (verticalDelta > 0) preferredDirections.push_back({ 0, 1 });
+		if (verticalDelta < 0) preferredDirections.push_back({ 0, -1 });
 	}
 	else
 	{
-		const sf::Vector2f moveDirection{
-			toTarget.x / distanceToTarget,
-			toTarget.y / distanceToTarget
-		};
-
-		m_position += moveDirection * movementThisFrame;
+		if (verticalDelta > 0) preferredDirections.push_back({ 0, 1 });
+		if (verticalDelta < 0) preferredDirections.push_back({ 0, -1 });
+		if (horizontalDelta > 0) preferredDirections.push_back({ 1, 0 });
+		if (horizontalDelta < 0) preferredDirections.push_back({ -1, 0 });
 	}
 
-	applyCurrentAnimationFrame();
-	snapSpriteToPosition();
-}
+	preferredDirections.push_back({ 1, 0 });
+	preferredDirections.push_back({ -1, 0 });
+	preferredDirections.push_back({ 0, 1 });
+	preferredDirections.push_back({ 0, -1 });
 
-void BombermanEnemy::updateAnimation(float deltaTime)
-{
-	AnimationSet& animationSet = getActiveAnimationSet();
-
-	if (animationSet.frames.size() <= 1)
-		return;
-
-	animationSet.timer += deltaTime;
-
-	while (animationSet.timer >= m_frameDuration)
+	for (const auto& direction : preferredDirections)
 	{
-		animationSet.timer -= m_frameDuration;
-		animationSet.currentFrame = (animationSet.currentFrame + 1) % animationSet.frames.size();
+		if (tryStartMove(direction.first, direction.second, isTileBlocked))
+			return;
 	}
 }
 
-void BombermanEnemy::chooseNewDirection(const std::function<bool(int col, int row)>& isTileBlocked)
+bool BombermanEnemy::tryStartMove(int colDelta,
+	int rowDelta,
+	const TileBlockedCallback& isTileBlocked)
 {
-	std::vector<BombermanDirection> possibleDirections;
+	const int targetCol = m_gridPosition.col + colDelta;
+	const int targetRow = m_gridPosition.row + rowDelta;
 
-	const BombermanDirection directions[4]
-	{
-		BombermanDirection::Up,
-		BombermanDirection::Down,
-		BombermanDirection::Left,
-		BombermanDirection::Right
-	};
-
-	const BombermanDirection oppositeDirection = getOppositeDirection(m_lastMoveDirection);
-
-	for (BombermanDirection direction : directions)
-	{
-		const BombermanGridPosition neighbour = getNeighbourPosition(direction);
-
-		if (isTileBlocked(neighbour.col, neighbour.row))
-			continue;
-
-		possibleDirections.push_back(direction);
-	}
-
-	if (possibleDirections.empty())
-		return;
-
-	// Prefer not immediately reversing unless it is the only available route.
-	std::vector<BombermanDirection> nonReverseDirections;
-
-	for (BombermanDirection direction : possibleDirections)
-	{
-		if (direction != oppositeDirection)
-		{
-			nonReverseDirections.push_back(direction);
-		}
-	}
-
-	const std::vector<BombermanDirection>& selectionPool =
-		nonReverseDirections.empty()
-		? possibleDirections
-		: nonReverseDirections;
-
-	std::uniform_int_distribution<int> directionDistribution(
-		0,
-		static_cast<int>(selectionPool.size()) - 1);
-
-	const BombermanDirection chosenDirection = selectionPool[directionDistribution(m_rng)];
-	tryStartMove(chosenDirection, isTileBlocked);
-}
-
-bool BombermanEnemy::tryStartMove(BombermanDirection direction,
-	const std::function<bool(int col, int row)>& isTileBlocked)
-{
-	const BombermanGridPosition neighbour = getNeighbourPosition(direction);
-
-	if (isTileBlocked(neighbour.col, neighbour.row))
+	if (isTileBlocked(targetCol, targetRow))
 		return false;
 
-	m_facingDirection = direction;
-	m_lastMoveDirection = direction;
-
-	m_targetGridPosition = neighbour;
-
-	m_targetPosition = {
-		static_cast<float>(m_targetGridPosition.col * BombermanLevel::TileSize),
-		static_cast<float>(m_targetGridPosition.row * BombermanLevel::TileSize)
-	};
+	m_targetGridPosition = { targetCol, targetRow };
+	m_targetPosition = gridToWorldTopLeft(m_targetGridPosition);
 
 	m_isMoving = true;
+
+	if (colDelta < 0)
+		m_facing = FacingDirection::Left;
+	else if (colDelta > 0)
+		m_facing = FacingDirection::Right;
+	else if (rowDelta < 0)
+		m_facing = FacingDirection::Back;
+	else if (rowDelta > 0)
+		m_facing = FacingDirection::Front;
 
 	return true;
 }
 
-BombermanGridPosition BombermanEnemy::getNeighbourPosition(BombermanDirection direction) const
+void BombermanEnemy::updateMovement(float deltaTime)
 {
-	switch (direction)
+	if (!m_isMoving)
+		return;
+
+	const sf::Vector2f toTarget = m_targetPosition - m_position;
+	const float distance = std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y);
+
+	if (distance <= 0.001f)
 	{
-	case BombermanDirection::Up:
-		return { m_gridPosition.col, m_gridPosition.row - 1 };
-
-	case BombermanDirection::Down:
-		return { m_gridPosition.col, m_gridPosition.row + 1 };
-
-	case BombermanDirection::Left:
-		return { m_gridPosition.col - 1, m_gridPosition.row };
-
-	case BombermanDirection::Right:
-		return { m_gridPosition.col + 1, m_gridPosition.row };
+		m_position = m_targetPosition;
+		m_gridPosition = m_targetGridPosition;
+		m_isMoving = false;
+		return;
 	}
 
-	return m_gridPosition;
-}
+	const float step = m_moveSpeed * deltaTime;
 
-sf::Vector2f BombermanEnemy::directionToVector(BombermanDirection direction) const
-{
-	switch (direction)
+	if (step >= distance)
 	{
-	case BombermanDirection::Up:
-		return { 0.f, -1.f };
-
-	case BombermanDirection::Down:
-		return { 0.f, 1.f };
-
-	case BombermanDirection::Left:
-		return { -1.f, 0.f };
-
-	case BombermanDirection::Right:
-		return { 1.f, 0.f };
+		m_position = m_targetPosition;
+		m_gridPosition = m_targetGridPosition;
+		m_isMoving = false;
+		return;
 	}
 
-	return { 0.f, 0.f };
+	const sf::Vector2f direction = toTarget / distance;
+	m_position += direction * step;
 }
 
-BombermanDirection BombermanEnemy::getOppositeDirection(BombermanDirection direction) const
+void BombermanEnemy::updateAnimation(float deltaTime)
 {
-	switch (direction)
+	const AnimationSet& animation = getCurrentAnimation();
+
+	if (animation.frames.empty())
+		return;
+
+	m_animationTimer += deltaTime;
+
+	while (m_animationTimer >= m_animationFrameDuration)
 	{
-	case BombermanDirection::Up:
-		return BombermanDirection::Down;
-
-	case BombermanDirection::Down:
-		return BombermanDirection::Up;
-
-	case BombermanDirection::Left:
-		return BombermanDirection::Right;
-
-	case BombermanDirection::Right:
-		return BombermanDirection::Left;
+		m_animationTimer -= m_animationFrameDuration;
+		++m_animationFrameIndex;
 	}
-
-	return BombermanDirection::Down;
 }
 
-BombermanEnemy::AnimationSet& BombermanEnemy::getActiveAnimationSet()
+const BombermanEnemy::AnimationSet& BombermanEnemy::getCurrentAnimation() const
 {
-	switch (m_facingDirection)
+	if (m_type == BombermanEnemyType::Lamp)
+		return m_lampAnimation;
+
+	switch (m_facing)
 	{
-	case BombermanDirection::Up:
+	case FacingDirection::Back:
 		return m_backAnimation;
 
-	case BombermanDirection::Down:
-		return m_frontAnimation;
-
-	case BombermanDirection::Left:
-	case BombermanDirection::Right:
-	default:
+	case FacingDirection::Left:
+	case FacingDirection::Right:
 		return m_sideAnimation;
+
+	case FacingDirection::Front:
+	default:
+		return m_frontAnimation;
 	}
 }
 
-const BombermanEnemy::AnimationSet& BombermanEnemy::getActiveAnimationSet() const
+std::size_t BombermanEnemy::getCurrentFrameIndex() const
 {
-	switch (m_facingDirection)
+	const AnimationSet& animation = getCurrentAnimation();
+
+	if (animation.frames.empty())
+		return 0;
+
+	if (m_type == BombermanEnemyType::Lamp && animation.frames.size() > 1)
 	{
-	case BombermanDirection::Up:
-		return m_backAnimation;
+		const std::size_t frameCount = animation.frames.size();
+		const std::size_t cycleLength = frameCount * 2 - 2;
+		const std::size_t cycleIndex = m_animationFrameIndex % cycleLength;
 
-	case BombermanDirection::Down:
-		return m_frontAnimation;
+		if (cycleIndex < frameCount)
+			return cycleIndex;
 
-	case BombermanDirection::Left:
-	case BombermanDirection::Right:
-	default:
-		return m_sideAnimation;
+		return cycleLength - cycleIndex;
 	}
+
+	return m_animationFrameIndex % animation.frames.size();
 }
 
-const sf::Texture* BombermanEnemy::getCurrentTexture() const
+void BombermanEnemy::draw(sf::RenderTarget& target) const
 {
-	const AnimationSet& animationSet = getActiveAnimationSet();
-
-	if (animationSet.frames.empty())
-		return nullptr;
-
-	return &animationSet.frames[animationSet.currentFrame % animationSet.frames.size()];
-}
-
-void BombermanEnemy::applyCurrentAnimationFrame()
-{
-	if (!m_sprite)
+	if (!m_alive)
 		return;
 
-	const sf::Texture* currentTexture = getCurrentTexture();
+	const AnimationSet& animation = getCurrentAnimation();
 
-	if (currentTexture == nullptr)
+	if (animation.frames.empty())
 		return;
 
-	m_sprite->setTexture(*currentTexture, true);
-}
+	const sf::Texture& texture = animation.frames[getCurrentFrameIndex()];
 
-void BombermanEnemy::snapSpriteToPosition()
-{
-	if (!m_sprite)
-		return;
+	sf::Sprite sprite(texture);
 
-	const sf::FloatRect localBounds = m_sprite->getLocalBounds();
+	const sf::FloatRect localBounds = sprite.getLocalBounds();
 
 	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 		return;
@@ -452,30 +402,24 @@ void BombermanEnemy::snapSpriteToPosition()
 	const float scaleX = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.x;
 	const float scaleY = static_cast<float>(BombermanLevel::TileSize) / localBounds.size.y;
 
-	// Side sprites face LEFT by default.
-	// Moving left = normal.
-	// Moving right = mirrored horizontally.
-	if (m_facingDirection == BombermanDirection::Right)
-	{
-		m_sprite->setScale({ -scaleX, scaleY });
-		m_sprite->setPosition({
-			m_position.x + static_cast<float>(BombermanLevel::TileSize),
-			m_position.y
-			});
-	}
-	else
-	{
-		m_sprite->setScale({ scaleX, scaleY });
-		m_sprite->setPosition(m_position);
-	}
-}
+	const bool flipX =
+		m_type == BombermanEnemyType::Copter &&
+		m_facing == FacingDirection::Right;
 
-void BombermanEnemy::draw(sf::RenderTarget& target) const
-{
-	if (!m_alive || !m_sprite)
-		return;
+	sprite.setScale({
+		flipX ? -scaleX : scaleX,
+		scaleY
+		});
 
-	target.draw(*m_sprite);
+	float drawX = m_position.x;
+	float drawY = m_position.y;
+
+	if (flipX)
+		drawX += static_cast<float>(BombermanLevel::TileSize);
+
+	sprite.setPosition({ drawX, drawY });
+
+	target.draw(sprite);
 }
 
 bool BombermanEnemy::isAlive() const
@@ -486,14 +430,25 @@ bool BombermanEnemy::isAlive() const
 void BombermanEnemy::kill()
 {
 	m_alive = false;
-	m_isMoving = false;
+}
+
+bool BombermanEnemy::canPassThroughBreakableBlocks() const
+{
+	return m_type == BombermanEnemyType::Lamp;
+}
+
+BombermanEnemyType BombermanEnemy::getType() const
+{
+	return m_type;
 }
 
 BombermanGridPosition BombermanEnemy::getGridPosition(const BombermanLevel& level) const
 {
+	const sf::FloatRect bounds = getBounds();
+
 	const sf::Vector2f center{
-		m_position.x + static_cast<float>(BombermanLevel::TileSize) * 0.5f,
-		m_position.y + static_cast<float>(BombermanLevel::TileSize) * 0.5f
+		bounds.position.x + bounds.size.x * 0.5f,
+		bounds.position.y + bounds.size.y * 0.5f
 	};
 
 	return level.worldToGrid(center);
@@ -501,18 +456,32 @@ BombermanGridPosition BombermanEnemy::getGridPosition(const BombermanLevel& leve
 
 sf::FloatRect BombermanEnemy::getBounds() const
 {
-	const float inset = 8.f;
-
 	return sf::FloatRect(
 		{
-			m_position.x + inset,
-			m_position.y + inset
+			m_position.x + 6.f,
+			m_position.y + 6.f
 		},
 		{
-			static_cast<float>(BombermanLevel::TileSize) - inset * 2.f,
-			static_cast<float>(BombermanLevel::TileSize) - inset * 2.f
+			static_cast<float>(BombermanLevel::TileSize) - 12.f,
+			static_cast<float>(BombermanLevel::TileSize) - 12.f
 		}
 	);
+}
+
+sf::Vector2f BombermanEnemy::gridToWorldTopLeft(BombermanGridPosition gridPosition) const
+{
+	return {
+		static_cast<float>(gridPosition.col * BombermanLevel::TileSize),
+		static_cast<float>(gridPosition.row * BombermanLevel::TileSize)
+	};
+}
+
+sf::Vector2f BombermanEnemy::gridToWorldCenter(BombermanGridPosition gridPosition) const
+{
+	return {
+		static_cast<float>(gridPosition.col * BombermanLevel::TileSize) + static_cast<float>(BombermanLevel::TileSize) * 0.5f,
+		static_cast<float>(gridPosition.row * BombermanLevel::TileSize) + static_cast<float>(BombermanLevel::TileSize) * 0.5f
+	};
 }
 
 const std::string& BombermanEnemy::getLastError() const

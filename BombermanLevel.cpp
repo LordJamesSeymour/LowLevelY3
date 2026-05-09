@@ -42,9 +42,7 @@ namespace
 		int start = end;
 
 		while (start > 0 && std::isdigit(static_cast<unsigned char>(stem[start - 1])))
-		{
 			--start;
-		}
 
 		try
 		{
@@ -77,6 +75,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	m_lastError.clear();
 	m_rows.clear();
 	m_enemySpawns.clear();
+	m_enemySpawnEntries.clear();
 	m_playerSpawn = { 1, 1 };
 	m_hasExit = false;
 	m_exitPosition = { 0, 0 };
@@ -99,29 +98,14 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	if (!loadTexture(m_floorTexture, (tilesPath / "floor.png").string(), "floor"))
 		return false;
 
-	if (!loadAnimationFramesFromDirectory(
-		m_exitFrames,
-		(tilesPath / "Exit").string(),
-		"exit animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_exitFrames, (tilesPath / "Exit").string(), "exit animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_breakableFrames,
-		(tilesPath / "Breakable").string(),
-		"breakable block animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_breakableFrames, (tilesPath / "Breakable").string(), "breakable block animation"))
 		return false;
-	}
 
-	if (!loadAnimationFramesFromDirectory(
-		m_brokenFrames,
-		(tilesPath / "Broken").string(),
-		"broken block animation"))
-	{
+	if (!loadAnimationFramesFromDirectory(m_brokenFrames, (tilesPath / "Broken").string(), "broken block animation"))
 		return false;
-	}
 
 	if (!loadTexture(m_solidBlockTexture, (tilesPath / "solidblock.png").string(), "solid block"))
 		return false;
@@ -154,6 +138,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 		return false;
 
 	std::ifstream file(mapPath);
+
 	if (!file.is_open())
 	{
 		m_lastError = "Failed to open Bomberman map file: " + mapPath;
@@ -200,9 +185,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 			}
 
 			if (isSolidWallCharacter(tile) || tile == 'B' || tile == ' ')
-			{
 				continue;
-			}
 
 			switch (tile)
 			{
@@ -216,12 +199,30 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				break;
 
 			case 'O':
-				m_enemySpawns.push_back({
+			{
+				const BombermanGridPosition spawn{
 					static_cast<int>(col),
 					static_cast<int>(row)
-					});
+				};
+
+				m_enemySpawns.push_back(spawn);
+				m_enemySpawnEntries.push_back({ BombermanEnemyType::Copter, spawn });
 				paddedLine[col] = ' ';
 				break;
+			}
+
+			case 'A':
+			{
+				const BombermanGridPosition spawn{
+					static_cast<int>(col),
+					static_cast<int>(row)
+				};
+
+				m_enemySpawns.push_back(spawn);
+				m_enemySpawnEntries.push_back({ BombermanEnemyType::Lamp, spawn });
+				paddedLine[col] = ' ';
+				break;
+			}
 
 			case 'E':
 				paddedLine[col] = ' ';
@@ -231,7 +232,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				m_lastError =
 					"Bomberman map error: unsupported character '" +
 					std::string(1, tile) +
-					"'. Allowed wall chars: M U D L R T Q Y Z C. Also allowed: X legacy, B, P, O, E legacy, and space.";
+					"'. Allowed wall chars: M U D L R T Q Y Z C. Also allowed: X legacy, B, P, O Copter, A Lamp, E legacy, and space.";
 				return false;
 			}
 		}
@@ -277,9 +278,7 @@ void BombermanLevel::updateAnimations(float deltaTime)
 		const float brokenDuration = getBrokenAnimationDuration();
 
 		for (ActiveBrokenBlock& brokenBlock : m_activeBrokenBlocks)
-		{
 			brokenBlock.timer += deltaTime;
-		}
 
 		m_activeBrokenBlocks.erase(
 			std::remove_if(
@@ -358,9 +357,7 @@ void BombermanLevel::generateRandomBreakableBlocks(std::mt19937& rng,
 		const BombermanGridPosition position = candidates[i];
 
 		if (isInside(position.col, position.row) && m_rows[position.row][position.col] == ' ')
-		{
 			m_rows[position.row][position.col] = 'B';
-		}
 	}
 }
 
@@ -586,9 +583,15 @@ void BombermanLevel::drawFloorLayer(sf::RenderTarget& target) const
 	for (int row = 0; row < getHeightInTiles(); ++row)
 	{
 		for (int col = 0; col < getWidthInTiles(); ++col)
-		{
 			drawTextureInTile(target, m_floorTexture, col, row);
-		}
+	}
+
+	if (m_hasExit)
+	{
+		const sf::Texture* exitTexture = getCurrentExitTexture();
+
+		if (exitTexture != nullptr && isInside(m_exitPosition.col, m_exitPosition.row))
+			drawTextureInTile(target, *exitTexture, m_exitPosition.col, m_exitPosition.row);
 	}
 }
 
@@ -617,32 +620,7 @@ void BombermanLevel::drawWorldTileAt(sf::RenderTarget& target, int col, int row)
 	else if (tile == 'B')
 	{
 		if (const sf::Texture* breakableTexture = getCurrentBreakableTexture())
-		{
 			drawTextureInTile(target, *breakableTexture, col, row);
-		}
-	}
-	else if (tile == 'E')
-	{
-		if (const sf::Texture* exitTexture = getCurrentExitTexture())
-		{
-			drawTextureInTile(target, *exitTexture, col, row);
-		}
-		else
-		{
-			sf::RectangleShape exitTile;
-			exitTile.setPosition({
-				static_cast<float>(col * TileSize),
-				static_cast<float>(row * TileSize)
-				});
-			exitTile.setSize({
-				static_cast<float>(TileSize),
-				static_cast<float>(TileSize)
-				});
-			exitTile.setFillColor(sf::Color(60, 190, 90, 180));
-			exitTile.setOutlineColor(sf::Color::White);
-			exitTile.setOutlineThickness(-2.f);
-			target.draw(exitTile);
-		}
 	}
 }
 
@@ -669,9 +647,7 @@ void BombermanLevel::drawSolidWallsOnly(sf::RenderTarget& target) const
 		for (int col = 0; col < getWidthInTiles(); ++col)
 		{
 			if (isWall(col, row))
-			{
 				drawWorldTileAt(target, col, row);
-			}
 		}
 	}
 }
@@ -757,9 +733,7 @@ void BombermanLevel::destroyBreakableBlock(int col, int row)
 		return;
 
 	if (m_rows[row][col] == 'B')
-	{
 		m_rows[row][col] = ' ';
-	}
 }
 
 bool BombermanLevel::revealExitAt(int col, int row)
@@ -784,9 +758,7 @@ std::vector<BombermanGridPosition> BombermanLevel::getBreakableBlockPositions() 
 		for (int col = 0; col < getWidthInTiles(); ++col)
 		{
 			if (isBreakableBlock(col, row))
-			{
 				positions.push_back({ col, row });
-			}
 		}
 	}
 
@@ -801,6 +773,11 @@ BombermanGridPosition BombermanLevel::getPlayerSpawn() const
 const std::vector<BombermanGridPosition>& BombermanLevel::getEnemySpawns() const
 {
 	return m_enemySpawns;
+}
+
+const std::vector<BombermanEnemySpawn>& BombermanLevel::getEnemySpawnEntries() const
+{
+	return m_enemySpawnEntries;
 }
 
 bool BombermanLevel::hasExit() const

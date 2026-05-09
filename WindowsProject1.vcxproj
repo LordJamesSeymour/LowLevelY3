@@ -150,6 +150,9 @@
     <ClInclude Include="BombermanLevel.h" />
     <ClInclude Include="BombermanPlayer.h" />
     <ClInclude Include="BombermanTypes.h" />
+    <ClInclude Include="GAME1_BombermanLevelEditor.h" />
+    <ClInclude Include="GAME1_BombermanLevelSelect.h" />
+    <ClInclude Include="GAME1_BombermanMenu.h" />
     <ClInclude Include="GAME1_BombermanWindow.h" />
     <ClInclude Include="GAME1_Level.h" />
     <ClInclude Include="GAME1_LevelEditor.h" />
@@ -168,6 +171,9 @@
     <ClCompile Include="BombermanEnemy.cpp" />
     <ClCompile Include="BombermanLevel.cpp" />
     <ClCompile Include="BombermanPlayer.cpp" />
+    <ClCompile Include="GAME1_BombermanLevelEditor.cpp" />
+    <ClCompile Include="GAME1_BombermanLevelSelect.cpp" />
+    <ClCompile Include="GAME1_BombermanMenu.cpp" />
     <ClCompile Include="GAME1_BombermanWindow.cpp" />
     <ClCompile Include="GAME1_Level.cpp" />
     <ClCompile Include="GAME1_LevelEditor.cpp" />

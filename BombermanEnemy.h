@@ -1,6 +1,5 @@
 #pragma once
 
-#include "BombermanLevel.h"
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
@@ -10,64 +9,85 @@
 #include <string>
 #include <vector>
 
+class BombermanLevel;
+
 class BombermanEnemy
 {
 public:
-	bool load(const std::string& enemyAssetPath,
+	using TileBlockedCallback = std::function<bool(int col, int row)>;
+
+public:
+	bool load(const std::string& enemyDirectory,
+		BombermanEnemyType type,
 		BombermanGridPosition spawnPosition,
 		const BombermanLevel& level);
 
 	void update(float deltaTime,
-		const std::function<bool(int col, int row)>& isTileBlocked);
+		BombermanGridPosition playerGridPosition,
+		const TileBlockedCallback& isTileBlocked);
 
 	void draw(sf::RenderTarget& target) const;
 
 	bool isAlive() const;
 	void kill();
 
-	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
+	bool canPassThroughBreakableBlocks() const;
 
+	BombermanEnemyType getType() const;
+	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
 	sf::FloatRect getBounds() const;
 
 	const std::string& getLastError() const;
 
 private:
+	enum class FacingDirection
+	{
+		Front,
+		Back,
+		Left,
+		Right
+	};
+
 	struct AnimationSet
 	{
 		std::vector<sf::Texture> frames;
-		std::size_t currentFrame = 0;
-		float timer = 0.f;
 	};
 
 private:
-	bool loadAnimationFolder(AnimationSet& animationSet,
+	bool loadCopterAnimations(const std::string& enemyDirectory);
+	bool loadLampAnimation(const std::string& enemyDirectory);
+
+	bool loadAnimationFramesFromDirectory(AnimationSet& animation,
 		const std::string& directoryPath,
 		const std::string& readableName);
 
+	void chooseNextMove(BombermanGridPosition playerGridPosition,
+		const TileBlockedCallback& isTileBlocked);
+
+	void chooseCopterMove(const TileBlockedCallback& isTileBlocked);
+	void chooseLampMove(BombermanGridPosition playerGridPosition,
+		const TileBlockedCallback& isTileBlocked);
+
+	bool tryStartMove(int colDelta,
+		int rowDelta,
+		const TileBlockedCallback& isTileBlocked);
+
+	void updateMovement(float deltaTime);
 	void updateAnimation(float deltaTime);
-	void applyCurrentAnimationFrame();
 
-	const sf::Texture* getCurrentTexture() const;
-	AnimationSet& getActiveAnimationSet();
-	const AnimationSet& getActiveAnimationSet() const;
+	const AnimationSet& getCurrentAnimation() const;
+	std::size_t getCurrentFrameIndex() const;
 
-	void chooseNewDirection(const std::function<bool(int col, int row)>& isTileBlocked);
-	bool tryStartMove(BombermanDirection direction,
-		const std::function<bool(int col, int row)>& isTileBlocked);
-
-	BombermanGridPosition getNeighbourPosition(BombermanDirection direction) const;
-
-	sf::Vector2f directionToVector(BombermanDirection direction) const;
-	BombermanDirection getOppositeDirection(BombermanDirection direction) const;
-
-	void snapSpriteToPosition();
+	sf::Vector2f gridToWorldTopLeft(BombermanGridPosition gridPosition) const;
+	sf::Vector2f gridToWorldCenter(BombermanGridPosition gridPosition) const;
 
 private:
+	BombermanEnemyType m_type = BombermanEnemyType::Copter;
+
 	AnimationSet m_frontAnimation;
 	AnimationSet m_backAnimation;
 	AnimationSet m_sideAnimation;
-
-	std::optional<sf::Sprite> m_sprite;
+	AnimationSet m_lampAnimation;
 
 	BombermanGridPosition m_gridPosition{ 0, 0 };
 	BombermanGridPosition m_targetGridPosition{ 0, 0 };
@@ -75,14 +95,16 @@ private:
 	sf::Vector2f m_position{ 0.f, 0.f };
 	sf::Vector2f m_targetPosition{ 0.f, 0.f };
 
-	BombermanDirection m_facingDirection = BombermanDirection::Down;
-	BombermanDirection m_lastMoveDirection = BombermanDirection::Down;
-
-	bool m_alive = true;
 	bool m_isMoving = false;
+	bool m_alive = true;
 
-	float m_moveSpeed = 72.f;
-	float m_frameDuration = 0.14f;
+	FacingDirection m_facing = FacingDirection::Front;
+
+	float m_moveSpeed = 95.f;
+
+	float m_animationTimer = 0.f;
+	float m_animationFrameDuration = 0.14f;
+	std::size_t m_animationFrameIndex = 0;
 
 	std::mt19937 m_rng{ std::random_device{}() };
 

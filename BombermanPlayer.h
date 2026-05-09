@@ -1,31 +1,32 @@
 #pragma once
 
-#include "BombermanLevel.h"
 #include "BombermanTypes.h"
 
 #include <SFML/Graphics.hpp>
-#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
 #include <vector>
 
+class BombermanLevel;
+
 class BombermanPlayer
 {
+public:
+	using TileBlockedCallback = std::function<bool(int col, int row)>;
+
 public:
 	bool load(const std::string& playerDirectory);
 
 	void reset(BombermanGridPosition spawnPosition, const BombermanLevel& level);
-
 	void update(float deltaTime,
 		const BombermanLevel& level,
-		const std::function<bool(int col, int row)>& isTileBlocked);
+		const TileBlockedCallback& isTileBlocked);
 
 	void draw(sf::RenderTarget& target) const;
 
-	void kill();
-
 	bool isAlive() const;
+	void kill();
 
 	void beginInvincibility(float duration);
 	bool isInvincible() const;
@@ -34,7 +35,6 @@ public:
 	float getMoveSpeed() const;
 
 	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
-	BombermanDirection getFacingDirection() const;
 
 	sf::FloatRect getBounds() const;
 	sf::FloatRect getCollisionBounds() const;
@@ -42,51 +42,50 @@ public:
 	const std::string& getLastError() const;
 
 private:
+	enum class Direction
+	{
+		Front,
+		Back,
+		Left,
+		Right
+	};
+
 	struct AnimationSet
 	{
 		std::vector<sf::Texture> frames;
-		std::vector<std::size_t> movementSequence;
+	};
 
-		std::size_t idleFrameIndex = 0;
-		std::size_t sequenceIndex = 0;
-
-		float timer = 0.f;
+	struct HeldInputState
+	{
+		bool up = false;
+		bool down = false;
+		bool left = false;
+		bool right = false;
 	};
 
 private:
-	bool loadAnimationFolder(AnimationSet& animationSet,
+	bool loadAnimationFramesFromDirectory(AnimationSet& animation,
 		const std::string& directoryPath,
 		const std::string& readableName);
 
-	void buildMovementSequence(AnimationSet& animationSet,
-		const std::vector<int>& trailingNumbers);
+	HeldInputState readInputState() const;
+	sf::Vector2f resolveMovementInput(const HeldInputState& inputState);
+	bool isDirectionHeld(Direction direction, const HeldInputState& inputState) const;
 
-	void refreshMovementInput();
+	void updateAnimation(float deltaTime, bool isMoving);
+	void setFacing(Direction direction);
+	const AnimationSet& getCurrentAnimation() const;
+	std::size_t getCurrentFrameIndex() const;
 
-	bool canFitAt(sf::Vector2f topLeftPosition,
-		const std::function<bool(int col, int row)>& isTileBlocked) const;
+	void tryMove(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked);
+	bool tryMoveDirect(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked);
+	bool tryMoveWithEdgeCorrection(sf::Vector2f movement, const TileBlockedCallback& isTileBlocked);
 
-	bool tryMoveWithEdgeCorrection(sf::Vector2f movement,
-		const std::function<bool(int col, int row)>& isTileBlocked);
+	bool wouldCollideAt(sf::Vector2f position, const TileBlockedCallback& isTileBlocked) const;
+	sf::FloatRect getCollisionBoundsAt(sf::Vector2f position) const;
+	bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b) const;
 
-	bool tryForwardMoveWithPerpendicularOffset(sf::Vector2f movement,
-		sf::Vector2f perpendicularOffset,
-		const std::function<bool(int col, int row)>& isTileBlocked);
-
-	sf::Vector2f getCollisionCenterAt(sf::Vector2f topLeftPosition) const;
-	sf::Vector2f getCollisionCenter() const;
-
-	float getNearestLaneCenter(float positionOnAxis) const;
-
-	void updateAnimation(float deltaTime);
-	void applyCurrentAnimationFrame();
-
-	AnimationSet& getActiveAnimationSet();
-	const AnimationSet& getActiveAnimationSet() const;
-
-	const sf::Texture* getCurrentAnimationTexture() const;
-
-	void resetActiveAnimationToIdle();
+	sf::Vector2f gridToWorldTopLeft(BombermanGridPosition gridPosition) const;
 
 private:
 	AnimationSet m_frontAnimation;
@@ -94,35 +93,30 @@ private:
 	AnimationSet m_leftAnimation;
 	AnimationSet m_rightAnimation;
 
-	std::optional<sf::Sprite> m_sprite;
-
 	sf::Vector2f m_position{ 0.f, 0.f };
-	sf::Vector2f m_currentMoveInput{ 0.f, 0.f };
+
+	Direction m_facing = Direction::Front;
 
 	float m_moveSpeed = 150.f;
-
-	float m_collisionRadius = 13.0f;
-
-	float m_edgeCorrectionMaxDistance = 23.0f;
-	float m_edgeCorrectionStep = 1.0f;
-	float m_edgeCorrectionDeadZone = 2.5f;
 
 	bool m_alive = true;
 
 	float m_invincibilityTimer = 0.f;
-	float m_flashRate = 18.f;
 
+	bool m_isMoving = false;
+	bool m_wasMovingLastFrame = false;
+
+	float m_animationTimer = 0.f;
 	float m_animationFrameDuration = 0.11f;
-	bool m_movementKeyHeld = false;
-	bool m_wasMovementKeyHeld = false;
+	std::size_t m_animationSequenceIndex = 0;
 
-	BombermanDirection m_facingDirection = BombermanDirection::Down;
-	BombermanDirection m_previousAnimationDirection = BombermanDirection::Down;
+	HeldInputState m_previousInputState;
 
-	bool m_upHeldLastFrame = false;
-	bool m_downHeldLastFrame = false;
-	bool m_leftHeldLastFrame = false;
-	bool m_rightHeldLastFrame = false;
+	// Uniform collision box. This does not change with animation direction.
+	float m_collisionSize = 30.f;
+
+	// Small corner assist. It only applies if the corrected movement actually clears the block.
+	float m_edgeCorrectionDistance = 10.f;
 
 	std::string m_lastError;
 };
