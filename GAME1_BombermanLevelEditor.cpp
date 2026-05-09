@@ -93,28 +93,70 @@ namespace
 	std::optional<int> TryExtractWorldNumberFromFolder(const std::filesystem::path& path)
 	{
 		const std::string name = path.filename().string();
-		const std::string prefix = "World";
+		const std::string lowerName = ToLower(name);
+		const std::string prefix = "world";
 
-		if (name.rfind(prefix, 0) != 0)
+		if (lowerName.rfind(prefix, 0) != 0)
 			return std::nullopt;
 
-		if (name.size() <= prefix.size())
+		if (lowerName.size() <= prefix.size())
 			return std::nullopt;
 
-		for (std::size_t i = prefix.size(); i < name.size(); ++i)
+		for (std::size_t i = prefix.size(); i < lowerName.size(); ++i)
 		{
-			if (!std::isdigit(static_cast<unsigned char>(name[i])))
+			if (!std::isdigit(static_cast<unsigned char>(lowerName[i])))
 				return std::nullopt;
 		}
 
 		try
 		{
-			return std::stoi(name.substr(prefix.size()));
+			return std::stoi(lowerName.substr(prefix.size()));
 		}
 		catch (...)
 		{
 			return std::nullopt;
 		}
+	}
+
+	std::optional<int> TryExtractWorldNumberFromTemplate(const std::filesystem::path& path)
+	{
+		const std::string stem = ToLower(path.stem().string());
+		const std::string prefix = "leveltemplate";
+
+		if (stem == "leveltemplate")
+			return 1;
+
+		if (stem.rfind(prefix, 0) != 0)
+			return std::nullopt;
+
+		if (stem.size() <= prefix.size())
+			return std::nullopt;
+
+		for (std::size_t i = prefix.size(); i < stem.size(); ++i)
+		{
+			if (!std::isdigit(static_cast<unsigned char>(stem[i])))
+				return std::nullopt;
+		}
+
+		try
+		{
+			return std::stoi(stem.substr(prefix.size()));
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
+	std::filesystem::path GetWorldAnimationDirectory(
+		const std::filesystem::path& tilesPath,
+		const std::string& baseFolderName,
+		int worldNumber)
+	{
+		if (worldNumber <= 1)
+			return tilesPath / baseFolderName;
+
+		return tilesPath / (baseFolderName + std::to_string(worldNumber));
 	}
 }
 
@@ -153,8 +195,12 @@ bool GAME1_BombermanLevelEditor::resetFromTemplate()
 	m_lastError.clear();
 	m_lastSavedPath.clear();
 
+	const int requestedWorldNumber = m_worldNumber;
+
 	if (!loadRowsFromFile(getTemplatePath().string()))
 		return false;
+
+	m_worldNumber = requestedWorldNumber;
 
 	buildTools();
 
@@ -175,6 +221,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 	const fs::path resourcesPath = fs::path(m_resourcesDirectory);
 	const fs::path tilesPath = resourcesPath / "Tiles";
 	const fs::path worldTilesPath = getCurrentWorldTilesDirectory();
+	const fs::path breakablePath = GetWorldAnimationDirectory(tilesPath, "Breakable", m_worldNumber);
 	const fs::path enemiesPath = resourcesPath / "Enemies";
 	const fs::path playerPath = resourcesPath / "Player" / "Blue";
 
@@ -189,8 +236,8 @@ void GAME1_BombermanLevelEditor::buildTools()
 	addFixedDirectoryTool(
 		'B',
 		"B",
-		"Breakable block",
-		(tilesPath / "Breakable").string(),
+		"World " + std::to_string(m_worldNumber) + " breakable block",
+		breakablePath.string(),
 		sf::Color(150, 90, 40)
 	);
 
@@ -1317,7 +1364,9 @@ void GAME1_BombermanLevelEditor::selectNextWorld()
 
 	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
 
-	m_worldNumber = m_worldNumber >= highestWorld ? 1 : m_worldNumber + 1;
+	const int targetWorld = m_worldNumber >= highestWorld ? 1 : m_worldNumber + 1;
+
+	m_worldNumber = targetWorld;
 	m_hotbarPage = 0;
 
 	if (!loadRowsFromFile(getTemplatePath().string()))
@@ -1330,6 +1379,8 @@ void GAME1_BombermanLevelEditor::selectNextWorld()
 		rebuildVisibleToolbar();
 		return;
 	}
+
+	m_worldNumber = targetWorld;
 
 	buildTools();
 
@@ -1348,7 +1399,9 @@ void GAME1_BombermanLevelEditor::selectPreviousWorld()
 
 	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
 
-	m_worldNumber = m_worldNumber <= 1 ? highestWorld : m_worldNumber - 1;
+	const int targetWorld = m_worldNumber <= 1 ? highestWorld : m_worldNumber - 1;
+
+	m_worldNumber = targetWorld;
 	m_hotbarPage = 0;
 
 	if (!loadRowsFromFile(getTemplatePath().string()))
@@ -1361,6 +1414,8 @@ void GAME1_BombermanLevelEditor::selectPreviousWorld()
 		rebuildVisibleToolbar();
 		return;
 	}
+
+	m_worldNumber = targetWorld;
 
 	buildTools();
 
@@ -1818,12 +1873,23 @@ void GAME1_BombermanLevelEditor::drawTextureFitted(sf::RenderTarget& target,
 
 std::filesystem::path GAME1_BombermanLevelEditor::getTemplatePath() const
 {
-	if (m_worldNumber <= 1)
-	{
-		return getMapsDirectory() / "leveltemplate.txt";
-	}
+	std::string templateName;
 
-	return getMapsDirectory() / ("leveltemplate" + std::to_string(m_worldNumber) + ".txt");
+	if (m_worldNumber <= 1)
+		templateName = "leveltemplate";
+	else
+		templateName = "leveltemplate" + std::to_string(m_worldNumber);
+
+	const std::filesystem::path txtPath = getMapsDirectory() / (templateName + ".txt");
+	const std::filesystem::path noExtensionPath = getMapsDirectory() / templateName;
+
+	if (std::filesystem::exists(txtPath))
+		return txtPath;
+
+	if (std::filesystem::exists(noExtensionPath))
+		return noExtensionPath;
+
+	return txtPath;
 }
 
 std::filesystem::path GAME1_BombermanLevelEditor::getMapsDirectory() const
@@ -1849,21 +1915,46 @@ int GAME1_BombermanLevelEditor::getHighestAvailableWorldNumber() const
 
 	const fs::path tilesDirectory = getTilesDirectory();
 
-	if (!fs::exists(tilesDirectory) || !fs::is_directory(tilesDirectory))
-		return highestWorldNumber;
-
-	for (const auto& entry : fs::directory_iterator(tilesDirectory))
+	if (fs::exists(tilesDirectory) && fs::is_directory(tilesDirectory))
 	{
-		if (!entry.is_directory())
-			continue;
+		for (const auto& entry : fs::directory_iterator(tilesDirectory))
+		{
+			if (!entry.is_directory())
+				continue;
 
-		const std::optional<int> worldNumber = TryExtractWorldNumberFromFolder(entry.path());
+			const std::optional<int> worldNumber = TryExtractWorldNumberFromFolder(entry.path());
 
-		if (!worldNumber.has_value())
-			continue;
+			if (!worldNumber.has_value())
+				continue;
 
-		if (worldNumber.value() > highestWorldNumber)
-			highestWorldNumber = worldNumber.value();
+			highestWorldNumber = std::max(highestWorldNumber, worldNumber.value());
+		}
+
+		for (int worldNumber = 1; worldNumber <= 20; ++worldNumber)
+		{
+			const fs::path worldPath = tilesDirectory / ("World" + std::to_string(worldNumber));
+
+			if (fs::exists(worldPath) && fs::is_directory(worldPath))
+				highestWorldNumber = std::max(highestWorldNumber, worldNumber);
+		}
+	}
+
+	const fs::path mapsDirectory = getMapsDirectory();
+
+	if (fs::exists(mapsDirectory) && fs::is_directory(mapsDirectory))
+	{
+		for (const auto& entry : fs::directory_iterator(mapsDirectory))
+		{
+			if (!entry.is_regular_file())
+				continue;
+
+			const std::optional<int> worldNumber = TryExtractWorldNumberFromTemplate(entry.path());
+
+			if (!worldNumber.has_value())
+				continue;
+
+			highestWorldNumber = std::max(highestWorldNumber, worldNumber.value());
+		}
 	}
 
 	return highestWorldNumber;

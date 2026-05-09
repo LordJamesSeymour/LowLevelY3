@@ -90,6 +90,17 @@ namespace
 
 		return true;
 	}
+
+	std::filesystem::path GetWorldAnimationDirectory(
+		const std::filesystem::path& tilesPath,
+		const std::string& baseFolderName,
+		int worldNumber)
+	{
+		if (worldNumber <= 1)
+			return tilesPath / baseFolderName;
+
+		return tilesPath / (baseFolderName + std::to_string(worldNumber));
+	}
 }
 
 bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string& resourcesDirectory)
@@ -164,11 +175,24 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 	if (!loadAnimationFramesFromDirectory(m_exitFrames, (tilesPath / "Exit").string(), "exit animation"))
 		return false;
 
-	if (!loadAnimationFramesFromDirectory(m_breakableFrames, (tilesPath / "Breakable").string(), "breakable block animation"))
-		return false;
+	const fs::path breakableDirectory = GetWorldAnimationDirectory(tilesPath, "Breakable", m_worldNumber);
+	const fs::path brokenDirectory = GetWorldAnimationDirectory(tilesPath, "Broken", m_worldNumber);
 
-	if (!loadAnimationFramesFromDirectory(m_brokenFrames, (tilesPath / "Broken").string(), "broken block animation"))
+	if (!loadAnimationFramesFromDirectory(
+		m_breakableFrames,
+		breakableDirectory.string(),
+		"world " + std::to_string(m_worldNumber) + " breakable block animation"))
+	{
 		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_brokenFrames,
+		brokenDirectory.string(),
+		"world " + std::to_string(m_worldNumber) + " broken block animation"))
+	{
+		return false;
+	}
 
 	bool foundPlayerSpawn = false;
 
