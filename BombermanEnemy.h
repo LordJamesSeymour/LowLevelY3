@@ -23,26 +23,32 @@ public:
 		const BombermanLevel& level);
 
 	void update(float deltaTime,
-		BombermanGridPosition playerGridPosition,
+		BombermanGridPosition targetGridPosition,
 		const TileBlockedCallback& isTileBlocked);
 
 	void draw(sf::RenderTarget& target) const;
 
 	bool isAlive() const;
 	void kill();
+	void takeHit();
+
+	int getHitPoints() const;
 
 	bool canPassThroughBreakableBlocks() const;
 	bool canBeKilledByExplosion() const;
-
-	bool shouldDrawAsBomb() const;
-	bool hasPendingBomberExplosion() const;
-	int getBomberExplosionRange() const;
-	void consumePendingBomberExplosion();
+	bool wantsToEatBombs() const;
 
 	BombermanEnemyType getType() const;
 	BombermanGridPosition getGridPosition(const BombermanLevel& level) const;
+	BombermanGridPosition getFacingDirectionDelta() const;
+
 	sf::Vector2f getDrawPosition() const;
 	sf::FloatRect getBounds() const;
+
+	bool shouldDrawAsBomb() const;
+	bool isPreparingBombExplosion() const;
+	int getBomberExplosionRange() const;
+	bool consumePendingBomberExplosion();
 
 	const std::string& getLastError() const;
 
@@ -61,46 +67,44 @@ private:
 	};
 
 private:
-	bool loadDirectionalAnimations(const std::string& enemyDirectory, const std::string& readableName);
 	bool loadCopterAnimations(const std::string& enemyDirectory);
-	bool loadLampAnimation(const std::string& enemyDirectory);
 	bool loadTreeAnimations(const std::string& enemyDirectory);
 	bool loadBomberAnimations(const std::string& enemyDirectory);
+	bool loadChomperAnimations(const std::string& enemyDirectory);
+
+	bool loadDirectionalAnimations(const std::string& enemyDirectory,
+		const std::string& readableName);
+
+	bool loadLampAnimation(const std::string& enemyDirectory);
 
 	bool loadAnimationFramesFromDirectory(AnimationSet& animation,
 		const std::string& directoryPath,
 		const std::string& readableName);
 
-	void chooseNextMove(BombermanGridPosition playerGridPosition,
+	void updateBomberDetonation(float deltaTime);
+
+	void chooseNextMove(BombermanGridPosition targetGridPosition,
 		const TileBlockedCallback& isTileBlocked);
 
 	void chooseCopterMove(const TileBlockedCallback& isTileBlocked);
-	void chooseLampMove(BombermanGridPosition playerGridPosition,
+	void chooseLampMove(BombermanGridPosition targetGridPosition,
 		const TileBlockedCallback& isTileBlocked);
 	void chooseStraightLineMove(const TileBlockedCallback& isTileBlocked);
-	void chooseBomberMove(const TileBlockedCallback& isTileBlocked);
+	void chooseChomperMove(BombermanGridPosition targetGridPosition,
+		const TileBlockedCallback& isTileBlocked);
 
 	bool tryStartMove(int colDelta,
 		int rowDelta,
 		const TileBlockedCallback& isTileBlocked);
 
-	bool canMoveInDirection(int colDelta,
-		int rowDelta,
-		const TileBlockedCallback& isTileBlocked) const;
+	void reverseDirection();
 
 	void updateMovement(float deltaTime);
 	void updateAnimation(float deltaTime);
-	void updateBomberDetonation(float deltaTime);
-
-	void startBomberDetonation();
-	void finishBomberDetonation();
-
-	void setRandomStraightLineDirection();
-	void reverseFacingDirection();
-	BombermanGridPosition getFacingDirectionDelta() const;
 
 	const AnimationSet& getCurrentAnimation() const;
 	std::size_t getCurrentFrameIndex() const;
+	bool shouldUsePingPongAnimation() const;
 
 	sf::Vector2f gridToWorldTopLeft(BombermanGridPosition gridPosition) const;
 	sf::Vector2f gridToWorldCenter(BombermanGridPosition gridPosition) const;
@@ -130,16 +134,16 @@ private:
 	float m_animationFrameDuration = 0.14f;
 	std::size_t m_animationFrameIndex = 0;
 
-	bool m_hasInitialStraightLineDirection = false;
+	int m_hitPoints = 1;
 
-	bool m_isBomberDetonating = false;
-	bool m_bomberExplosionPending = false;
-	float m_bomberCooldownTimer = 4.0f;
-	float m_bomberCooldownMin = 4.0f;
-	float m_bomberCooldownMax = 7.0f;
-	float m_bomberDetonationTimer = 0.f;
-	float m_bomberFuseTime = 3.5f;
+	float m_bomberPreparationTimer = 0.f;
+	float m_bomberPreparationCooldown = 5.0f;
+	float m_bomberExplosionTimer = 0.f;
+	float m_bomberExplosionDelay = 3.4f;
 	int m_bomberExplosionRange = 3;
+
+	bool m_bomberPreparingExplosion = false;
+	bool m_pendingBomberExplosion = false;
 
 	std::mt19937 m_rng{ std::random_device{}() };
 

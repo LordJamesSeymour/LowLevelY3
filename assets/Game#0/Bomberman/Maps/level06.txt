@@ -1,14 +1,14 @@
 #WORLD=3
 DQTTTTTTTTTTTTTYD
-HLP      M     RG
+HLP      M c   RG
 GL M M M M M M RV
-FL             RJ
+FL     b       RJ
 JL M M M M M M RD
-DL             RI
+DL   b    c    RI
 IL M M M M M M RD
-HL       MMM   RG
+HL     O MMM   RG
 GL M M M M M M RF
 FL  M   A  MA  RV
-JL M M M M MMM RN
+JLcM M M M MMM RN
 DL             RJ
 IZSSSSSSSSSSSSSCD

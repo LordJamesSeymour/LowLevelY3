@@ -38,7 +38,8 @@ enum class BombermanEnemyType
 	Copter,
 	Lamp,
 	Tree,
-	Bomber
+	Bomber,
+	Chomper
 };
 
 struct BombermanEnemySpawn

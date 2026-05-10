@@ -5,8 +5,8 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
-#include <random>
 
 namespace
 {
@@ -90,6 +90,11 @@ namespace
 		}
 
 		return true;
+	}
+
+	int ManhattanDistance(BombermanGridPosition a, BombermanGridPosition b)
+	{
+		return std::abs(a.col - b.col) + std::abs(a.row - b.row);
 	}
 }
 
@@ -579,6 +584,10 @@ bool GAME1_BombermanWindow::loadLevelAndActors(bool resetPerks)
 			enemyFolderName = "Bomber";
 			break;
 
+		case BombermanEnemyType::Chomper:
+			enemyFolderName = "Chomper";
+			break;
+
 		case BombermanEnemyType::Copter:
 		default:
 			enemyFolderName = "Copter";
@@ -879,7 +888,6 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 		updateEnemies(deltaTime);
 		updateBombs(deltaTime);
 		updateExplosions(deltaTime);
-		processBomberEnemyExplosions();
 
 		applyExplosionDamage();
 		checkPlayerEnemyCollision();
@@ -1099,17 +1107,6 @@ bool GAME1_BombermanWindow::isTileBlockedForEnemies(int col, int row) const
 	return false;
 }
 
-bool GAME1_BombermanWindow::isTileBlockedForEnemy(int col, int row, std::size_t ignoredEnemyIndex) const
-{
-	if (isTileBlockedForEnemies(col, row))
-		return true;
-
-	if (isEnemyAtTileIgnoringIndex({ col, row }, ignoredEnemyIndex))
-		return true;
-
-	return false;
-}
-
 bool GAME1_BombermanWindow::isTileBlockedForLamp(int col, int row) const
 {
 	if (m_level.isWall(col, row))
@@ -1135,33 +1132,12 @@ bool GAME1_BombermanWindow::isTileBlockedForSlidingBomb(int col, int row, std::s
 	if (isBombAtTileIgnoringIndex({ col, row }, ignoredBombIndex))
 		return true;
 
-	for (std::size_t i = 0; i < m_enemies.size(); ++i)
+	for (const BombermanEnemy& enemy : m_enemies)
 	{
-		const BombermanEnemy& enemy = m_enemies[i];
-
 		if (!enemy.isAlive())
 			continue;
 
 		if (enemy.getGridPosition(m_level) == BombermanGridPosition{ col, row })
-			return true;
-	}
-
-	return false;
-}
-
-bool GAME1_BombermanWindow::isEnemyAtTileIgnoringIndex(BombermanGridPosition gridPosition, std::size_t ignoredEnemyIndex) const
-{
-	for (std::size_t i = 0; i < m_enemies.size(); ++i)
-	{
-		if (i == ignoredEnemyIndex)
-			continue;
-
-		const BombermanEnemy& enemy = m_enemies[i];
-
-		if (!enemy.isAlive())
-			continue;
-
-		if (enemy.getGridPosition(m_level) == gridPosition)
 			return true;
 	}
 
@@ -1365,111 +1341,6 @@ void GAME1_BombermanWindow::explodeBomb(BombermanBomb& bomb)
 	playSound(m_bombExplodesSound);
 }
 
-void GAME1_BombermanWindow::explodeEnemyBombAt(BombermanGridPosition gridPosition, int explosionRange)
-{
-	ActiveExplosion explosion;
-	explosion.timer = m_explosionDuration;
-	explosion.duration = m_explosionDuration;
-
-	const BombermanGridPosition center = gridPosition;
-
-	addExplosionTile(explosion.tiles, center, BombermanExplosionTileType::Center);
-
-	constexpr int directionCount = 4;
-
-	const int directionCols[directionCount] = { 1, -1, 0, 0 };
-	const int directionRows[directionCount] = { 0, 0, 1, -1 };
-
-	for (int directionIndex = 0; directionIndex < directionCount; ++directionIndex)
-	{
-		const int directionCol = directionCols[directionIndex];
-		const int directionRow = directionRows[directionIndex];
-
-		for (int distance = 1; distance <= explosionRange; ++distance)
-		{
-			const BombermanGridPosition current{
-				center.col + directionCol * distance,
-				center.row + directionRow * distance
-			};
-
-			if (!m_level.isInside(current.col, current.row))
-				break;
-
-			if (m_level.isWall(current.col, current.row))
-				break;
-
-			const bool isBreakable = m_level.isBreakableBlock(current.col, current.row);
-
-			const BombermanGridPosition next{
-				current.col + directionCol,
-				current.row + directionRow
-			};
-
-			const bool reachedMaxRange = distance == explosionRange;
-			const bool nextBlockedByWall =
-				!m_level.isInside(next.col, next.row) ||
-				m_level.isWall(next.col, next.row);
-
-			const bool shouldUseEndCap =
-				isBreakable ||
-				reachedMaxRange ||
-				nextBlockedByWall;
-
-			BombermanExplosionTileType visualType;
-			bool flipX = false;
-			bool flipY = false;
-
-			if (directionRow == 0)
-			{
-				if (shouldUseEndCap)
-				{
-					visualType = BombermanExplosionTileType::HorizontalEnd;
-					flipX = directionCol < 0;
-				}
-				else
-				{
-					visualType = BombermanExplosionTileType::Horizontal;
-				}
-			}
-			else
-			{
-				if (shouldUseEndCap)
-				{
-					visualType = BombermanExplosionTileType::VerticalEnd;
-					flipY = directionRow > 0;
-				}
-				else
-				{
-					visualType = BombermanExplosionTileType::Vertical;
-				}
-			}
-
-			addExplosionTile(explosion.tiles, current, visualType, flipX, flipY);
-
-			for (BombermanBomb& otherBomb : m_bombs)
-			{
-				if (!otherBomb.hasExploded() && otherBomb.occupiesGridPosition(current))
-				{
-					otherBomb.triggerNow();
-				}
-			}
-
-			if (isBreakable)
-			{
-				m_level.startBreakingBlock(current.col, current.row);
-				break;
-			}
-
-			if (shouldUseEndCap)
-				break;
-		}
-	}
-
-	m_explosions.push_back(std::move(explosion));
-
-	playSound(m_bombExplodesSound);
-}
-
 void GAME1_BombermanWindow::maybeSpawnPowerUpAt(BombermanGridPosition gridPosition)
 {
 	if (isPowerUpAtTile(gridPosition))
@@ -1607,6 +1478,13 @@ void GAME1_BombermanWindow::updateExplosions(float deltaTime)
 
 void GAME1_BombermanWindow::applyExplosionDamage()
 {
+	static std::vector<const BombermanEnemy*> enemiesCurrentlyTouchingExplosion;
+
+	if (m_explosions.empty())
+	{
+		enemiesCurrentlyTouchingExplosion.clear();
+	}
+
 	if (m_player.isAlive() && !m_player.isInvincible())
 	{
 		const BombermanGridPosition playerGrid = m_player.getGridPosition(m_level);
@@ -1619,42 +1497,39 @@ void GAME1_BombermanWindow::applyExplosionDamage()
 
 	for (BombermanEnemy& enemy : m_enemies)
 	{
+		const BombermanEnemy* enemyPointer = &enemy;
+
 		if (!enemy.isAlive())
-			continue;
-
-		if (!enemy.canBeKilledByExplosion())
-			continue;
-
-		const BombermanGridPosition enemyGrid = enemy.getGridPosition(m_level);
-
-		bool shouldKillEnemy = false;
-
-		for (const ActiveExplosion& explosion : m_explosions)
 		{
-			for (const BombermanExplosionTile& tile : explosion.tiles)
-			{
-				if (tile.gridPosition != enemyGrid)
-					continue;
+			enemiesCurrentlyTouchingExplosion.erase(
+				std::remove(enemiesCurrentlyTouchingExplosion.begin(), enemiesCurrentlyTouchingExplosion.end(), enemyPointer),
+				enemiesCurrentlyTouchingExplosion.end());
 
-				// Bomber enemies survive the center tile of their own bomb-like explosion.
-				// They can still be killed by explosion arms while walking.
-				if (enemy.getType() == BombermanEnemyType::Bomber &&
-					tile.type == BombermanExplosionTileType::Center)
-				{
-					continue;
-				}
-
-				shouldKillEnemy = true;
-				break;
-			}
-
-			if (shouldKillEnemy)
-				break;
+			continue;
 		}
 
-		if (shouldKillEnemy)
+		const BombermanGridPosition enemyGrid = enemy.getGridPosition(m_level);
+		const bool isTouchingExplosion = isGridPositionCurrentlyExploding(enemyGrid);
+
+		const auto found = std::find(
+			enemiesCurrentlyTouchingExplosion.begin(),
+			enemiesCurrentlyTouchingExplosion.end(),
+			enemyPointer);
+
+		if (isTouchingExplosion)
 		{
-			enemy.kill();
+			if (found == enemiesCurrentlyTouchingExplosion.end())
+			{
+				enemy.takeHit();
+				enemiesCurrentlyTouchingExplosion.push_back(enemyPointer);
+			}
+		}
+		else
+		{
+			if (found != enemiesCurrentlyTouchingExplosion.end())
+			{
+				enemiesCurrentlyTouchingExplosion.erase(found);
+			}
 		}
 	}
 }
@@ -1677,48 +1552,226 @@ void GAME1_BombermanWindow::updateEnemies(float deltaTime)
 {
 	const BombermanGridPosition playerGridPosition = m_player.getGridPosition(m_level);
 
+	auto isEnemyAtTileIgnoringIndex =
+		[this](BombermanGridPosition gridPosition, std::size_t ignoredIndex)
+		{
+			for (std::size_t i = 0; i < m_enemies.size(); ++i)
+			{
+				if (i == ignoredIndex)
+					continue;
+
+				const BombermanEnemy& otherEnemy = m_enemies[i];
+
+				if (!otherEnemy.isAlive())
+					continue;
+
+				if (otherEnemy.getGridPosition(m_level) == gridPosition)
+					return true;
+			}
+
+			return false;
+		};
+
+	auto explodeAt = [this](BombermanGridPosition center, int range)
+		{
+			ActiveExplosion explosion;
+			explosion.timer = m_explosionDuration;
+			explosion.duration = m_explosionDuration;
+
+			addExplosionTile(explosion.tiles, center, BombermanExplosionTileType::Center);
+
+			constexpr int directionCount = 4;
+
+			const int directionCols[directionCount] = { 1, -1, 0, 0 };
+			const int directionRows[directionCount] = { 0, 0, 1, -1 };
+
+			for (int directionIndex = 0; directionIndex < directionCount; ++directionIndex)
+			{
+				const int directionCol = directionCols[directionIndex];
+				const int directionRow = directionRows[directionIndex];
+
+				for (int distance = 1; distance <= range; ++distance)
+				{
+					const BombermanGridPosition current{
+						center.col + directionCol * distance,
+						center.row + directionRow * distance
+					};
+
+					if (!m_level.isInside(current.col, current.row))
+						break;
+
+					if (m_level.isWall(current.col, current.row))
+						break;
+
+					const bool isBreakable = m_level.isBreakableBlock(current.col, current.row);
+
+					const BombermanGridPosition next{
+						current.col + directionCol,
+						current.row + directionRow
+					};
+
+					const bool reachedMaxRange = distance == range;
+					const bool nextBlockedByWall =
+						!m_level.isInside(next.col, next.row) ||
+						m_level.isWall(next.col, next.row);
+
+					const bool shouldUseEndCap =
+						isBreakable ||
+						reachedMaxRange ||
+						nextBlockedByWall;
+
+					BombermanExplosionTileType visualType;
+					bool flipX = false;
+					bool flipY = false;
+
+					if (directionRow == 0)
+					{
+						if (shouldUseEndCap)
+						{
+							visualType = BombermanExplosionTileType::HorizontalEnd;
+							flipX = directionCol < 0;
+						}
+						else
+						{
+							visualType = BombermanExplosionTileType::Horizontal;
+						}
+					}
+					else
+					{
+						if (shouldUseEndCap)
+						{
+							visualType = BombermanExplosionTileType::VerticalEnd;
+							flipY = directionRow > 0;
+						}
+						else
+						{
+							visualType = BombermanExplosionTileType::Vertical;
+						}
+					}
+
+					addExplosionTile(explosion.tiles, current, visualType, flipX, flipY);
+
+					for (BombermanBomb& otherBomb : m_bombs)
+					{
+						if (!otherBomb.hasExploded() && otherBomb.occupiesGridPosition(current))
+						{
+							otherBomb.triggerNow();
+						}
+					}
+
+					if (isBreakable)
+					{
+						m_level.startBreakingBlock(current.col, current.row);
+						break;
+					}
+
+					if (shouldUseEndCap)
+						break;
+				}
+			}
+
+			m_explosions.push_back(std::move(explosion));
+			playSound(m_bombExplodesSound);
+		};
+
 	for (std::size_t enemyIndex = 0; enemyIndex < m_enemies.size(); ++enemyIndex)
 	{
 		BombermanEnemy& enemy = m_enemies[enemyIndex];
 
-		if (enemy.canPassThroughBreakableBlocks())
-		{
-			enemy.update(
-				deltaTime,
-				playerGridPosition,
-				[this, enemyIndex](int col, int row)
-				{
-					if (isTileBlockedForLamp(col, row))
-						return true;
+		if (!enemy.isAlive())
+			continue;
 
-					return isEnemyAtTileIgnoringIndex({ col, row }, enemyIndex);
-				});
-		}
-		else
+		BombermanGridPosition enemyTarget = playerGridPosition;
+
+		if (enemy.wantsToEatBombs())
 		{
-			enemy.update(
-				deltaTime,
-				playerGridPosition,
-				[this, enemyIndex](int col, int row)
+			const BombermanGridPosition enemyGrid = enemy.getGridPosition(m_level);
+
+			int bestDistance = std::numeric_limits<int>::max();
+			bool foundBombTarget = false;
+
+			for (const BombermanBomb& bomb : m_bombs)
+			{
+				if (bomb.hasExploded())
+					continue;
+
+				const BombermanGridPosition bombGrid = bomb.getGridPosition();
+				const int distance = ManhattanDistance(enemyGrid, bombGrid);
+
+				if (distance < bestDistance)
 				{
-					return isTileBlockedForEnemy(col, row, enemyIndex);
-				});
+					bestDistance = distance;
+					enemyTarget = bombGrid;
+					foundBombTarget = true;
+				}
+			}
+
+			if (!foundBombTarget)
+				enemyTarget = playerGridPosition;
+		}
+
+		const bool isLamp = enemy.canPassThroughBreakableBlocks();
+		const bool isChomper = enemy.wantsToEatBombs();
+
+		enemy.update(
+			deltaTime,
+			enemyTarget,
+			[this, enemyIndex, isLamp, isChomper, &isEnemyAtTileIgnoringIndex](int col, int row)
+			{
+				if (isLamp)
+				{
+					if (m_level.isWall(col, row))
+						return true;
+				}
+				else
+				{
+					if (m_level.isBlockedForMovement(col, row))
+						return true;
+				}
+
+				if (!isChomper)
+				{
+					for (const BombermanBomb& bomb : m_bombs)
+					{
+						if (bomb.hasExploded())
+							continue;
+
+						if (bomb.occupiesGridPosition({ col, row }))
+							return true;
+					}
+				}
+
+				if (isEnemyAtTileIgnoringIndex({ col, row }, enemyIndex))
+					return true;
+
+				return false;
+			});
+
+		if (enemy.consumePendingBomberExplosion())
+		{
+			explodeAt(enemy.getGridPosition(m_level), enemy.getBomberExplosionRange());
 		}
 	}
-}
 
-void GAME1_BombermanWindow::processBomberEnemyExplosions()
-{
 	for (BombermanEnemy& enemy : m_enemies)
 	{
 		if (!enemy.isAlive())
 			continue;
 
-		if (!enemy.hasPendingBomberExplosion())
+		if (!enemy.wantsToEatBombs())
 			continue;
 
-		explodeEnemyBombAt(enemy.getGridPosition(m_level), enemy.getBomberExplosionRange());
-		enemy.consumePendingBomberExplosion();
+		const BombermanGridPosition enemyGrid = enemy.getGridPosition(m_level);
+
+		m_bombs.erase(
+			std::remove_if(
+				m_bombs.begin(),
+				m_bombs.end(),
+				[enemyGrid](const BombermanBomb& bomb)
+				{
+					return !bomb.hasExploded() && bomb.occupiesGridPosition(enemyGrid);
+				}),
+			m_bombs.end());
 	}
 }
 
@@ -1992,7 +2045,7 @@ bool GAME1_BombermanWindow::isValidPlayableLevelFile(const std::filesystem::path
 
 	const std::string stem = path.stem().string();
 
-	if (stem == "leveltemplate")
+	if (stem.rfind("leveltemplate", 0) == 0)
 		return false;
 
 	if (stem.rfind("level", 0) != 0)
@@ -2303,24 +2356,6 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 					drawTextureAtWorldPosition(window, *currentBombTexture, bomb.getDrawPosition());
 				}
 			}
-
-			for (const BombermanEnemy& enemy : m_enemies)
-			{
-				if (!enemy.isAlive())
-					continue;
-
-				if (!enemy.shouldDrawAsBomb())
-					continue;
-
-				const int enemyBombDrawRow = static_cast<int>(
-					std::floor((enemy.getDrawPosition().y + static_cast<float>(BombermanLevel::TileSize) * 0.5f) /
-						static_cast<float>(BombermanLevel::TileSize)));
-
-				if (enemyBombDrawRow == row)
-				{
-					drawTextureAtWorldPosition(window, *currentBombTexture, enemy.getDrawPosition());
-				}
-			}
 		}
 
 		for (const BombermanEnemy& enemy : m_enemies)
@@ -2328,10 +2363,21 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 			if (!enemy.isAlive())
 				continue;
 
-			if (enemy.shouldDrawAsBomb())
+			const int enemyDrawRow = static_cast<int>(
+				std::floor((enemy.getDrawPosition().y + static_cast<float>(BombermanLevel::TileSize) * 0.5f) /
+					static_cast<float>(BombermanLevel::TileSize)));
+
+			if (enemyDrawRow != row)
 				continue;
 
-			if (enemy.getGridPosition(m_level).row == row)
+			if (enemy.shouldDrawAsBomb())
+			{
+				if (currentBombTexture != nullptr)
+				{
+					drawTextureAtWorldPosition(window, *currentBombTexture, enemy.getDrawPosition());
+				}
+			}
+			else
 			{
 				enemy.draw(window);
 			}

@@ -264,7 +264,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				break;
 			}
 
-			case 'k':
+			case 'b':
 			{
 				const BombermanGridPosition spawn{
 					static_cast<int>(col),
@@ -277,6 +277,19 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				break;
 			}
 
+			case 'c':
+			{
+				const BombermanGridPosition spawn{
+					static_cast<int>(col),
+					static_cast<int>(row)
+				};
+
+				m_enemySpawns.push_back(spawn);
+				m_enemySpawnEntries.push_back({ BombermanEnemyType::Chomper, spawn });
+				paddedLine[col] = ' ';
+				break;
+			}
+
 			case 'E':
 				paddedLine[col] = ' ';
 				break;
@@ -285,7 +298,7 @@ bool BombermanLevel::loadFromFile(const std::string& mapPath, const std::string&
 				m_lastError =
 					"Bomberman map error: unsupported character '" +
 					std::string(1, tile) +
-					"'. Allowed wall chars include: M S U D L R T Q Y Z C F G H I J N V W. Also allowed: X legacy, B, P, O Copter, A Lamp, t Tree, k Bomber, E legacy, and space.";
+					"'. Allowed wall chars include: M S U D L R T Q Y Z C F G H I J N V W. Also allowed: X legacy, B, P, O Copter, A Lamp, t Tree, b Bomber, c Chomper, E legacy, and space.";
 				return false;
 			}
 		}

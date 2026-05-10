@@ -206,6 +206,7 @@ bool GAME1_BombermanLevelEditor::resetFromTemplate()
 
 	m_selectedToolIndex = 0;
 	m_hotbarPage = 0;
+
 	rebuildVisibleToolbar();
 	refreshSavedLevelList();
 
@@ -221,7 +222,9 @@ void GAME1_BombermanLevelEditor::buildTools()
 	const fs::path resourcesPath = fs::path(m_resourcesDirectory);
 	const fs::path tilesPath = resourcesPath / "Tiles";
 	const fs::path worldTilesPath = getCurrentWorldTilesDirectory();
+
 	const fs::path breakablePath = GetWorldAnimationDirectory(tilesPath, "Breakable", m_worldNumber);
+
 	const fs::path enemiesPath = resourcesPath / "Enemies";
 	const fs::path playerPath = resourcesPath / "Player" / "Blue";
 
@@ -270,15 +273,23 @@ void GAME1_BombermanLevelEditor::buildTools()
 		"t",
 		"Tree enemy",
 		(enemiesPath / "Tree" / "Front").string(),
-		sf::Color(120, 255, 120)
+		sf::Color(180, 120, 70)
 	);
 
 	addFixedDirectoryTool(
-		'k',
-		"k",
+		'b',
+		"b",
 		"Bomber enemy",
 		(enemiesPath / "Bomber" / "Front").string(),
-		sf::Color(255, 140, 70)
+		sf::Color(70, 180, 220)
+	);
+
+	addFixedDirectoryTool(
+		'c',
+		"c",
+		"Chomper enemy",
+		(enemiesPath / "Chomper" / "Front").string(),
+		sf::Color(80, 160, 255)
 	);
 
 	addFixedDirectoryTool(
@@ -298,10 +309,10 @@ void GAME1_BombermanLevelEditor::buildTools()
 		addWorldTool('L', "L", "World 3 left wall", (worldTilesPath / "solidwall_left.png").string(), sf::Color(130, 130, 130));
 		addWorldTool('R', "R", "World 3 right wall", (worldTilesPath / "solidwall_right.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('Q', "Q", "World 3 top-left", (worldTilesPath / "solidwall_topleft.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('Y', "Y", "World 3 top-right", (worldTilesPath / "solidwall_topright.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('Z', "Z", "World 3 bottom-left", (worldTilesPath / "solidwall_botleft.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('C', "C", "World 3 bottom-right", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Q', "Q", "World 3 top-left wall", (worldTilesPath / "solidwall_topleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Y', "Y", "World 3 top-right wall", (worldTilesPath / "solidwall_topright.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Z', "Z", "World 3 bottom-left wall", (worldTilesPath / "solidwall_botleft.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('C', "C", "World 3 bottom-right wall", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
 
 		addWorldTool('U', "U", "World 3 back-left 0", (worldTilesPath / "solidwall_backleft_0.png").string(), sf::Color(130, 130, 130));
 		addWorldTool('D', "D", "World 3 back-right 0", (worldTilesPath / "solidwall_backright_0.png").string(), sf::Color(130, 130, 130));
@@ -322,29 +333,29 @@ void GAME1_BombermanLevelEditor::buildTools()
 		addWorldTool('S', "S", "World 2 bottom wall", (worldTilesPath / "solidwall_bot.png").string(), sf::Color(130, 130, 130));
 		addWorldTool('T', "T", "World 2 top wall", (worldTilesPath / "solidwall_top.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('Q', "Q", "World 2 top-left", (worldTilesPath / "solidwall_topleft_0.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('Y', "Y", "World 2 top-right", (worldTilesPath / "solidwall_topright_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Q', "Q", "World 2 top-left wall", (worldTilesPath / "solidwall_topleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Y', "Y", "World 2 top-right wall", (worldTilesPath / "solidwall_topright_0.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('Z', "Z", "World 2 bottom-left 0", (worldTilesPath / "solidwall_botleft_0.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('C', "C", "World 2 bottom-right 0", (worldTilesPath / "solidwall_botright_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('Z', "Z", "World 2 bottom-left wall 0", (worldTilesPath / "solidwall_botleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('C', "C", "World 2 bottom-right wall 0", (worldTilesPath / "solidwall_botright_0.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('L', "L", "World 2 left 0", (worldTilesPath / "solidwall_left_0.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('R', "R", "World 2 right 0", (worldTilesPath / "solidwall_right_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('L', "L", "World 2 left wall 0", (worldTilesPath / "solidwall_left_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('R', "R", "World 2 right wall 0", (worldTilesPath / "solidwall_right_0.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('U', "U", "World 2 back-left 0", (worldTilesPath / "solidwall_backleft_0.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('D', "D", "World 2 back-right 0", (worldTilesPath / "solidwall_backright_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('U', "U", "World 2 back-left wall 0", (worldTilesPath / "solidwall_backleft_0.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('D', "D", "World 2 back-right wall 0", (worldTilesPath / "solidwall_backright_0.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('F', "F", "World 2 left 1", (worldTilesPath / "solidwall_left_1.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('G', "G", "World 2 left 2", (worldTilesPath / "solidwall_left_2.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('F', "F", "World 2 left wall 1", (worldTilesPath / "solidwall_left_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('G', "G", "World 2 left wall 2", (worldTilesPath / "solidwall_left_2.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('H', "H", "World 2 right 1", (worldTilesPath / "solidwall_right_1.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('I', "I", "World 2 right 2", (worldTilesPath / "solidwall_right_2.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('H', "H", "World 2 right wall 1", (worldTilesPath / "solidwall_right_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('I', "I", "World 2 right wall 2", (worldTilesPath / "solidwall_right_2.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('J', "J", "World 2 back-left 1", (worldTilesPath / "solidwall_backleft_1.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('N', "N", "World 2 back-right 1", (worldTilesPath / "solidwall_backright_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('J', "J", "World 2 back-left wall 1", (worldTilesPath / "solidwall_backleft_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('N', "N", "World 2 back-right wall 1", (worldTilesPath / "solidwall_backright_1.png").string(), sf::Color(130, 130, 130));
 
-		addWorldTool('V', "V", "World 2 bottom-left 1", (worldTilesPath / "solidwall_botleft_1.png").string(), sf::Color(130, 130, 130));
-		addWorldTool('W', "W", "World 2 bottom-right 1", (worldTilesPath / "solidwall_botright_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('V', "V", "World 2 bottom-left wall 1", (worldTilesPath / "solidwall_botleft_1.png").string(), sf::Color(130, 130, 130));
+		addWorldTool('W', "W", "World 2 bottom-right wall 1", (worldTilesPath / "solidwall_botright_1.png").string(), sf::Color(130, 130, 130));
 	}
 	else
 	{
@@ -360,7 +371,7 @@ void GAME1_BombermanLevelEditor::buildTools()
 		addWorldTool('C', "C", "Solid wall bottom-right", (worldTilesPath / "solidwall_botright.png").string(), sf::Color(130, 130, 130));
 	}
 
-	m_fixedToolCount = 8;
+	m_fixedToolCount = 9;
 	rebuildVisibleToolbar();
 }
 
@@ -435,6 +446,7 @@ void GAME1_BombermanLevelEditor::rebuildVisibleToolbar()
 
 	const int worldToolStart = m_fixedToolCount;
 	const int worldToolCount = std::max(0, totalTools - worldToolStart);
+
 	const int maxPage = worldToolCount <= 0
 		? 0
 		: static_cast<int>((worldToolCount - 1) / m_worldToolsPerPage);
@@ -537,7 +549,8 @@ bool GAME1_BombermanLevelEditor::validateTileCharacter(char tile) const
 	case 'O':
 	case 'A':
 	case 't':
-	case 'k':
+	case 'b':
+	case 'c':
 	case 'E':
 	case 'M':
 	case 'S':
@@ -690,6 +703,7 @@ void GAME1_BombermanLevelEditor::layout(const sf::RenderWindow& window)
 	);
 
 	const float hotbarArrowWidth = 40.f;
+
 	const float visibleToolbarWidth =
 		static_cast<float>(m_visibleToolbarToolIndices.size()) * m_toolbarSlotSize +
 		static_cast<float>(m_visibleToolbarToolIndices.size() > 0 ? m_visibleToolbarToolIndices.size() - 1 : 0) * m_toolbarSlotGap;
@@ -1037,7 +1051,7 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 	const float controlsY = std::min(windowHeight - 28.f, m_toolbarOrigin.y + m_toolbarSlotSize + 8.f);
 
 	drawTextCentered(
-		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    T = Tree    K = Bomber    Enter = save    Backspace = reset",
+		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    Letter keys = select tile    Shift+B/T/C = Bomber/Tree/Chomper    Enter = save    Backspace = reset",
 		14,
 		sf::FloatRect({ 0.f, controlsY }, { windowWidth, 24.f }),
 		sf::Color(220, 220, 220),
@@ -1303,33 +1317,107 @@ void GAME1_BombermanLevelEditor::selectToolByTile(char tile)
 
 void GAME1_BombermanLevelEditor::selectToolByHotkey(sf::Keyboard::Key key)
 {
+	const bool shiftHeld =
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+
 	switch (key)
 	{
-	case sf::Keyboard::Key::A: selectToolByTile('A'); break;
-	case sf::Keyboard::Key::B: selectToolByTile('B'); break;
-	case sf::Keyboard::Key::C: selectToolByTile('C'); break;
-	case sf::Keyboard::Key::D: selectToolByTile('D'); break;
-	case sf::Keyboard::Key::E: selectToolByTile('E'); break;
-	case sf::Keyboard::Key::F: selectToolByTile('F'); break;
-	case sf::Keyboard::Key::G: selectToolByTile('G'); break;
-	case sf::Keyboard::Key::H: selectToolByTile('H'); break;
-	case sf::Keyboard::Key::I: selectToolByTile('I'); break;
-	case sf::Keyboard::Key::J: selectToolByTile('J'); break;
-	case sf::Keyboard::Key::K: selectToolByTile('k'); break;
-	case sf::Keyboard::Key::L: selectToolByTile('L'); break;
-	case sf::Keyboard::Key::M: selectToolByTile('M'); break;
-	case sf::Keyboard::Key::N: selectToolByTile('N'); break;
-	case sf::Keyboard::Key::O: selectToolByTile('O'); break;
-	case sf::Keyboard::Key::P: selectToolByTile('P'); break;
-	case sf::Keyboard::Key::Q: selectToolByTile('Q'); break;
-	case sf::Keyboard::Key::R: selectToolByTile('R'); break;
-	case sf::Keyboard::Key::S: selectToolByTile('S'); break;
-	case sf::Keyboard::Key::T: selectToolByTile('t'); break;
-	case sf::Keyboard::Key::U: selectToolByTile('U'); break;
-	case sf::Keyboard::Key::V: selectToolByTile('V'); break;
-	case sf::Keyboard::Key::W: selectToolByTile('W'); break;
-	case sf::Keyboard::Key::Y: selectToolByTile('Y'); break;
-	case sf::Keyboard::Key::Z: selectToolByTile('Z'); break;
+	case sf::Keyboard::Key::A:
+		selectToolByTile('A');
+		break;
+
+	case sf::Keyboard::Key::B:
+		selectToolByTile(shiftHeld ? 'b' : 'B');
+		break;
+
+	case sf::Keyboard::Key::C:
+		selectToolByTile(shiftHeld ? 'c' : 'C');
+		break;
+
+	case sf::Keyboard::Key::D:
+		selectToolByTile('D');
+		break;
+
+	case sf::Keyboard::Key::E:
+		selectToolByTile('E');
+		break;
+
+	case sf::Keyboard::Key::F:
+		selectToolByTile('F');
+		break;
+
+	case sf::Keyboard::Key::G:
+		selectToolByTile('G');
+		break;
+
+	case sf::Keyboard::Key::H:
+		selectToolByTile('H');
+		break;
+
+	case sf::Keyboard::Key::I:
+		selectToolByTile('I');
+		break;
+
+	case sf::Keyboard::Key::J:
+		selectToolByTile('J');
+		break;
+
+	case sf::Keyboard::Key::L:
+		selectToolByTile('L');
+		break;
+
+	case sf::Keyboard::Key::M:
+		selectToolByTile('M');
+		break;
+
+	case sf::Keyboard::Key::N:
+		selectToolByTile('N');
+		break;
+
+	case sf::Keyboard::Key::O:
+		selectToolByTile('O');
+		break;
+
+	case sf::Keyboard::Key::P:
+		selectToolByTile('P');
+		break;
+
+	case sf::Keyboard::Key::Q:
+		selectToolByTile('Q');
+		break;
+
+	case sf::Keyboard::Key::R:
+		selectToolByTile('R');
+		break;
+
+	case sf::Keyboard::Key::S:
+		selectToolByTile('S');
+		break;
+
+	case sf::Keyboard::Key::T:
+		selectToolByTile(shiftHeld ? 't' : 'T');
+		break;
+
+	case sf::Keyboard::Key::U:
+		selectToolByTile('U');
+		break;
+
+	case sf::Keyboard::Key::V:
+		selectToolByTile('V');
+		break;
+
+	case sf::Keyboard::Key::W:
+		selectToolByTile('W');
+		break;
+
+	case sf::Keyboard::Key::Y:
+		selectToolByTile('Y');
+		break;
+
+	case sf::Keyboard::Key::Z:
+		selectToolByTile('Z');
+		break;
 
 	default:
 		break;
@@ -1382,7 +1470,6 @@ void GAME1_BombermanLevelEditor::selectNextWorld()
 	const std::vector<std::string> previousRows = m_rows;
 
 	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
-
 	const int targetWorld = m_worldNumber >= highestWorld ? 1 : m_worldNumber + 1;
 
 	m_worldNumber = targetWorld;
@@ -1417,7 +1504,6 @@ void GAME1_BombermanLevelEditor::selectPreviousWorld()
 	const std::vector<std::string> previousRows = m_rows;
 
 	const int highestWorld = std::max(1, getHighestAvailableWorldNumber());
-
 	const int targetWorld = m_worldNumber <= 1 ? highestWorld : m_worldNumber - 1;
 
 	m_worldNumber = targetWorld;
@@ -1503,6 +1589,7 @@ void GAME1_BombermanLevelEditor::ensureSelectedToolVisible()
 
 	const int worldToolIndex = m_selectedToolIndex - m_fixedToolCount;
 	m_hotbarPage = worldToolIndex / m_worldToolsPerPage;
+
 	rebuildVisibleToolbar();
 }
 
@@ -1842,16 +1929,12 @@ void GAME1_BombermanLevelEditor::drawTilePreview(sf::RenderTarget& target,
 			tile == 'O' ||
 			tile == 'A' ||
 			tile == 't' ||
-			tile == 'k' ||
+			tile == 'b' ||
+			tile == 'c' ||
 			tile == 'E')
 		{
 			sf::Text label(m_font);
-
-			if (tile == ' ')
-				label.setString("");
-			else
-				label.setString(std::string(1, tile));
-
+			label.setString(tile == ' ' ? "" : std::string(1, tile));
 			label.setCharacterSize(static_cast<unsigned int>(std::max(12.f, bounds.size.y * 0.42f)));
 			label.setFillColor(sf::Color::White);
 			label.setOutlineColor(sf::Color::Black);
