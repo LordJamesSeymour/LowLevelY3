@@ -20,6 +20,9 @@ public:
 	bool isRespawning() const;
 	int getRespawnCountdown() const;
 
+	int getHealth() const;
+	int getMaxHealth() const;
+
 	const std::string& getLastError() const;
 
 private:
@@ -35,7 +38,9 @@ private:
 		Run,
 		Jump,
 		DoubleJump,
-		Fall
+		Fall,
+		WallGrab,
+		Hit
 	};
 
 	struct AnimationSet
@@ -54,6 +59,14 @@ private:
 	void moveHorizontal(float deltaTime, GAME1_Level& level);
 	void moveVertical(float deltaTime, GAME1_Level& level);
 
+	void updateWallGrabState(GAME1_Level& level);
+	bool detectWallContact(GAME1_Level& level, bool& touchingLeft, bool& touchingRight) const;
+
+	void checkSpikeTrapCollisions(GAME1_Level& level);
+	void takeSpikeDamage(const sf::FloatRect& spikeBounds);
+	void startHitAnimation();
+	void applyKnockbackFromTile(const sf::FloatRect& tileBounds);
+
 	void updateAnimation(float deltaTime);
 	void updateAnimationState();
 	void setAnimationState(AnimationState newState);
@@ -69,7 +82,9 @@ private:
 	const AnimationSet& getCurrentAnimationSet() const;
 
 	bool isWithinApexGravityWindow() const;
+	bool isDropThroughHeld() const;
 
+	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
 	static float moveTowards(float current, float target, float maxDelta);
 
 private:
@@ -78,8 +93,11 @@ private:
 	AnimationSet m_jumpAnimation;
 	AnimationSet m_doubleJumpAnimation;
 	AnimationSet m_fallAnimation;
+	AnimationSet m_wallGrabAnimation;
+	AnimationSet m_hitAnimation;
 
 	sf::Vector2f m_position{ 100.f, 100.f };
+	sf::Vector2f m_previousPosition{ 100.f, 100.f };
 	sf::Vector2f m_spawnPosition{ 100.f, 100.f };
 	sf::Vector2f m_velocity{ 0.f, 0.f };
 
@@ -103,6 +121,31 @@ private:
 	// without receiving extra horizontal speed.
 	float m_apexGravityTimeWindow = 0.15f;
 	float m_apexGravityMultiplier = 0.65f;
+
+	// Wall grab:
+	// When falling while touching a solid wall, falling speed is clamped to 25%,
+	// which is the requested 75% reduction.
+	float m_wallGrabBaseFallSpeed = 700.f;
+	float m_wallGrabFallSpeedMultiplier = 0.25f;
+	bool m_wallGrabActive = false;
+	bool m_touchingWallLeft = false;
+	bool m_touchingWallRight = false;
+
+	// One-way platform drop-through.
+	float m_dropThroughTimer = 0.f;
+	float m_dropThroughDuration = 0.22f;
+	bool m_groundedOnOneWayPlatform = false;
+
+	// Spike trap / health system.
+	int m_maxHealth = 100;
+	int m_health = 100;
+	int m_spikeDamage = 25;
+	float m_damageCooldownTimer = 0.f;
+	float m_damageCooldownDuration = 0.75f;
+	float m_spikeKnockbackHorizontal = 420.f;
+	float m_spikeKnockbackVertical = 520.f;
+
+	bool m_hitAnimationPlaying = false;
 
 	bool m_onGround = false;
 	bool m_jumpHeldLastFrame = false;
@@ -138,6 +181,9 @@ private:
 
 	float m_drawWidth = 48.f;
 	float m_drawHeight = 48.f;
+
+	sf::Font m_uiFont;
+	bool m_hasUiFont = false;
 
 	std::string m_lastError;
 };

@@ -155,7 +155,56 @@ namespace
 
 	bool IsReservedEditorTileCode(char code)
 	{
-		return code == 'O' || code == 'P' || code == 'B';
+		return code == 'O' ||
+			code == 'P' ||
+			code == 'B' ||
+			code == '^' ||
+			code == '[' ||
+			code == '=' ||
+			code == ']';
+	}
+
+	bool ContainsAnyKeyword(const std::filesystem::path& path,
+		const std::vector<std::string>& keywords)
+	{
+		const std::string stem = ToLower(path.stem().string());
+		const std::string parent = ToLower(path.parent_path().filename().string());
+		const std::string combined = parent + "_" + stem;
+
+		for (const std::string& keyword : keywords)
+		{
+			if (combined.find(ToLower(keyword)) != std::string::npos)
+				return true;
+		}
+
+		return false;
+	}
+
+	std::vector<std::filesystem::path> FindSpecialPngFiles(
+		const std::filesystem::path& searchRoot,
+		const std::vector<std::string>& keywords)
+	{
+		namespace fs = std::filesystem;
+
+		std::vector<fs::path> paths;
+
+		if (!fs::exists(searchRoot) || !fs::is_directory(searchRoot))
+			return paths;
+
+		for (const auto& entry : fs::recursive_directory_iterator(searchRoot))
+		{
+			if (!entry.is_regular_file())
+				continue;
+
+			if (!IsPngFile(entry.path()))
+				continue;
+
+			if (ContainsAnyKeyword(entry.path(), keywords))
+				paths.push_back(entry.path());
+		}
+
+		std::sort(paths.begin(), paths.end(), NaturalFrameSort);
+		return paths;
 	}
 
 	std::string LabelFromFileStem(std::string stem)
@@ -409,6 +458,89 @@ void GAME1_LevelEditor::buildTools()
 		playerSpawnTool.hasTexture = loadFirstTextureFromDirectory(playerSpawnTool.texture, playerIdleDirectory.string());
 
 	addTool(std::move(playerSpawnTool));
+
+	const fs::path tilesDirectory = getTilesDirectory();
+
+	auto addSpecialTool = [this](char tile,
+		const std::string& label,
+		const std::string& description,
+		const std::vector<fs::path>& candidatePaths,
+		sf::Color fallbackColor)
+		{
+			Tool specialTool;
+			specialTool.tile = tile;
+			specialTool.label = label;
+			specialTool.description = description;
+			specialTool.fallbackColor = fallbackColor;
+
+			for (const fs::path& candidatePath : candidatePaths)
+			{
+				if (candidatePath.empty())
+					continue;
+
+				if (!fs::exists(candidatePath) || !fs::is_regular_file(candidatePath))
+					continue;
+
+				if (loadTexture(specialTool.texture, candidatePath.string()))
+				{
+					specialTool.hasTexture = true;
+					break;
+				}
+			}
+
+			addTool(std::move(specialTool));
+		};
+
+	std::vector<fs::path> spikePaths;
+	const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes_0.png";
+	if (fs::exists(preferredSpikePath))
+		spikePaths.push_back(preferredSpikePath);
+
+	const std::vector<fs::path> discoveredSpikePaths =
+		FindSpecialPngFiles(tilesDirectory, { "spike" });
+	spikePaths.insert(spikePaths.end(), discoveredSpikePaths.begin(), discoveredSpikePaths.end());
+
+	addSpecialTool(
+		'^',
+		"^",
+		"Spike trap - damages and knocks back the player",
+		spikePaths,
+		sf::Color(210, 210, 220));
+
+	const std::vector<fs::path> platformPaths =
+		FindSpecialPngFiles(tilesDirectory, { "platform", "oneway", "one_way", "one-way" });
+
+	std::vector<fs::path> platformLeftPaths;
+	std::vector<fs::path> platformMiddlePaths;
+	std::vector<fs::path> platformRightPaths;
+
+	if (!platformPaths.empty())
+	{
+		platformLeftPaths.push_back(platformPaths[0]);
+		platformMiddlePaths.push_back(platformPaths[std::min<std::size_t>(1, platformPaths.size() - 1)]);
+		platformRightPaths.push_back(platformPaths[std::min<std::size_t>(2, platformPaths.size() - 1)]);
+	}
+
+	addSpecialTool(
+		'[',
+		"[",
+		"One-way platform left - jump through from below",
+		platformLeftPaths,
+		sf::Color(185, 150, 90));
+
+	addSpecialTool(
+		'=',
+		"=",
+		"One-way platform middle - hold Left Shift to drop through",
+		platformMiddlePaths,
+		sf::Color(190, 155, 95));
+
+	addSpecialTool(
+		']',
+		"]",
+		"One-way platform right - jump through from below",
+		platformRightPaths,
+		sf::Color(185, 150, 90));
 
 	const fs::path worldTilesDirectory = getCurrentWorldTilesDirectory();
 

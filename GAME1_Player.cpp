@@ -71,6 +71,17 @@ namespace
 		return a.filename().string() < b.filename().string();
 	}
 
+	std::filesystem::path ResolveFirstExistingDirectory(const std::vector<std::filesystem::path>& paths)
+	{
+		for (const std::filesystem::path& path : paths)
+		{
+			if (std::filesystem::exists(path) && std::filesystem::is_directory(path))
+				return path;
+		}
+
+		return paths.empty() ? std::filesystem::path() : paths.front();
+	}
+
 	int GetLeftTile(const sf::FloatRect& bounds)
 	{
 		return static_cast<int>(std::floor(bounds.position.x / static_cast<float>(GAME1_Level::TileSize)));
@@ -90,6 +101,11 @@ namespace
 	{
 		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y - 0.1f) / static_cast<float>(GAME1_Level::TileSize)));
 	}
+
+	float SignNonZero(float value)
+	{
+		return value < 0.f ? -1.f : 1.f;
+	}
 }
 
 bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f startPosition)
@@ -105,6 +121,18 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 	const fs::path jumpDirectory = playerRootDirectory / "PlayerJump";
 	const fs::path doubleJumpDirectory = playerRootDirectory / "PlayerDoubleJump";
 	const fs::path fallDirectory = playerRootDirectory / "PlayerFall";
+	const fs::path wallGrabDirectory = ResolveFirstExistingDirectory(
+		{
+			playerRootDirectory / "PlayerWallgrab",
+			playerRootDirectory / "PlayerWallGrab",
+			playerRootDirectory / "PlayerWallgrabAnimation",
+			playerRootDirectory / "Wallgrab"
+		});
+	const fs::path hitDirectory = ResolveFirstExistingDirectory(
+		{
+			playerRootDirectory / "PlayerHit",
+			playerRootDirectory / "Hit"
+		});
 
 	if (!loadAnimationFramesFromDirectory(
 		m_idleAnimation,
@@ -146,15 +174,46 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 		return false;
 	}
 
+	if (!loadAnimationFramesFromDirectory(
+		m_wallGrabAnimation,
+		wallGrabDirectory.string(),
+		"SurfersQuest player wall grab"))
+	{
+		return false;
+	}
+
+	if (!loadAnimationFramesFromDirectory(
+		m_hitAnimation,
+		hitDirectory.string(),
+		"SurfersQuest player hit"))
+	{
+		return false;
+	}
+
 	m_idleAnimation.frameDuration = 0.035f;
 	m_runAnimation.frameDuration = 0.035f;
 	m_jumpAnimation.frameDuration = 0.035f;
 	m_doubleJumpAnimation.frameDuration = 0.035f;
 	m_fallAnimation.frameDuration = 0.035f;
+	m_wallGrabAnimation.frameDuration = 0.055f;
+	m_hitAnimation.frameDuration = 0.055f;
+
+	m_hasUiFont = m_uiFont.openFromFile("assets/menu.ttf");
 
 	m_position = startPosition;
+	m_previousPosition = startPosition;
 	m_spawnPosition = startPosition;
 	m_velocity = { 0.f, 0.f };
+
+	m_health = m_maxHealth;
+	m_damageCooldownTimer = 0.f;
+	m_hitAnimationPlaying = false;
+
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+	m_dropThroughTimer = 0.f;
+	m_groundedOnOneWayPlatform = false;
 
 	m_onGround = false;
 	m_jumpHeldLastFrame = false;
@@ -251,11 +310,17 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 		return;
 	}
 
+	m_previousPosition = m_position;
+	m_damageCooldownTimer = std::max(0.f, m_damageCooldownTimer - deltaTime);
+	m_dropThroughTimer = std::max(0.f, m_dropThroughTimer - deltaTime);
+
 	handleInput(deltaTime);
 	applyGravity(deltaTime);
 
 	moveHorizontal(deltaTime, level);
+	updateWallGrabState(level);
 	moveVertical(deltaTime, level);
+	checkSpikeTrapCollisions(level);
 
 	updateAnimationState();
 	updateAnimation(deltaTime);
@@ -277,6 +342,11 @@ void GAME1_Player::handleInput(float deltaTime)
 	const bool rightHeld =
 		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
 		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+
+	if (isDropThroughHeld() && m_onGround)
+	{
+		m_dropThroughTimer = m_dropThroughDuration;
+	}
 
 	float targetVelocityX = 0.f;
 
@@ -412,6 +482,7 @@ void GAME1_Player::performGroundJump()
 {
 	m_velocity.y = -m_jumpSpeed;
 	m_onGround = false;
+	m_wallGrabActive = false;
 
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
@@ -429,6 +500,7 @@ void GAME1_Player::performDoubleJump()
 {
 	m_velocity.y = -m_jumpSpeed;
 	m_onGround = false;
+	m_wallGrabActive = false;
 
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
@@ -444,6 +516,9 @@ void GAME1_Player::performDoubleJump()
 
 void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level)
 {
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+
 	m_position.x += m_velocity.x * deltaTime;
 
 	sf::FloatRect bounds = getBounds();
@@ -464,6 +539,7 @@ void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level)
 					bounds.size.x;
 
 				m_velocity.x = 0.f;
+				m_touchingWallRight = true;
 				break;
 			}
 		}
@@ -480,15 +556,75 @@ void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level)
 					static_cast<float>((leftTile + 1) * GAME1_Level::TileSize);
 
 				m_velocity.x = 0.f;
+				m_touchingWallLeft = true;
 				break;
 			}
 		}
 	}
 }
 
+void GAME1_Player::updateWallGrabState(GAME1_Level& level)
+{
+	m_wallGrabActive = false;
+
+	bool touchingLeft = false;
+	bool touchingRight = false;
+	detectWallContact(level, touchingLeft, touchingRight);
+
+	m_touchingWallLeft = m_touchingWallLeft || touchingLeft;
+	m_touchingWallRight = m_touchingWallRight || touchingRight;
+
+	if (m_onGround)
+		return;
+
+	if (m_velocity.y <= 0.f)
+		return;
+
+	if (!m_touchingWallLeft && !m_touchingWallRight)
+		return;
+
+	m_wallGrabActive = true;
+
+	const float wallGrabMaxFallSpeed =
+		std::max(1.f, m_wallGrabBaseFallSpeed * m_wallGrabFallSpeedMultiplier);
+
+	if (m_velocity.y > wallGrabMaxFallSpeed)
+		m_velocity.y = wallGrabMaxFallSpeed;
+
+	if (m_touchingWallLeft && !m_touchingWallRight)
+		m_facingDirection = FacingDirection::Left;
+	else if (m_touchingWallRight && !m_touchingWallLeft)
+		m_facingDirection = FacingDirection::Right;
+}
+
+bool GAME1_Player::detectWallContact(GAME1_Level& level, bool& touchingLeft, bool& touchingRight) const
+{
+	touchingLeft = false;
+	touchingRight = false;
+
+	const sf::FloatRect bounds = getBounds();
+
+	const int topTile = GetTopTile(bounds);
+	const int bottomTile = GetBottomTile(bounds);
+	const int leftProbeTile = static_cast<int>(std::floor((bounds.position.x - 1.f) / static_cast<float>(GAME1_Level::TileSize)));
+	const int rightProbeTile = static_cast<int>(std::floor((bounds.position.x + bounds.size.x + 1.f) / static_cast<float>(GAME1_Level::TileSize)));
+
+	for (int row = topTile; row <= bottomTile; ++row)
+	{
+		if (level.isSolidTile(leftProbeTile, row))
+			touchingLeft = true;
+
+		if (level.isSolidTile(rightProbeTile, row))
+			touchingRight = true;
+	}
+
+	return touchingLeft || touchingRight;
+}
+
 void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 {
 	m_onGround = false;
+	m_groundedOnOneWayPlatform = false;
 
 	m_position.y += m_velocity.y * deltaTime;
 
@@ -500,10 +636,22 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 	if (m_velocity.y > 0.f)
 	{
 		const int bottomTile = GetBottomTile(bounds);
+		const float previousBottom = m_previousPosition.y + bounds.size.y;
+		const bool dropThroughActive = m_dropThroughTimer > 0.f || isDropThroughHeld();
 
 		for (int col = leftTile; col <= rightTile; ++col)
 		{
-			if (level.isSolidTile(col, bottomTile))
+			const bool solidTile = level.isSolidTile(col, bottomTile);
+
+			bool oneWayPlatformCollision = false;
+			if (!solidTile && level.isOneWayPlatformTile(col, bottomTile))
+			{
+				const float platformTop = static_cast<float>(bottomTile * GAME1_Level::TileSize);
+				const bool cameFromAbove = previousBottom <= platformTop + 4.f;
+				oneWayPlatformCollision = cameFromAbove && !dropThroughActive;
+			}
+
+			if (solidTile || oneWayPlatformCollision)
 			{
 				m_position.y =
 					static_cast<float>(bottomTile * GAME1_Level::TileSize) -
@@ -511,6 +659,8 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 
 				m_velocity.y = 0.f;
 				m_onGround = true;
+				m_wallGrabActive = false;
+				m_groundedOnOneWayPlatform = oneWayPlatformCollision;
 
 				m_coyoteTimer = m_coyoteTime;
 				m_canDoubleJump = true;
@@ -544,8 +694,131 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 	}
 }
 
+void GAME1_Player::checkSpikeTrapCollisions(GAME1_Level& level)
+{
+	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	const sf::FloatRect playerBounds = getBounds();
+
+	const int leftTile = GetLeftTile(playerBounds);
+	const int rightTile = GetRightTile(playerBounds);
+	const int topTile = GetTopTile(playerBounds);
+	const int bottomTile = GetBottomTile(playerBounds);
+
+	for (int row = topTile; row <= bottomTile; ++row)
+	{
+		for (int col = leftTile; col <= rightTile; ++col)
+		{
+			if (!level.isSpikeTrapTile(col, row))
+				continue;
+
+			const sf::FloatRect spikeBounds(
+				{ static_cast<float>(col * GAME1_Level::TileSize), static_cast<float>(row * GAME1_Level::TileSize) },
+				{ static_cast<float>(GAME1_Level::TileSize), static_cast<float>(GAME1_Level::TileSize) }
+			);
+
+			if (rectsIntersect(playerBounds, spikeBounds))
+			{
+				takeSpikeDamage(spikeBounds);
+				return;
+			}
+		}
+	}
+}
+
+void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
+{
+	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	m_health = std::max(0, m_health - m_spikeDamage);
+	m_damageCooldownTimer = m_damageCooldownDuration;
+
+	startHitAnimation();
+	applyKnockbackFromTile(spikeBounds);
+
+	if (m_health <= 0)
+	{
+		startRespawn();
+	}
+}
+
+void GAME1_Player::startHitAnimation()
+{
+	m_hitAnimationPlaying = true;
+	setAnimationState(AnimationState::Hit);
+}
+
+void GAME1_Player::applyKnockbackFromTile(const sf::FloatRect& tileBounds)
+{
+	const sf::FloatRect playerBounds = getBounds();
+	const sf::Vector2f playerCenter(
+		playerBounds.position.x + playerBounds.size.x * 0.5f,
+		playerBounds.position.y + playerBounds.size.y * 0.5f);
+	const sf::Vector2f tileCenter(
+		tileBounds.position.x + tileBounds.size.x * 0.5f,
+		tileBounds.position.y + tileBounds.size.y * 0.5f);
+
+	sf::Vector2f direction(
+		playerCenter.x - tileCenter.x,
+		playerCenter.y - tileCenter.y);
+
+	if (std::abs(m_velocity.x) > std::abs(m_velocity.y) && std::abs(m_velocity.x) > 5.f)
+	{
+		direction = { -SignNonZero(m_velocity.x), 0.f };
+	}
+	else if (std::abs(m_velocity.y) > 5.f)
+	{
+		direction = { 0.f, -SignNonZero(m_velocity.y) };
+	}
+
+	const float length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+
+	if (length > 0.001f)
+	{
+		direction.x /= length;
+		direction.y /= length;
+	}
+	else
+	{
+		direction = {
+			m_facingDirection == FacingDirection::Right ? -1.f : 1.f,
+			-0.5f
+		};
+	}
+
+	if (std::abs(direction.x) < 0.15f)
+		direction.x = 0.f;
+
+	m_velocity.x = direction.x * m_spikeKnockbackHorizontal;
+
+	if (direction.y < 0.f || std::abs(direction.y) < 0.15f)
+		m_velocity.y = -m_spikeKnockbackVertical;
+	else
+		m_velocity.y = m_spikeKnockbackVertical * 0.45f;
+
+	m_onGround = false;
+	m_wallGrabActive = false;
+	m_coyoteTimer = 0.f;
+	m_variableJumpActive = false;
+	m_releasedJumpGravityActive = false;
+}
+
 void GAME1_Player::updateAnimationState()
 {
+	if (m_hitAnimationPlaying)
+	{
+		setAnimationState(AnimationState::Hit);
+		return;
+	}
+
+	if (m_wallGrabActive && !m_wallGrabAnimation.frames.empty())
+	{
+		setAnimationState(AnimationState::WallGrab);
+		return;
+	}
+
 	if (!m_onGround)
 	{
 		if (m_doubleJumpAnimationPlaying &&
@@ -567,6 +840,9 @@ void GAME1_Player::updateAnimationState()
 
 		return;
 	}
+
+	m_doubleJumpAnimationPlaying = false;
+	m_wallGrabActive = false;
 
 	if (std::abs(m_velocity.x) > 5.f)
 	{
@@ -595,6 +871,57 @@ void GAME1_Player::updateAnimation(float deltaTime)
 	if (animation.frames.empty())
 		return;
 
+	if (m_hitAnimationPlaying)
+	{
+		m_animationTimer += deltaTime;
+
+		while (m_animationTimer >= animation.frameDuration)
+		{
+			m_animationTimer -= animation.frameDuration;
+
+			if (m_currentFrameIndex + 1 < animation.frames.size())
+			{
+				++m_currentFrameIndex;
+			}
+			else
+			{
+				m_hitAnimationPlaying = false;
+				m_currentFrameIndex = 0;
+				updateAnimationState();
+				break;
+			}
+		}
+
+		return;
+	}
+
+	if (m_animationState == AnimationState::DoubleJump && m_doubleJumpAnimationPlaying)
+	{
+		m_animationTimer += deltaTime;
+
+		while (m_animationTimer >= animation.frameDuration)
+		{
+			m_animationTimer -= animation.frameDuration;
+
+			if (m_currentFrameIndex + 1 < animation.frames.size())
+			{
+				++m_currentFrameIndex;
+			}
+			else
+			{
+				m_doubleJumpAnimationPlaying = false;
+				m_currentFrameIndex = 0;
+				updateAnimationState();
+				break;
+			}
+		}
+
+		return;
+	}
+
+	if (animation.frames.size() <= 1)
+		return;
+
 	m_animationTimer += deltaTime;
 
 	while (m_animationTimer >= animation.frameDuration)
@@ -606,24 +933,47 @@ void GAME1_Player::updateAnimation(float deltaTime)
 
 const GAME1_Player::AnimationSet& GAME1_Player::getCurrentAnimationSet() const
 {
+	if (m_hitAnimationPlaying && !m_hitAnimation.frames.empty())
+		return m_hitAnimation;
+
 	switch (m_animationState)
 	{
 	case AnimationState::Run:
-		return m_runAnimation;
+		if (!m_runAnimation.frames.empty())
+			return m_runAnimation;
+		break;
 
 	case AnimationState::Jump:
-		return m_jumpAnimation;
+		if (!m_jumpAnimation.frames.empty())
+			return m_jumpAnimation;
+		break;
 
 	case AnimationState::DoubleJump:
-		return m_doubleJumpAnimation;
+		if (!m_doubleJumpAnimation.frames.empty())
+			return m_doubleJumpAnimation;
+		break;
 
 	case AnimationState::Fall:
-		return m_fallAnimation;
+		if (!m_fallAnimation.frames.empty())
+			return m_fallAnimation;
+		break;
+
+	case AnimationState::WallGrab:
+		if (!m_wallGrabAnimation.frames.empty())
+			return m_wallGrabAnimation;
+		break;
+
+	case AnimationState::Hit:
+		if (!m_hitAnimation.frames.empty())
+			return m_hitAnimation;
+		break;
 
 	case AnimationState::Idle:
 	default:
-		return m_idleAnimation;
+		break;
 	}
+
+	return m_idleAnimation;
 }
 
 const sf::Texture* GAME1_Player::getCurrentTexture() const
@@ -633,39 +983,55 @@ const sf::Texture* GAME1_Player::getCurrentTexture() const
 	if (animation.frames.empty())
 		return nullptr;
 
-	if (m_currentFrameIndex >= animation.frames.size())
-		return &animation.frames[0];
-
-	return &animation.frames[m_currentFrameIndex];
+	return &animation.frames[m_currentFrameIndex % animation.frames.size()];
 }
 
 void GAME1_Player::draw(sf::RenderTarget& target) const
 {
 	const sf::Texture* texture = getCurrentTexture();
 
-	if (texture == nullptr)
-		return;
+	if (texture != nullptr)
+	{
+		sf::Sprite sprite(*texture);
 
-	sf::Sprite sprite(*texture);
+		const sf::FloatRect localBounds = sprite.getLocalBounds();
+		if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+		{
+			const float scaleX = m_drawWidth / localBounds.size.x;
+			const float scaleY = m_drawHeight / localBounds.size.y;
 
-	const sf::FloatRect localBounds = sprite.getLocalBounds();
-	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
-		return;
+			sprite.setScale({
+				m_facingDirection == FacingDirection::Left ? -scaleX : scaleX,
+				scaleY
+				});
 
-	const float scaleX = m_drawWidth / localBounds.size.x;
-	const float scaleY = m_drawHeight / localBounds.size.y;
+			sprite.setPosition({
+				m_facingDirection == FacingDirection::Left ? m_position.x + m_drawWidth : m_position.x,
+				m_position.y
+				});
 
-	sprite.setScale({
-		m_facingDirection == FacingDirection::Left ? -scaleX : scaleX,
-		scaleY
-		});
+			target.draw(sprite);
+		}
+	}
 
-	sprite.setPosition({
-		m_facingDirection == FacingDirection::Left ? m_position.x + m_drawWidth : m_position.x,
-		m_position.y
-		});
+	if (m_hasUiFont)
+	{
+		const sf::View view = target.getView();
+		const sf::Vector2f viewSize = view.getSize();
+		const sf::Vector2f viewCenter = view.getCenter();
+		const sf::Vector2f topLeft(
+			viewCenter.x - viewSize.x * 0.5f,
+			viewCenter.y - viewSize.y * 0.5f);
 
-	target.draw(sprite);
+		sf::Text healthText(m_uiFont);
+		healthText.setString("Health: " + std::to_string(m_health) + " / " + std::to_string(m_maxHealth));
+		healthText.setCharacterSize(22);
+		healthText.setFillColor(sf::Color::White);
+		healthText.setOutlineColor(sf::Color::Black);
+		healthText.setOutlineThickness(2.f);
+		healthText.setPosition({ topLeft.x + 18.f, topLeft.y + 16.f });
+		target.draw(healthText);
+	}
 }
 
 sf::FloatRect GAME1_Player::getBounds() const
@@ -689,6 +1055,16 @@ int GAME1_Player::getRespawnCountdown() const
 	return std::max(0, static_cast<int>(std::ceil(m_respawnTimer)));
 }
 
+int GAME1_Player::getHealth() const
+{
+	return m_health;
+}
+
+int GAME1_Player::getMaxHealth() const
+{
+	return m_maxHealth;
+}
+
 void GAME1_Player::startRespawn()
 {
 	if (m_respawning)
@@ -696,8 +1072,17 @@ void GAME1_Player::startRespawn()
 
 	m_respawning = true;
 	m_respawnTimer = m_respawnDuration;
+	m_health = m_maxHealth;
+	m_damageCooldownTimer = 0.f;
+	m_hitAnimationPlaying = false;
+	m_dropThroughTimer = 0.f;
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+	m_groundedOnOneWayPlatform = false;
 	m_velocity = { 0.f, 0.f };
 	m_position = m_spawnPosition;
+	m_previousPosition = m_spawnPosition;
 	m_onGround = false;
 	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 	m_coyoteTimer = 0.f;
@@ -706,6 +1091,7 @@ void GAME1_Player::startRespawn()
 	m_doubleJumpAnimationPlaying = false;
 	m_variableJumpActive = false;
 	m_releasedJumpGravityActive = false;
+	setAnimationState(AnimationState::Idle);
 }
 
 void GAME1_Player::updateRespawn(float deltaTime)
@@ -719,7 +1105,16 @@ void GAME1_Player::updateRespawn(float deltaTime)
 	{
 		m_respawning = false;
 		m_respawnTimer = 0.f;
+		m_health = m_maxHealth;
+		m_damageCooldownTimer = 0.f;
+		m_hitAnimationPlaying = false;
+		m_dropThroughTimer = 0.f;
+		m_wallGrabActive = false;
+		m_touchingWallLeft = false;
+		m_touchingWallRight = false;
+		m_groundedOnOneWayPlatform = false;
 		m_position = m_spawnPosition;
+		m_previousPosition = m_spawnPosition;
 		m_velocity = { 0.f, 0.f };
 		m_onGround = false;
 		m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
@@ -729,6 +1124,7 @@ void GAME1_Player::updateRespawn(float deltaTime)
 		m_doubleJumpAnimationPlaying = false;
 		m_variableJumpActive = false;
 		m_releasedJumpGravityActive = false;
+		setAnimationState(AnimationState::Idle);
 	}
 }
 
@@ -741,6 +1137,20 @@ bool GAME1_Player::isWithinApexGravityWindow() const
 		return m_velocity.y <= m_gravity * m_apexGravityTimeWindow;
 
 	return std::abs(m_velocity.y) <= m_gravity * m_apexGravityTimeWindow;
+}
+
+bool GAME1_Player::isDropThroughHeld() const
+{
+	return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+}
+
+bool GAME1_Player::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)
+{
+	return a.position.x < b.position.x + b.size.x &&
+		a.position.x + a.size.x > b.position.x &&
+		a.position.y < b.position.y + b.size.y &&
+		a.position.y + a.size.y > b.position.y;
 }
 
 float GAME1_Player::moveTowards(float current, float target, float maxDelta)

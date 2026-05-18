@@ -85,6 +85,57 @@ namespace
 		return true;
 	}
 
+	bool ContainsAnyKeyword(const std::filesystem::path& path,
+		const std::vector<std::string>& keywords)
+	{
+		const std::string stem = ToLower(path.stem().string());
+		const std::string parent = ToLower(path.parent_path().filename().string());
+		const std::string combined = parent + "_" + stem;
+
+		for (const std::string& keyword : keywords)
+		{
+			if (combined.find(ToLower(keyword)) != std::string::npos)
+				return true;
+		}
+
+		return false;
+	}
+
+	std::vector<std::filesystem::path> FindSpecialPngFiles(
+		const std::filesystem::path& searchRoot,
+		const std::vector<std::string>& keywords)
+	{
+		namespace fs = std::filesystem;
+
+		std::vector<fs::path> paths;
+
+		if (!fs::exists(searchRoot) || !fs::is_directory(searchRoot))
+			return paths;
+
+		for (const auto& entry : fs::recursive_directory_iterator(searchRoot))
+		{
+			if (!entry.is_regular_file())
+				continue;
+
+			if (!IsPngFile(entry.path()))
+				continue;
+
+			if (ContainsAnyKeyword(entry.path(), keywords))
+				paths.push_back(entry.path());
+		}
+
+		std::sort(paths.begin(), paths.end(), NaturalFrameSort);
+		return paths;
+	}
+
+	bool LoadTextureIfFileExists(sf::Texture& texture, const std::filesystem::path& path)
+	{
+		if (!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path))
+			return false;
+
+		return texture.loadFromFile(path.string());
+	}
+
 	std::optional<char> KnownTileCodeForStem(const std::string& rawStem)
 	{
 		const std::string stem = ToLower(rawStem);
@@ -109,7 +160,8 @@ namespace
 
 	std::vector<char> FallbackTileCodes()
 	{
-		// P is reserved for PlayerSpawn and O is empty.
+		// P is reserved for PlayerSpawn, O is empty, and special trap/platform
+		// characters are handled separately.
 		return
 		{
 			'X', 'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -119,7 +171,13 @@ namespace
 
 	bool IsReservedMapTileCode(char code)
 	{
-		return code == 'O' || code == 'B' || code == 'P';
+		return code == 'O' ||
+			code == 'B' ||
+			code == 'P' ||
+			code == GAME1_Level::SpikeTrapTile ||
+			code == GAME1_Level::OneWayPlatformLeftTile ||
+			code == GAME1_Level::OneWayPlatformMiddleTile ||
+			code == GAME1_Level::OneWayPlatformRightTile;
 	}
 
 	std::vector<std::pair<char, std::filesystem::path>> BuildWorldTileDefinitions(
@@ -277,6 +335,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_rows.clear();
 	m_lastError.clear();
 	m_floorTextures.clear();
+	m_specialTileTextures.clear();
 	m_worldNumber = 1;
 	m_playerSpawnPosition = { 100.f, 100.f };
 	m_resourcesDirectory = resourcesDirectory;
@@ -342,6 +401,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	if (!loadWorldFloorTextures(worldTilesDirectory))
 		return false;
 
+	loadSpecialTileTextures(resourcesPath);
+
 	for (std::size_t row = 0; row < rawRows.size(); ++row)
 	{
 		for (std::size_t col = 0; col < rawRows[row].size(); ++col)
@@ -367,7 +428,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				continue;
 			}
 
-			if (tile == 'O' || isFloorTile(tile))
+			if (tile == 'O' || isFloorTile(tile) || isSupportedSpecialTileCode(tile))
 				continue;
 
 			m_lastError =
@@ -375,7 +436,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				std::string(1, tile) +
 				"' at row " + std::to_string(row + 1) +
 				", column " + std::to_string(col + 1) +
-				". Use O for empty, P for player spawn, or a floor tile letter from the editor.";
+				". Use O for empty, P for player spawn, a floor tile letter from the editor, ^ for spikes, or [/= /] for one-way platforms.";
 			return false;
 		}
 	}
@@ -413,6 +474,68 @@ bool GAME1_Level::loadWorldFloorTextures(const std::filesystem::path& worldTiles
 	}
 
 	return true;
+}
+
+void GAME1_Level::loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	m_specialTileTextures.clear();
+
+	const fs::path tilesDirectory = resourcesDirectory / "Tiles";
+
+	// Spikes are expected at Resources/Tiles/Traps/Spikes_0.png, but this also
+	// searches the Tiles folder recursively for any PNG with "spike" in its name.
+	{
+		sf::Texture spikeTexture;
+		const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes_0.png";
+
+		if (LoadTextureIfFileExists(spikeTexture, preferredSpikePath))
+		{
+			m_specialTileTextures[SpikeTrapTile] = std::move(spikeTexture);
+		}
+		else
+		{
+			const std::vector<fs::path> spikePaths = FindSpecialPngFiles(tilesDirectory, { "spike" });
+
+			if (!spikePaths.empty() && spikeTexture.loadFromFile(spikePaths.front().string()))
+			{
+				m_specialTileTextures[SpikeTrapTile] = std::move(spikeTexture);
+			}
+		}
+	}
+
+	// One-way platforms are three separate parts, not an animation.
+	// Common layouts supported:
+	// Resources/Tiles/Platforms/Platform_0.png, _1, _2
+	// Resources/Tiles/Platform/Platform_0.png, _1, _2
+	// Any PNG under Tiles with platform / oneway / one_way in the file/folder name.
+	const std::vector<fs::path> platformPaths = FindSpecialPngFiles(
+		tilesDirectory,
+		{ "platform", "oneway", "one_way", "one-way" });
+
+	if (!platformPaths.empty())
+	{
+		const char platformCodes[3] =
+		{
+			OneWayPlatformLeftTile,
+			OneWayPlatformMiddleTile,
+			OneWayPlatformRightTile
+		};
+
+		for (int i = 0; i < 3; ++i)
+		{
+			const std::size_t sourceIndex = std::min<std::size_t>(
+				static_cast<std::size_t>(i),
+				platformPaths.size() - 1);
+
+			sf::Texture platformTexture;
+			if (platformTexture.loadFromFile(platformPaths[sourceIndex].string()))
+			{
+				m_specialTileTextures[platformCodes[i]] = std::move(platformTexture);
+			}
+		}
+	}
 }
 
 void GAME1_Level::draw(sf::RenderWindow& window) const
@@ -455,6 +578,22 @@ bool GAME1_Level::isSolidTile(int col, int row) const
 
 	const char tile = m_rows[row][col];
 	return isFloorTile(tile);
+}
+
+bool GAME1_Level::isSpikeTrapTile(int col, int row) const
+{
+	if (!isInside(col, row))
+		return false;
+
+	return isSpikeTrapCode(m_rows[row][col]);
+}
+
+bool GAME1_Level::isOneWayPlatformTile(int col, int row) const
+{
+	if (!isInside(col, row))
+		return false;
+
+	return isOneWayPlatformCode(m_rows[row][col]);
 }
 
 char GAME1_Level::getTile(int col, int row) const
@@ -519,11 +658,32 @@ bool GAME1_Level::isFloorTile(char tile) const
 	return m_floorTextures.find(tile) != m_floorTextures.end();
 }
 
+bool GAME1_Level::isSpikeTrapCode(char tile) const
+{
+	return tile == SpikeTrapTile;
+}
+
+bool GAME1_Level::isOneWayPlatformCode(char tile) const
+{
+	return tile == OneWayPlatformLeftTile ||
+		tile == OneWayPlatformMiddleTile ||
+		tile == OneWayPlatformRightTile;
+}
+
+bool GAME1_Level::isSupportedSpecialTileCode(char tile) const
+{
+	return isSpikeTrapCode(tile) || isOneWayPlatformCode(tile);
+}
+
 const sf::Texture* GAME1_Level::getTextureForTile(char tile) const
 {
-	const auto found = m_floorTextures.find(tile);
-	if (found != m_floorTextures.end())
-		return &found->second;
+	const auto floorFound = m_floorTextures.find(tile);
+	if (floorFound != m_floorTextures.end())
+		return &floorFound->second;
+
+	const auto specialFound = m_specialTileTextures.find(tile);
+	if (specialFound != m_specialTileTextures.end())
+		return &specialFound->second;
 
 	return nullptr;
 }

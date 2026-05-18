@@ -9,12 +9,22 @@
 
 // This class owns the tile map data for Game 1 / SurfersQuest.
 // It loads the map, draws all world-specific floor tile variants,
-// and answers collision queries.
+// and answers collision / special-tile queries.
 // Legacy B tiles are treated as empty space.
 class GAME1_Level
 {
 public:
 	static constexpr int TileSize = 64;
+
+	// Special non-world tile codes used by the SurfersQuest editor/loader.
+	// ^  = spike trap
+	// [  = one-way platform left part
+	// =  = one-way platform middle part
+	// ]  = one-way platform right part
+	static constexpr char SpikeTrapTile = '^';
+	static constexpr char OneWayPlatformLeftTile = '[';
+	static constexpr char OneWayPlatformMiddleTile = '=';
+	static constexpr char OneWayPlatformRightTile = ']';
 
 	// New preferred loader: pass the SurfersQuest Resources directory.
 	// Example: assets/Game#1/SurfersQuest/Resources
@@ -29,7 +39,11 @@ public:
 
 	void draw(sf::RenderWindow& window) const;
 
+	// Full solid tiles are the normal world/floor tiles.
+	// Spike traps and one-way platforms are queried separately.
 	bool isSolidTile(int col, int row) const;
+	bool isSpikeTrapTile(int col, int row) const;
+	bool isOneWayPlatformTile(int col, int row) const;
 	char getTile(int col, int row) const;
 
 	int getWorldNumber() const;
@@ -48,9 +62,13 @@ private:
 		const std::string& ignoredLegacyTexturePath);
 
 	bool loadWorldFloorTextures(const std::filesystem::path& worldTilesDirectory);
+	void loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory);
 
 	bool isInside(int col, int row) const;
 	bool isFloorTile(char tile) const;
+	bool isSpikeTrapCode(char tile) const;
+	bool isOneWayPlatformCode(char tile) const;
+	bool isSupportedSpecialTileCode(char tile) const;
 	const sf::Texture* getTextureForTile(char tile) const;
 
 private:
@@ -61,6 +79,7 @@ private:
 	sf::Vector2f m_playerSpawnPosition{ 100.f, 100.f };
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;
+	std::unordered_map<char, sf::Texture> m_specialTileTextures;
 
 	std::string m_lastError;
 };
