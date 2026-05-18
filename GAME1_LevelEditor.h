@@ -8,7 +8,7 @@
 #include <vector>
 
 // SurfersQuest level editor.
-// This now follows the same editor style as the Bomberman editor:
+// This follows the same editor style as the Bomberman editor:
 // - world selector and #WORLD=N map metadata
 // - save and load buttons
 // - load-level selector arrows
@@ -18,6 +18,8 @@
 // - middle-mouse tile picker
 // - right-click erase
 // - keeps the old horizontal screen scrolling for wide platformer maps
+//
+// Save is handled by the SAVE button or F5. P is not a save key.
 class GAME1_LevelEditor
 {
 public:
@@ -33,9 +35,9 @@ public:
 	bool load(const std::string& fontPath,
 		const std::string& surfersQuestRootDirectory);
 
-	// Kept for old main.cpp compatibility.
+	// Kept for old main.cpp compatibility. The middle argument is ignored.
 	bool load(const std::string& floorTexturePath,
-		const std::string& breakTexturePath,
+		const std::string& ignoredLegacyTexturePath,
 		const std::string& fontPath);
 
 	void resetEmpty();
@@ -72,13 +74,12 @@ private:
 
 		sf::Color fallbackColor = sf::Color::White;
 		bool isEraser = false;
-		bool isBreakable = false;
 	};
 
 private:
 	bool initialise(const std::string& fontPath,
 		const std::filesystem::path& rootDirectory,
-		const std::string& optionalBreakTexturePath);
+		const std::string& ignoredLegacyTexturePath);
 
 	void buildTools();
 	void rebuildVisibleToolbar();
@@ -86,7 +87,6 @@ private:
 
 	bool loadTexture(sf::Texture& texture, const std::string& texturePath);
 	bool loadFirstTextureFromDirectory(sf::Texture& texture, const std::string& directoryPath);
-	bool loadBreakTexture();
 
 	bool loadRowsFromFile(const std::string& mapPath);
 	bool validateTileCharacter(char tile) const;
@@ -166,12 +166,8 @@ private:
 	std::string m_rootDirectory;
 	std::string m_resourcesDirectory;
 	std::string m_mapsDirectory;
-	std::string m_breakTexturePathOverride;
-	std::string m_loadedBreakTexturePath;
 
 	sf::Font m_font;
-	sf::Texture m_breakTexture;
-	bool m_hasBreakTexture = false;
 
 	std::vector<std::string> m_rows;
 	std::vector<Tool> m_tools;

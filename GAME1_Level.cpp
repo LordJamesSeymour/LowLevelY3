@@ -4,21 +4,11 @@
 #include <cctype>
 #include <fstream>
 #include <optional>
-#include <random>
-#include <sstream>
 #include <unordered_set>
 #include <utility>
 
 namespace
 {
-	bool RectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)
-	{
-		return a.position.x < (b.position.x + b.size.x) &&
-			(a.position.x + a.size.x) > b.position.x &&
-			a.position.y < (b.position.y + b.size.y) &&
-			(a.position.y + a.size.y) > b.position.y;
-	}
-
 	std::string ToLower(std::string value)
 	{
 		std::transform(value.begin(), value.end(), value.begin(),
@@ -119,7 +109,7 @@ namespace
 
 	std::vector<char> FallbackTileCodes()
 	{
-		// P is reserved for PlayerSpawn, B for breakable, and O for empty.
+		// P is reserved for PlayerSpawn and O is empty.
 		return
 		{
 			'X', 'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -269,17 +259,20 @@ bool GAME1_Level::loadFromFile(const std::string& mapPath,
 
 bool GAME1_Level::loadFromFile(const std::string& mapPath,
 	const std::string& floorTexturePath,
-	const std::string& breakTexturePath)
+	const std::string& ignoredLegacyTexturePath)
 {
+	(void)ignoredLegacyTexturePath;
 	const std::filesystem::path inferredResourcesDirectory = InferResourcesDirectoryFromOldFloorPath(floorTexturePath);
-	return loadFromFileInternal(mapPath, inferredResourcesDirectory.string(), breakTexturePath);
+	return loadFromFileInternal(mapPath, inferredResourcesDirectory.string(), "");
 }
 
 bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	const std::string& resourcesDirectory,
-	const std::string& optionalBreakTexturePath)
+	const std::string& ignoredLegacyTexturePath)
 {
 	namespace fs = std::filesystem;
+
+	(void)ignoredLegacyTexturePath;
 
 	m_rows.clear();
 	m_lastError.clear();
@@ -349,9 +342,6 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	if (!loadWorldFloorTextures(worldTilesDirectory))
 		return false;
 
-	if (!loadBreakTexture(resourcesPath, optionalBreakTexturePath))
-		return false;
-
 	for (std::size_t row = 0; row < rawRows.size(); ++row)
 	{
 		for (std::size_t col = 0; col < rawRows[row].size(); ++col)
@@ -370,7 +360,14 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				continue;
 			}
 
-			if (tile == 'O' || tile == 'B' || isFloorTile(tile))
+			if (tile == 'B')
+			{
+				// Legacy B tiles are now treated as empty so old maps can still load.
+				rawRows[row][col] = 'O';
+				continue;
+			}
+
+			if (tile == 'O' || isFloorTile(tile))
 				continue;
 
 			m_lastError =
@@ -378,7 +375,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				std::string(1, tile) +
 				"' at row " + std::to_string(row + 1) +
 				", column " + std::to_string(col + 1) +
-				". Use O for empty, B for breakable, P for player spawn, or a floor tile letter from the editor.";
+				". Use O for empty, P for player spawn, or a floor tile letter from the editor.";
 			return false;
 		}
 	}
@@ -416,32 +413,6 @@ bool GAME1_Level::loadWorldFloorTextures(const std::filesystem::path& worldTiles
 	}
 
 	return true;
-}
-
-bool GAME1_Level::loadBreakTexture(const std::filesystem::path& resourcesDirectory,
-	const std::string& optionalBreakTexturePath)
-{
-	namespace fs = std::filesystem;
-
-	std::vector<fs::path> candidatePaths;
-
-	if (!optionalBreakTexturePath.empty())
-		candidatePaths.push_back(optionalBreakTexturePath);
-
-	candidatePaths.push_back(resourcesDirectory / "breakblock.png");
-	candidatePaths.push_back(resourcesDirectory / "BreakBlock.png");
-	candidatePaths.push_back(resourcesDirectory / "Tiles" / "breakblock.png");
-	candidatePaths.push_back(resourcesDirectory / "Tiles" / "BreakBlock.png");
-
-	for (const fs::path& path : candidatePaths)
-	{
-		if (m_breakTexture.loadFromFile(path.string()))
-			return true;
-	}
-
-	m_lastError =
-		"Failed to load break block texture. Tried old path plus Resources/breakblock.png and Resources/Tiles/breakblock.png.";
-	return false;
 }
 
 void GAME1_Level::draw(sf::RenderWindow& window) const
@@ -483,15 +454,7 @@ bool GAME1_Level::isSolidTile(int col, int row) const
 		return false;
 
 	const char tile = m_rows[row][col];
-	return tile == 'B' || isFloorTile(tile);
-}
-
-bool GAME1_Level::isBreakTile(int col, int row) const
-{
-	if (!isInside(col, row))
-		return false;
-
-	return m_rows[row][col] == 'B';
+	return isFloorTile(tile);
 }
 
 char GAME1_Level::getTile(int col, int row) const
@@ -500,50 +463,6 @@ char GAME1_Level::getTile(int col, int row) const
 		return 'O';
 
 	return m_rows[row][col];
-}
-
-void GAME1_Level::breakTile(int col, int row)
-{
-	if (!isInside(col, row))
-		return;
-
-	if (m_rows[row][col] == 'B')
-		m_rows[row][col] = 'O';
-}
-
-void GAME1_Level::spawnRandomBreakBlocks(int count, const sf::FloatRect& forbiddenArea)
-{
-	std::vector<std::pair<int, int>> candidates;
-
-	for (int row = 0; row < static_cast<int>(m_rows.size()); ++row)
-	{
-		for (int col = 0; col < static_cast<int>(m_rows[row].size()); ++col)
-		{
-			if (m_rows[row][col] != 'O')
-				continue;
-
-			const sf::FloatRect tileRect(
-				{ static_cast<float>(col * TileSize), static_cast<float>(row * TileSize) },
-				{ static_cast<float>(TileSize), static_cast<float>(TileSize) }
-			);
-
-			if (!RectsIntersect(tileRect, forbiddenArea))
-				candidates.emplace_back(col, row);
-		}
-	}
-
-	std::random_device rd;
-	std::mt19937 rng(rd());
-	std::shuffle(candidates.begin(), candidates.end(), rng);
-
-	const int blocksToPlace = std::min(count, static_cast<int>(candidates.size()));
-
-	for (int i = 0; i < blocksToPlace; ++i)
-	{
-		const int col = candidates[i].first;
-		const int row = candidates[i].second;
-		m_rows[row][col] = 'B';
-	}
 }
 
 int GAME1_Level::getWorldNumber() const
@@ -602,9 +521,6 @@ bool GAME1_Level::isFloorTile(char tile) const
 
 const sf::Texture* GAME1_Level::getTextureForTile(char tile) const
 {
-	if (tile == 'B')
-		return &m_breakTexture;
-
 	const auto found = m_floorTextures.find(tile);
 	if (found != m_floorTextures.end())
 		return &found->second;

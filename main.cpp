@@ -202,13 +202,10 @@ namespace
 
 	bool LoadGame1(GAME1_Level& level, GAME1_Player& player, const std::string& mapPath)
 	{
-		const std::string floorTilePath = (kGame1ResourcesDirectory / "FloorTile.png").string();
-		const std::string breakBlockPath = (kGame1ResourcesDirectory / "breakblock.png").string();
-
 		const std::string playerIdleDirectory =
 			(kGame1ResourcesDirectory / "Player" / "PlayerIdle").string();
 
-		if (!level.loadFromFile(mapPath, floorTilePath, breakBlockPath))
+		if (!level.loadFromFile(mapPath, kGame1ResourcesDirectory.string()))
 		{
 			std::string msg =
 				"Game 1 level failed to load.\n\n" +
@@ -220,7 +217,7 @@ namespace
 			return false;
 		}
 
-		if (!player.load(playerIdleDirectory, { 100.f, 100.f }))
+		if (!player.load(playerIdleDirectory, level.getPlayerSpawnPosition()))
 		{
 			std::string msg =
 				"Game 1 player failed to load.\n\n" +
@@ -233,51 +230,6 @@ namespace
 		}
 
 		return true;
-	}
-
-	std::optional<int> TryGetToolbarSlotFromKey(sf::Keyboard::Key key)
-	{
-		switch (key)
-		{
-		case sf::Keyboard::Key::Num1:
-		case sf::Keyboard::Key::Numpad1:
-			return 1;
-
-		case sf::Keyboard::Key::Num2:
-		case sf::Keyboard::Key::Numpad2:
-			return 2;
-
-		case sf::Keyboard::Key::Num3:
-		case sf::Keyboard::Key::Numpad3:
-			return 3;
-
-		case sf::Keyboard::Key::Num4:
-		case sf::Keyboard::Key::Numpad4:
-			return 4;
-
-		case sf::Keyboard::Key::Num5:
-		case sf::Keyboard::Key::Numpad5:
-			return 5;
-
-		case sf::Keyboard::Key::Num6:
-		case sf::Keyboard::Key::Numpad6:
-			return 6;
-
-		case sf::Keyboard::Key::Num7:
-		case sf::Keyboard::Key::Numpad7:
-			return 7;
-
-		case sf::Keyboard::Key::Num8:
-		case sf::Keyboard::Key::Numpad8:
-			return 8;
-
-		case sf::Keyboard::Key::Num9:
-		case sf::Keyboard::Key::Numpad9:
-			return 9;
-
-		default:
-			return std::nullopt;
-		}
 	}
 }
 
@@ -454,10 +406,7 @@ int main()
 	}
 
 	GAME1_LevelEditor game1Editor;
-	if (!game1Editor.load(
-		(kGame1ResourcesDirectory / "FloorTile.png").string(),
-		(kGame1ResourcesDirectory / "breakblock.png").string(),
-		kGlobalFontPath.string()))
+	if (!game1Editor.load(kGlobalFontPath.string(), kGame1RootDirectory.string()))
 	{
 		std::string msg =
 			"Game 1 level editor failed to load.\n\n" +
@@ -571,6 +520,7 @@ int main()
 		bombermanEditor.layout(window);
 		bombermanLevelSelect.layout(window);
 		bombermanMenu.layout(window);
+		game1Editor.layout(window);
 
 		while (const std::optional event = window.pollEvent())
 		{
@@ -906,24 +856,9 @@ int main()
 					{
 						SetAppState(AppState::GAME1_Menu);
 					}
-					else if (keyReleased->code == sf::Keyboard::Key::P)
-					{
-						if (!game1Editor.saveToNextLevelFile())
-						{
-							ShowError(game1Editor.getLastError());
-						}
-						else
-						{
-							ShowInfo("Level saved successfully.\n\n" + game1Editor.getLastSavedPath());
-						}
-					}
 					else
 					{
-						const std::optional<int> selectedSlot = TryGetToolbarSlotFromKey(keyReleased->code);
-						if (selectedSlot.has_value())
-						{
-							game1Editor.selectToolbarSlot(*selectedSlot);
-						}
+						game1Editor.handleKeyReleased(keyReleased->code);
 					}
 				}
 
@@ -934,13 +869,14 @@ int main()
 						mousePressed->position.y
 					};
 
-					if (mousePressed->button == sf::Mouse::Button::Left)
+					game1Editor.handleMousePressed(mousePressed->button, mousePixelPosition);
+				}
+
+				if (const auto* mouseWheelScrolled = event->getIf<sf::Event::MouseWheelScrolled>())
+				{
+					if (mouseWheelScrolled->wheel == sf::Mouse::Wheel::Vertical)
 					{
-						game1Editor.paintAtPixel(mousePixelPosition);
-					}
-					else if (mousePressed->button == sf::Mouse::Button::Right)
-					{
-						game1Editor.eraseAtPixel(mousePixelPosition);
+						game1Editor.handleMouseWheelScrolled(-mouseWheelScrolled->delta);
 					}
 				}
 			}
@@ -1140,6 +1076,8 @@ int main()
 		}
 		else if (appState == AppState::GAME1_Editor)
 		{
+			game1Editor.update(deltaTime, window.getSize());
+
 			window.clear(sf::Color(80, 170, 255));
 			game1Editor.draw(window, sf::Mouse::getPosition(window));
 			window.display();

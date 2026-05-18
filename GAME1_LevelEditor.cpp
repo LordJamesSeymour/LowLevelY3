@@ -41,6 +41,7 @@ namespace
 			return std::nullopt;
 
 		int start = end;
+
 		while (start > 0 && std::isdigit(static_cast<unsigned char>(stem[start - 1])))
 			--start;
 
@@ -93,7 +94,10 @@ namespace
 		const std::string name = ToLower(path.filename().string());
 		const std::string prefix = "world";
 
-		if (name.rfind(prefix, 0) != 0 || name.size() <= prefix.size())
+		if (name.rfind(prefix, 0) != 0)
+			return std::nullopt;
+
+		if (name.size() <= prefix.size())
 			return std::nullopt;
 
 		for (std::size_t i = prefix.size(); i < name.size(); ++i)
@@ -116,8 +120,13 @@ namespace
 	{
 		const std::string stem = ToLower(rawStem);
 
-		if (stem == "floor_center_0" || stem == "floor_center" || stem == "floor" || stem == "floortile")
+		if (stem == "floor_center_0" ||
+			stem == "floor_center" ||
+			stem == "floor" ||
+			stem == "floortile")
+		{
 			return 'X';
+		}
 
 		if (stem == "floor_bottom") return 'D';
 		if (stem == "floor_bottomleft") return 'Z';
@@ -136,7 +145,7 @@ namespace
 
 	std::vector<char> FallbackTileCodes()
 	{
-		// P is reserved for PlayerSpawn, B for breakable, and O for empty.
+		// O is empty, P is player spawn, and B is intentionally unused now.
 		return
 		{
 			'X', 'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -146,7 +155,7 @@ namespace
 
 	bool IsReservedEditorTileCode(char code)
 	{
-		return code == 'O' || code == 'B' || code == 'P';
+		return code == 'O' || code == 'P' || code == 'B';
 	}
 
 	std::string LabelFromFileStem(std::string stem)
@@ -165,6 +174,7 @@ namespace
 		namespace fs = std::filesystem;
 
 		const fs::path preferred = fs::path("assets") / "Game#1" / "SurfersQuest";
+
 		if (fs::exists(preferred) && fs::is_directory(preferred))
 			return preferred;
 
@@ -179,8 +189,8 @@ namespace
 			current = current.parent_path();
 		}
 
-		// Old fallback: .../Game#1/Resources/FloorTile.png means root is .../Game#1.
 		current = floorPath.parent_path();
+
 		if (ToLower(current.filename().string()) == "resources")
 			return current.parent_path();
 
@@ -228,30 +238,39 @@ namespace
 		case sf::Keyboard::Key::Num1:
 		case sf::Keyboard::Key::Numpad1:
 			return 1;
+
 		case sf::Keyboard::Key::Num2:
 		case sf::Keyboard::Key::Numpad2:
 			return 2;
+
 		case sf::Keyboard::Key::Num3:
 		case sf::Keyboard::Key::Numpad3:
 			return 3;
+
 		case sf::Keyboard::Key::Num4:
 		case sf::Keyboard::Key::Numpad4:
 			return 4;
+
 		case sf::Keyboard::Key::Num5:
 		case sf::Keyboard::Key::Numpad5:
 			return 5;
+
 		case sf::Keyboard::Key::Num6:
 		case sf::Keyboard::Key::Numpad6:
 			return 6;
+
 		case sf::Keyboard::Key::Num7:
 		case sf::Keyboard::Key::Numpad7:
 			return 7;
+
 		case sf::Keyboard::Key::Num8:
 		case sf::Keyboard::Key::Numpad8:
 			return 8;
+
 		case sf::Keyboard::Key::Num9:
 		case sf::Keyboard::Key::Numpad9:
 			return 9;
+
 		default:
 			return std::nullopt;
 		}
@@ -265,18 +284,22 @@ bool GAME1_LevelEditor::load(const std::string& fontPath,
 }
 
 bool GAME1_LevelEditor::load(const std::string& floorTexturePath,
-	const std::string& breakTexturePath,
+	const std::string& ignoredLegacyTexturePath,
 	const std::string& fontPath)
 {
+	(void)ignoredLegacyTexturePath;
+
 	const std::filesystem::path inferredRoot = InferRootDirectoryFromOldFloorPath(floorTexturePath);
-	return initialise(fontPath, inferredRoot, breakTexturePath);
+	return initialise(fontPath, inferredRoot, "");
 }
 
 bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 	const std::filesystem::path& rootDirectory,
-	const std::string& optionalBreakTexturePath)
+	const std::string& ignoredLegacyTexturePath)
 {
 	namespace fs = std::filesystem;
+
+	(void)ignoredLegacyTexturePath;
 
 	m_lastError.clear();
 	m_lastSavedPath.clear();
@@ -287,7 +310,6 @@ bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 	m_rootDirectory = rootDirectory.string();
 	m_resourcesDirectory = (rootDirectory / "Resources").string();
 	m_mapsDirectory = (rootDirectory / "Maps").string();
-	m_breakTexturePathOverride = optionalBreakTexturePath;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -302,9 +324,6 @@ bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 			getResourcesDirectory().string();
 		return false;
 	}
-
-	if (!loadBreakTexture())
-		return false;
 
 	refreshSavedLevelList();
 	resetEmpty();
@@ -341,39 +360,6 @@ bool GAME1_LevelEditor::loadFirstTextureFromDirectory(sf::Texture& texture, cons
 	return texture.loadFromFile(paths.front().string());
 }
 
-bool GAME1_LevelEditor::loadBreakTexture()
-{
-	namespace fs = std::filesystem;
-
-	m_hasBreakTexture = false;
-	m_loadedBreakTexturePath.clear();
-
-	std::vector<fs::path> candidates;
-
-	if (!m_breakTexturePathOverride.empty())
-		candidates.push_back(m_breakTexturePathOverride);
-
-	const fs::path resources = getResourcesDirectory();
-	candidates.push_back(resources / "breakblock.png");
-	candidates.push_back(resources / "BreakBlock.png");
-	candidates.push_back(resources / "Tiles" / "breakblock.png");
-	candidates.push_back(resources / "Tiles" / "BreakBlock.png");
-
-	for (const fs::path& path : candidates)
-	{
-		if (m_breakTexture.loadFromFile(path.string()))
-		{
-			m_hasBreakTexture = true;
-			m_loadedBreakTexturePath = path.string();
-			return true;
-		}
-	}
-
-	m_lastError =
-		"Failed to load SurfersQuest break block texture. Tried old path plus Resources/breakblock.png and Resources/Tiles/breakblock.png.";
-	return false;
-}
-
 void GAME1_LevelEditor::resetEmpty()
 {
 	m_lastError.clear();
@@ -408,23 +394,10 @@ void GAME1_LevelEditor::buildTools()
 	emptyTool.isEraser = true;
 	addTool(std::move(emptyTool));
 
-	Tool breakTool;
-	breakTool.tile = 'B';
-	breakTool.label = "BREAK";
-	breakTool.description = "Breakable block";
-	breakTool.fallbackColor = sf::Color(150, 90, 40);
-	breakTool.isBreakable = true;
-	breakTool.hasTexture = m_hasBreakTexture;
-
-	if (m_hasBreakTexture && !m_loadedBreakTexturePath.empty())
-		breakTool.hasTexture = breakTool.texture.loadFromFile(m_loadedBreakTexturePath);
-
-	addTool(std::move(breakTool));
-
 	Tool playerSpawnTool;
 	playerSpawnTool.tile = 'P';
 	playerSpawnTool.label = "P";
-	playerSpawnTool.description = "PlayerSpawn";
+	playerSpawnTool.description = "Player spawn";
 	playerSpawnTool.fallbackColor = sf::Color(70, 150, 255);
 
 	const fs::path playerIdleDirectory = getResourcesDirectory() / "Player" / "PlayerIdle";
@@ -440,6 +413,7 @@ void GAME1_LevelEditor::buildTools()
 	const fs::path worldTilesDirectory = getCurrentWorldTilesDirectory();
 
 	std::vector<fs::path> pngPaths;
+
 	if (fs::exists(worldTilesDirectory) && fs::is_directory(worldTilesDirectory))
 	{
 		for (const auto& entry : fs::directory_iterator(worldTilesDirectory))
@@ -462,11 +436,13 @@ void GAME1_LevelEditor::buildTools()
 
 			char finalCode = requestedCode;
 
-			if (IsReservedEditorTileCode(finalCode) || usedCodes.find(finalCode) != usedCodes.end())
+			if (IsReservedEditorTileCode(finalCode) ||
+				usedCodes.find(finalCode) != usedCodes.end())
 			{
 				for (char fallback : FallbackTileCodes())
 				{
-					if (!IsReservedEditorTileCode(fallback) && usedCodes.find(fallback) == usedCodes.end())
+					if (!IsReservedEditorTileCode(fallback) &&
+						usedCodes.find(fallback) == usedCodes.end())
 					{
 						finalCode = fallback;
 						break;
@@ -474,8 +450,11 @@ void GAME1_LevelEditor::buildTools()
 				}
 			}
 
-			if (IsReservedEditorTileCode(finalCode) || usedCodes.find(finalCode) != usedCodes.end())
+			if (IsReservedEditorTileCode(finalCode) ||
+				usedCodes.find(finalCode) != usedCodes.end())
+			{
 				return;
+			}
 
 			usedCodes.insert(finalCode);
 			usedFiles.insert(path.string());
@@ -531,9 +510,15 @@ void GAME1_LevelEditor::buildTools()
 		Tool tileTool;
 		tileTool.tile = definition.first;
 		tileTool.label = std::string(1, definition.first);
-		tileTool.description = "World " + std::to_string(m_worldNumber) + " - " + LabelFromFileStem(definition.second.stem().string());
+		tileTool.description =
+			"World " +
+			std::to_string(m_worldNumber) +
+			" - " +
+			LabelFromFileStem(definition.second.stem().string());
+
 		tileTool.fallbackColor = sf::Color(90, 180, 90);
 		tileTool.hasTexture = loadTexture(tileTool.texture, definition.second.string());
+
 		addTool(std::move(tileTool));
 	}
 
@@ -550,6 +535,7 @@ void GAME1_LevelEditor::rebuildVisibleToolbar()
 	m_visibleToolbarToolIndices.clear();
 
 	const int totalTools = static_cast<int>(m_tools.size());
+
 	const int maxPage = totalTools <= 0
 		? 0
 		: static_cast<int>((totalTools - 1) / ToolbarSlotCount);
@@ -564,7 +550,9 @@ void GAME1_LevelEditor::rebuildVisibleToolbar()
 	const int lastToolExclusive = std::min(totalTools, firstTool + ToolbarSlotCount);
 
 	for (int i = firstTool; i < lastToolExclusive; ++i)
+	{
 		m_visibleToolbarToolIndices.push_back(i);
+	}
 }
 
 void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
@@ -585,8 +573,6 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	const float topReserved = 126.f;
 	const float bottomReserved = 88.f;
 
-	// The map itself should be centred in the window.
-	// The top-left / top-right UI floats above it, instead of pushing the playable grid sideways.
 	const float maxGridWidth = std::max(120.f, windowWidth - horizontalMargin * 2.f);
 	const float maxGridHeight = std::max(120.f, windowHeight - topReserved - bottomReserved);
 
@@ -595,7 +581,11 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 		const float fitX = maxGridWidth / static_cast<float>(visibleCols);
 		const float fitY = maxGridHeight / static_cast<float>(rows);
 
-		m_tileSize = std::floor(std::min({ static_cast<float>(GameplayTileSize), fitX, fitY }));
+		m_tileSize = std::floor(std::min({
+			static_cast<float>(GameplayTileSize),
+			fitX,
+			fitY
+			}));
 
 		if (m_tileSize < 16.f)
 			m_tileSize = 16.f;
@@ -620,13 +610,20 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	m_worldNextButtonBounds = sf::FloatRect({ 182.f, 20.f }, { 36.f, 34.f });
 
 	const float rightButtonX = windowWidth - 150.f;
+
 	m_saveButtonBounds = sf::FloatRect({ rightButtonX, 18.f }, { 132.f, 34.f });
 	m_loadButtonBounds = sf::FloatRect({ rightButtonX, 58.f }, { 132.f, 30.f });
 
 	const float loadArrowSize = 30.f;
 	const float loadSelectorWidth = 76.f;
 	const float loadGap = 4.f;
-	const float loadTotalWidth = loadArrowSize + loadGap + loadSelectorWidth + loadGap + loadArrowSize;
+	const float loadTotalWidth =
+		loadArrowSize +
+		loadGap +
+		loadSelectorWidth +
+		loadGap +
+		loadArrowSize;
+
 	const float loadStartX = windowWidth - loadTotalWidth - 18.f;
 	const float loadY = 94.f;
 
@@ -650,15 +647,25 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 		hotbarArrowWidth;
 
 	float toolbarY = m_gridOrigin.y + gridHeight + 12.f;
+
 	if (toolbarY + m_toolbarSlotSize > windowHeight - 12.f)
 		toolbarY = windowHeight - m_toolbarSlotSize - 12.f;
 
-	// Keep the hotbar centred directly underneath the visible tile map.
 	float toolbarStartX = m_gridOrigin.x + (gridWidth - totalToolbarWidth) * 0.5f;
-	toolbarStartX = std::clamp(toolbarStartX, 8.f, std::max(8.f, windowWidth - totalToolbarWidth - 8.f));
+	toolbarStartX = std::clamp(
+		toolbarStartX,
+		8.f,
+		std::max(8.f, windowWidth - totalToolbarWidth - 8.f));
 
-	m_previousHotbarPageButtonBounds = sf::FloatRect({ toolbarStartX, toolbarY }, { hotbarArrowWidth, m_toolbarSlotSize });
-	m_toolbarOrigin = { toolbarStartX + hotbarArrowWidth + m_toolbarSlotGap, toolbarY };
+	m_previousHotbarPageButtonBounds = sf::FloatRect(
+		{ toolbarStartX, toolbarY },
+		{ hotbarArrowWidth, m_toolbarSlotSize });
+
+	m_toolbarOrigin = {
+		toolbarStartX + hotbarArrowWidth + m_toolbarSlotGap,
+		toolbarY
+	};
+
 	m_nextHotbarPageButtonBounds = sf::FloatRect(
 		{ m_toolbarOrigin.x + visibleToolbarWidth + m_toolbarSlotGap, toolbarY },
 		{ hotbarArrowWidth, m_toolbarSlotSize });
@@ -719,7 +726,8 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 		return;
 	}
 
-	if (containsPoint(m_loadButtonBounds, mousePosition) || containsPoint(m_loadLevelSelectorBounds, mousePosition))
+	if (containsPoint(m_loadButtonBounds, mousePosition) ||
+		containsPoint(m_loadLevelSelectorBounds, mousePosition))
 	{
 		loadSelectedLevelIntoEditor();
 		return;
@@ -751,8 +759,11 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 
 	if (const std::optional<int> toolbarIndex = getToolbarIndexAtPixel(mousePixelPosition))
 	{
-		if (toolbarIndex.value() >= 0 && toolbarIndex.value() < static_cast<int>(m_visibleToolbarToolIndices.size()))
+		if (toolbarIndex.value() >= 0 &&
+			toolbarIndex.value() < static_cast<int>(m_visibleToolbarToolIndices.size()))
+		{
 			m_selectedToolIndex = m_visibleToolbarToolIndices[toolbarIndex.value()];
+		}
 
 		return;
 	}
@@ -774,10 +785,14 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 
 void GAME1_LevelEditor::handleMouseWheelScrolled(float delta)
 {
-	if (delta < 0.f)
+	if (delta > 0.f)
+	{
 		selectNextTool();
-	else if (delta > 0.f)
+	}
+	else if (delta < 0.f)
+	{
 		selectPreviousTool();
+	}
 }
 
 void GAME1_LevelEditor::handleKeyReleased(sf::Keyboard::Key key)
@@ -830,8 +845,6 @@ void GAME1_LevelEditor::handleKeyReleased(sf::Keyboard::Key key)
 		return;
 	}
 
-	// Letter keys select the matching tile from the hotbar/tool list.
-	// P selects PlayerSpawn, L selects the left floor tile, R selects the right floor tile, etc.
 	selectToolByHotkey(key);
 }
 
@@ -842,8 +855,11 @@ void GAME1_LevelEditor::selectToolbarSlot(int oneBasedVisibleSlot)
 
 	const int visibleIndex = oneBasedVisibleSlot - 1;
 
-	if (visibleIndex < 0 || visibleIndex >= static_cast<int>(m_visibleToolbarToolIndices.size()))
+	if (visibleIndex < 0 ||
+		visibleIndex >= static_cast<int>(m_visibleToolbarToolIndices.size()))
+	{
 		return;
+	}
 
 	m_selectedToolIndex = m_visibleToolbarToolIndices[visibleIndex];
 }
@@ -854,8 +870,6 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		static_cast<float>(mousePixelPosition.x),
 		static_cast<float>(mousePixelPosition.y));
 
-	// Compatibility path for old main.cpp versions that still call paintAtPixel()
-	// directly on left-click instead of forwarding the full mouse event.
 	if (containsPoint(m_saveButtonBounds, mousePosition))
 	{
 		saveToNextLevelFile();
@@ -874,7 +888,8 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		return;
 	}
 
-	if (containsPoint(m_loadButtonBounds, mousePosition) || containsPoint(m_loadLevelSelectorBounds, mousePosition))
+	if (containsPoint(m_loadButtonBounds, mousePosition) ||
+		containsPoint(m_loadLevelSelectorBounds, mousePosition))
 	{
 		loadSelectedLevelIntoEditor();
 		return;
@@ -906,8 +921,11 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 
 	if (const std::optional<int> toolbarIndex = getToolbarIndexAtPixel(mousePixelPosition))
 	{
-		if (toolbarIndex.value() >= 0 && toolbarIndex.value() < static_cast<int>(m_visibleToolbarToolIndices.size()))
+		if (toolbarIndex.value() >= 0 &&
+			toolbarIndex.value() < static_cast<int>(m_visibleToolbarToolIndices.size()))
+		{
 			m_selectedToolIndex = m_visibleToolbarToolIndices[toolbarIndex.value()];
+		}
 
 		return;
 	}
@@ -930,6 +948,7 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		return;
 
 	const Tool* tool = getSelectedTool();
+
 	if (tool == nullptr)
 		return;
 
@@ -985,6 +1004,7 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 		const fs::path savePath = getMapsDirectory() / fileNameStream.str();
 
 		std::ofstream file(savePath);
+
 		if (!file.is_open())
 		{
 			m_lastError = "Failed to create file: " + savePath.string();
@@ -1017,6 +1037,7 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 		m_popupMessage = "Level saved: " + savePath.filename().string();
 		m_popupTimer = m_popupDuration;
 		m_popupIsError = false;
+
 		refreshSavedLevelList();
 		return true;
 	}
@@ -1084,13 +1105,21 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 		for (std::size_t col = 0; col < paddedLine.size(); ++col)
 		{
+			if (paddedLine[col] == 'B')
+			{
+				paddedLine[col] = 'O';
+				continue;
+			}
+
 			if (!validateTileCharacter(paddedLine[col]))
 			{
 				m_lastError =
 					"SurfersQuest level file error: unsupported character '" +
 					std::string(1, paddedLine[col]) +
-					"' at row " + std::to_string(row + 1) +
-					", column " + std::to_string(col + 1) +
+					"' at row " +
+					std::to_string(row + 1) +
+					", column " +
+					std::to_string(col + 1) +
 					".";
 				return false;
 			}
@@ -1103,6 +1132,7 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 	m_viewStartCol = 0;
 	m_hotbarPage = 0;
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
+
 	rebuildVisibleToolbar();
 	return true;
 }
@@ -1161,13 +1191,33 @@ bool GAME1_LevelEditor::loadSelectedLevelIntoEditor()
 	if (m_savedLevelPaths.empty())
 	{
 		m_lastError = "No SurfersQuest level files found in:\n" + getMapsDirectory().string();
+		m_popupMessage = "No levels found";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
 		return false;
 	}
 
-	if (m_selectedLoadLevelIndex < 0 || m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	if (m_selectedLoadLevelIndex < 0 ||
+		m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	{
 		m_selectedLoadLevelIndex = 0;
+	}
 
-	return loadRowsFromFile(m_savedLevelPaths[m_selectedLoadLevelIndex]);
+	if (!loadRowsFromFile(m_savedLevelPaths[m_selectedLoadLevelIndex]))
+	{
+		m_popupMessage = "Load failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	m_popupMessage =
+		"Loaded: " +
+		std::filesystem::path(m_savedLevelPaths[m_selectedLoadLevelIndex]).filename().string();
+
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+	return true;
 }
 
 void GAME1_LevelEditor::selectPreviousLoadLevel()
@@ -1190,7 +1240,9 @@ void GAME1_LevelEditor::selectNextLoadLevel()
 	if (m_savedLevelPaths.empty())
 		return;
 
-	m_selectedLoadLevelIndex = (m_selectedLoadLevelIndex + 1) % static_cast<int>(m_savedLevelPaths.size());
+	m_selectedLoadLevelIndex =
+		(m_selectedLoadLevelIndex + 1) %
+		static_cast<int>(m_savedLevelPaths.size());
 }
 
 std::string GAME1_LevelEditor::getSelectedLoadLevelName() const
@@ -1198,8 +1250,11 @@ std::string GAME1_LevelEditor::getSelectedLoadLevelName() const
 	if (m_savedLevelPaths.empty())
 		return "<none>";
 
-	if (m_selectedLoadLevelIndex < 0 || m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	if (m_selectedLoadLevelIndex < 0 ||
+		m_selectedLoadLevelIndex >= static_cast<int>(m_savedLevelPaths.size()))
+	{
 		return "<none>";
+	}
 
 	return std::filesystem::path(m_savedLevelPaths[m_selectedLoadLevelIndex]).stem().string();
 }
@@ -1211,17 +1266,20 @@ void GAME1_LevelEditor::selectPreviousWorld()
 	if (highestWorld <= 1)
 	{
 		m_worldNumber = 1;
-		buildTools();
-		return;
 	}
-
-	--m_worldNumber;
-	if (m_worldNumber < 1)
+	else if (m_worldNumber <= 1)
+	{
 		m_worldNumber = highestWorld;
+	}
+	else
+	{
+		--m_worldNumber;
+	}
 
 	m_hotbarPage = 0;
 	buildTools();
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
+	rebuildVisibleToolbar();
 }
 
 void GAME1_LevelEditor::selectNextWorld()
@@ -1231,17 +1289,16 @@ void GAME1_LevelEditor::selectNextWorld()
 	if (highestWorld <= 1)
 	{
 		m_worldNumber = 1;
-		buildTools();
-		return;
 	}
-
-	++m_worldNumber;
-	if (m_worldNumber > highestWorld)
-		m_worldNumber = 1;
+	else
+	{
+		m_worldNumber = (m_worldNumber % highestWorld) + 1;
+	}
 
 	m_hotbarPage = 0;
 	buildTools();
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
+	rebuildVisibleToolbar();
 }
 
 int GAME1_LevelEditor::getHighestAvailableWorldNumber() const
@@ -1260,7 +1317,8 @@ int GAME1_LevelEditor::getHighestAvailableWorldNumber() const
 			continue;
 
 		const std::optional<int> worldNumber = TryExtractWorldNumberFromFolder(entry.path());
-		if (worldNumber.has_value() && worldNumber.value() >= 1)
+
+		if (worldNumber.has_value())
 			highestWorld = std::max(highestWorld, worldNumber.value());
 	}
 
@@ -1269,14 +1327,18 @@ int GAME1_LevelEditor::getHighestAvailableWorldNumber() const
 
 void GAME1_LevelEditor::selectPreviousHotbarPage()
 {
-	const int pageCount = m_tools.empty()
-		? 1
-		: static_cast<int>((m_tools.size() - 1) / ToolbarSlotCount) + 1;
+	const int totalTools = static_cast<int>(m_tools.size());
+
+	if (totalTools <= 0)
+		return;
+
+	const int pageCount = static_cast<int>((totalTools - 1) / ToolbarSlotCount) + 1;
 
 	if (pageCount <= 1)
 		return;
 
 	--m_hotbarPage;
+
 	if (m_hotbarPage < 0)
 		m_hotbarPage = pageCount - 1;
 
@@ -1285,9 +1347,12 @@ void GAME1_LevelEditor::selectPreviousHotbarPage()
 
 void GAME1_LevelEditor::selectNextHotbarPage()
 {
-	const int pageCount = m_tools.empty()
-		? 1
-		: static_cast<int>((m_tools.size() - 1) / ToolbarSlotCount) + 1;
+	const int totalTools = static_cast<int>(m_tools.size());
+
+	if (totalTools <= 0)
+		return;
+
+	const int pageCount = static_cast<int>((totalTools - 1) / ToolbarSlotCount) + 1;
 
 	if (pageCount <= 1)
 		return;
@@ -1311,6 +1376,7 @@ void GAME1_LevelEditor::selectPreviousTool()
 		return;
 
 	--m_selectedToolIndex;
+
 	if (m_selectedToolIndex < 0)
 		m_selectedToolIndex = static_cast<int>(m_tools.size()) - 1;
 
@@ -1407,22 +1473,25 @@ void GAME1_LevelEditor::clampViewStartColumn()
 
 bool GAME1_LevelEditor::isInsideLeftHandle(sf::Vector2i mousePixelPosition) const
 {
-	const sf::Vector2f point(static_cast<float>(mousePixelPosition.x), static_cast<float>(mousePixelPosition.y));
+	const sf::Vector2f point(
+		static_cast<float>(mousePixelPosition.x),
+		static_cast<float>(mousePixelPosition.y));
 
 	const int rows = static_cast<int>(m_rows.size());
 	const float gridHeight = static_cast<float>(rows) * m_tileSize;
 
 	const sf::FloatRect bounds(
 		m_gridOrigin,
-		{ m_scrollHandleWidth, gridHeight }
-	);
+		{ m_scrollHandleWidth, gridHeight });
 
 	return containsPoint(bounds, point);
 }
 
 bool GAME1_LevelEditor::isInsideRightHandle(sf::Vector2i mousePixelPosition) const
 {
-	const sf::Vector2f point(static_cast<float>(mousePixelPosition.x), static_cast<float>(mousePixelPosition.y));
+	const sf::Vector2f point(
+		static_cast<float>(mousePixelPosition.x),
+		static_cast<float>(mousePixelPosition.y));
 
 	const int rows = static_cast<int>(m_rows.size());
 	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
@@ -1433,8 +1502,7 @@ bool GAME1_LevelEditor::isInsideRightHandle(sf::Vector2i mousePixelPosition) con
 
 	const sf::FloatRect bounds(
 		{ m_gridOrigin.x + gridWidth - m_scrollHandleWidth, m_gridOrigin.y },
-		{ m_scrollHandleWidth, gridHeight }
-	);
+		{ m_scrollHandleWidth, gridHeight });
 
 	return containsPoint(bounds, point);
 }
@@ -1459,8 +1527,13 @@ std::optional<sf::Vector2i> GAME1_LevelEditor::getTileAtPixel(sf::Vector2i mouse
 	const int totalCols = static_cast<int>(m_rows[0].size());
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
 
-	if (visibleCol < 0 || visibleCol >= visibleCols || row < 0 || row >= static_cast<int>(m_rows.size()))
+	if (visibleCol < 0 ||
+		visibleCol >= visibleCols ||
+		row < 0 ||
+		row >= static_cast<int>(m_rows.size()))
+	{
 		return std::nullopt;
+	}
 
 	const int worldCol = m_viewStartCol + visibleCol;
 
@@ -1472,7 +1545,9 @@ std::optional<sf::Vector2i> GAME1_LevelEditor::getTileAtPixel(sf::Vector2i mouse
 
 std::optional<int> GAME1_LevelEditor::getToolbarIndexAtPixel(sf::Vector2i mousePixelPosition) const
 {
-	const sf::Vector2f point(static_cast<float>(mousePixelPosition.x), static_cast<float>(mousePixelPosition.y));
+	const sf::Vector2f point(
+		static_cast<float>(mousePixelPosition.x),
+		static_cast<float>(mousePixelPosition.y));
 
 	for (int i = 0; i < ToolbarSlotCount; ++i)
 	{
@@ -1484,11 +1559,10 @@ std::optional<int> GAME1_LevelEditor::getToolbarIndexAtPixel(sf::Vector2i mouseP
 			{
 				m_toolbarSlotSize,
 				m_toolbarSlotSize
-			}
-		);
+			});
 
-		if (containsPoint(bounds, point))
-			return i;
+			if (containsPoint(bounds, point))
+				return i;
 	}
 
 	return std::nullopt;
@@ -1517,14 +1591,17 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 	const float titleLeft = m_worldNextButtonBounds.position.x + m_worldNextButtonBounds.size.x + 10.f;
 	const float titleRight = m_saveButtonBounds.position.x - 10.f;
-	drawTextCentered(window,
+
+	drawTextCentered(
+		window,
 		"SURFERSQUEST LEVEL EDITOR",
 		24,
-		sf::FloatRect({ titleLeft, 12.f }, { std::max(160.f, titleRight - titleLeft), 32.f }),
+		sf::FloatRect(
+			{ titleLeft, 12.f },
+			{ std::max(160.f, titleRight - titleLeft), 32.f }),
 		sf::Color::White,
 		2.f);
 
-	// World selector.
 	{
 		sf::RectangleShape box;
 		box.setPosition(m_worldPreviousButtonBounds.position);
@@ -1533,6 +1610,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
+
 		drawTextCentered(window, "<", 28, m_worldPreviousButtonBounds, sf::Color::White, 2.f);
 	}
 
@@ -1544,7 +1622,14 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
-		drawTextCentered(window, "<World " + std::to_string(m_worldNumber) + ">", 19, m_worldSelectorBounds, sf::Color(255, 230, 120), 2.f);
+
+		drawTextCentered(
+			window,
+			"<World " + std::to_string(m_worldNumber) + ">",
+			17,
+			m_worldSelectorBounds,
+			sf::Color(255, 230, 120),
+			2.f);
 	}
 
 	{
@@ -1555,30 +1640,32 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
+
 		drawTextCentered(window, ">", 28, m_worldNextButtonBounds, sf::Color::White, 2.f);
 	}
 
-	// Save/load buttons.
 	{
-		sf::RectangleShape saveButton;
-		saveButton.setPosition(m_saveButtonBounds.position);
-		saveButton.setSize(m_saveButtonBounds.size);
-		saveButton.setFillColor(sf::Color(40, 120, 60));
-		saveButton.setOutlineColor(sf::Color::White);
-		saveButton.setOutlineThickness(2.f);
-		window.draw(saveButton);
-		drawTextCentered(window, "SAVE", 22, m_saveButtonBounds, sf::Color::White, 2.f);
+		sf::RectangleShape box;
+		box.setPosition(m_saveButtonBounds.position);
+		box.setSize(m_saveButtonBounds.size);
+		box.setFillColor(sf::Color(40, 120, 60));
+		box.setOutlineColor(sf::Color::White);
+		box.setOutlineThickness(2.f);
+		window.draw(box);
+
+		drawTextCentered(window, "SAVE", 19, m_saveButtonBounds, sf::Color::White, 2.f);
 	}
 
 	{
-		sf::RectangleShape loadButton;
-		loadButton.setPosition(m_loadButtonBounds.position);
-		loadButton.setSize(m_loadButtonBounds.size);
-		loadButton.setFillColor(sf::Color(45, 70, 120));
-		loadButton.setOutlineColor(sf::Color::White);
-		loadButton.setOutlineThickness(2.f);
-		window.draw(loadButton);
-		drawTextCentered(window, "<Load>", 19, m_loadButtonBounds, sf::Color::White, 2.f);
+		sf::RectangleShape box;
+		box.setPosition(m_loadButtonBounds.position);
+		box.setSize(m_loadButtonBounds.size);
+		box.setFillColor(sf::Color(45, 70, 120));
+		box.setOutlineColor(sf::Color::White);
+		box.setOutlineThickness(2.f);
+		window.draw(box);
+
+		drawTextCentered(window, "<Load>", 15, m_loadButtonBounds, sf::Color::White, 2.f);
 	}
 
 	{
@@ -1589,7 +1676,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
-		drawTextCentered(window, "<", 24, m_loadPreviousButtonBounds, sf::Color::White, 2.f);
+
+		drawTextCentered(window, "<", 22, m_loadPreviousButtonBounds, sf::Color::White, 2.f);
 	}
 
 	{
@@ -1600,7 +1688,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
-		drawTextCentered(window, getSelectedLoadLevelName(), 16, m_loadLevelSelectorBounds, sf::Color(255, 230, 120), 1.5f);
+
+		drawTextCentered(window, getSelectedLoadLevelName(), 12, m_loadLevelSelectorBounds, sf::Color(255, 230, 120), 1.5f);
 	}
 
 	{
@@ -1611,16 +1700,19 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineColor(sf::Color::White);
 		box.setOutlineThickness(2.f);
 		window.draw(box);
-		drawTextCentered(window, ">", 24, m_loadNextButtonBounds, sf::Color::White, 2.f);
+
+		drawTextCentered(window, ">", 22, m_loadNextButtonBounds, sf::Color::White, 2.f);
 	}
 
 	const Tool* selectedTool = getSelectedTool();
+
 	if (selectedTool != nullptr)
 	{
-		drawTextCentered(window,
-			"Selected: " + std::string(1, selectedTool->tile) + " - " + selectedTool->description,
-			18,
-			sf::FloatRect({ 230.f, 54.f }, { std::max(220.f, m_saveButtonBounds.position.x - 240.f), 24.f }),
+		drawTextCentered(
+			window,
+			"Selected: " + selectedTool->label + " - " + selectedTool->description,
+			17,
+			sf::FloatRect({ 0.f, 58.f }, { windowWidth, 26.f }),
 			sf::Color(255, 230, 120),
 			1.5f);
 	}
@@ -1629,267 +1721,204 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
 
-	const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
-	const float gridHeight = static_cast<float>(rows) * m_tileSize;
-
-	// Sky/grid background.
-	{
-		sf::RectangleShape sky;
-		sky.setPosition(m_gridOrigin);
-		sky.setSize({ gridWidth, gridHeight });
-		sky.setFillColor(sf::Color(80, 170, 255));
-		window.draw(sky);
-	}
-
-	// Visible map slice.
 	for (int row = 0; row < rows; ++row)
 	{
-		for (int screenCol = 0; screenCol < visibleCols; ++screenCol)
+		for (int visibleCol = 0; visibleCol < visibleCols; ++visibleCol)
 		{
-			const int worldCol = m_viewStartCol + screenCol;
+			const int worldCol = m_viewStartCol + visibleCol;
+
 			if (worldCol < 0 || worldCol >= totalCols)
 				continue;
 
 			const sf::FloatRect tileRect(
 				{
-					m_gridOrigin.x + static_cast<float>(screenCol) * m_tileSize,
+					m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
 					m_gridOrigin.y + static_cast<float>(row) * m_tileSize
 				},
 				{
 					m_tileSize,
 					m_tileSize
-				}
-			);
-
-			drawTilePreview(window, m_rows[row][worldCol], tileRect);
-		}
-	}
-
-	// Red placement grid.
-	for (int row = 0; row < rows; ++row)
-	{
-		for (int screenCol = 0; screenCol < visibleCols; ++screenCol)
-		{
-			sf::RectangleShape cellOutline;
-			cellOutline.setPosition({
-				m_gridOrigin.x + static_cast<float>(screenCol) * m_tileSize,
-				m_gridOrigin.y + static_cast<float>(row) * m_tileSize
 				});
-			cellOutline.setSize({ m_tileSize, m_tileSize });
-			cellOutline.setFillColor(sf::Color::Transparent);
-			cellOutline.setOutlineColor(sf::Color(255, 0, 0, 80));
-			cellOutline.setOutlineThickness(-1.f);
-			window.draw(cellOutline);
+
+				drawTilePreview(window, 'O', tileRect);
+
+				const char tile = m_rows[row][worldCol];
+
+				if (tile != 'O')
+					drawTilePreview(window, tile, tileRect);
+
+				sf::RectangleShape gridLine;
+				gridLine.setPosition(tileRect.position);
+				gridLine.setSize(tileRect.size);
+				gridLine.setFillColor(sf::Color::Transparent);
+				gridLine.setOutlineColor(sf::Color(120, 30, 30, 120));
+				gridLine.setOutlineThickness(-1.f);
+				window.draw(gridLine);
 		}
 	}
 
-	// Preview tile.
-	if (selectedTool != nullptr)
+	if (rows > 0 && visibleCols > 0)
 	{
-		const std::optional<sf::Vector2i> hoveredTile = getTileAtPixel(mousePixelPosition);
+		const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
+		const float gridHeight = static_cast<float>(rows) * m_tileSize;
 
-		if (hoveredTile.has_value())
-		{
-			const int screenCol = hoveredTile->x - m_viewStartCol;
-
-			const sf::FloatRect tileRect(
-				{
-					m_gridOrigin.x + static_cast<float>(screenCol) * m_tileSize,
-					m_gridOrigin.y + static_cast<float>(hoveredTile->y) * m_tileSize
-				},
-				{ m_tileSize, m_tileSize });
-
-			if (selectedTool->tile != 'O')
-			{
-				if (selectedTool->hasTexture)
-				{
-					sf::Sprite sprite(selectedTool->texture);
-					const sf::FloatRect localBounds = sprite.getLocalBounds();
-
-					if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
-					{
-						sprite.setScale({
-							tileRect.size.x / localBounds.size.x,
-							tileRect.size.y / localBounds.size.y
-							});
-						sprite.setPosition(tileRect.position);
-						sprite.setColor(sf::Color(255, 255, 255, 170));
-						window.draw(sprite);
-					}
-				}
-				else
-				{
-					sf::RectangleShape preview;
-					preview.setPosition(tileRect.position);
-					preview.setSize(tileRect.size);
-					preview.setFillColor(sf::Color(selectedTool->fallbackColor.r, selectedTool->fallbackColor.g, selectedTool->fallbackColor.b, 170));
-					window.draw(preview);
-				}
-			}
-			else
-			{
-				sf::RectangleShape erasePreview;
-				erasePreview.setPosition(tileRect.position);
-				erasePreview.setSize(tileRect.size);
-				erasePreview.setFillColor(sf::Color(255, 255, 255, 70));
-				erasePreview.setOutlineColor(sf::Color::White);
-				erasePreview.setOutlineThickness(2.f);
-				window.draw(erasePreview);
-			}
-		}
-	}
-
-	// Border.
-	{
 		sf::RectangleShape border;
-		border.setPosition({ m_gridOrigin.x + 2.f, m_gridOrigin.y + 2.f });
-		border.setSize({ gridWidth - 4.f, gridHeight - 4.f });
+		border.setPosition(m_gridOrigin);
+		border.setSize({ gridWidth, gridHeight });
 		border.setFillColor(sf::Color::Transparent);
-		border.setOutlineColor(sf::Color::Red);
-		border.setOutlineThickness(4.f);
+		border.setOutlineColor(sf::Color::White);
+		border.setOutlineThickness(3.f);
 		window.draw(border);
-	}
 
-	// Horizontal scroll handles.
-	{
 		sf::RectangleShape leftHandle;
 		leftHandle.setPosition(m_gridOrigin);
 		leftHandle.setSize({ m_scrollHandleWidth, gridHeight });
-		leftHandle.setFillColor(sf::Color(20, 20, 20, 140));
+		leftHandle.setFillColor(sf::Color(20, 20, 20, 130));
 		leftHandle.setOutlineColor(sf::Color::White);
-		leftHandle.setOutlineThickness(2.f);
+		leftHandle.setOutlineThickness(1.f);
 		window.draw(leftHandle);
 
-		sf::ConvexShape leftArrow(3);
-		leftArrow.setPoint(0, { m_gridOrigin.x + 7.f, m_gridOrigin.y + gridHeight * 0.5f });
-		leftArrow.setPoint(1, { m_gridOrigin.x + m_scrollHandleWidth - 6.f, m_gridOrigin.y + gridHeight * 0.5f - 18.f });
-		leftArrow.setPoint(2, { m_gridOrigin.x + m_scrollHandleWidth - 6.f, m_gridOrigin.y + gridHeight * 0.5f + 18.f });
-		leftArrow.setFillColor(sf::Color::White);
-		window.draw(leftArrow);
-	}
-
-	{
 		sf::RectangleShape rightHandle;
 		rightHandle.setPosition({ m_gridOrigin.x + gridWidth - m_scrollHandleWidth, m_gridOrigin.y });
 		rightHandle.setSize({ m_scrollHandleWidth, gridHeight });
-		rightHandle.setFillColor(sf::Color(20, 20, 20, 140));
+		rightHandle.setFillColor(sf::Color(20, 20, 20, 130));
 		rightHandle.setOutlineColor(sf::Color::White);
-		rightHandle.setOutlineThickness(2.f);
+		rightHandle.setOutlineThickness(1.f);
 		window.draw(rightHandle);
 
-		const float rightBaseX = m_gridOrigin.x + gridWidth - m_scrollHandleWidth;
-		sf::ConvexShape rightArrow(3);
-		rightArrow.setPoint(0, { rightBaseX + m_scrollHandleWidth - 7.f, m_gridOrigin.y + gridHeight * 0.5f });
-		rightArrow.setPoint(1, { rightBaseX + 6.f, m_gridOrigin.y + gridHeight * 0.5f - 18.f });
-		rightArrow.setPoint(2, { rightBaseX + 6.f, m_gridOrigin.y + gridHeight * 0.5f + 18.f });
-		rightArrow.setFillColor(sf::Color::White);
-		window.draw(rightArrow);
-	}
-
-	// Column/slice indicator.
-	{
-		const int visibleStart = m_viewStartCol + 1;
-		const int visibleEnd = std::min(totalCols, m_viewStartCol + visibleCols);
-
-		drawTextCentered(window,
-			"Cols " + std::to_string(visibleStart) + "-" + std::to_string(visibleEnd) + " / " + std::to_string(totalCols),
+		drawTextCentered(
+			window,
+			"<",
 			18,
-			sf::FloatRect({ m_gridOrigin.x, m_gridOrigin.y + 8.f }, { gridWidth, 24.f }),
+			sf::FloatRect(m_gridOrigin, { m_scrollHandleWidth, gridHeight }),
 			sf::Color::White,
-			2.f);
+			1.f);
+
+		drawTextCentered(
+			window,
+			">",
+			18,
+			sf::FloatRect({ m_gridOrigin.x + gridWidth - m_scrollHandleWidth, m_gridOrigin.y }, { m_scrollHandleWidth, gridHeight }),
+			sf::Color::White,
+			1.f);
+
+		const int visibleStart = m_viewStartCol + 1;
+		const int visibleEnd = std::min(m_viewStartCol + visibleCols, totalCols);
+
+		drawTextCentered(
+			window,
+			"Cols " + std::to_string(visibleStart) + "-" + std::to_string(visibleEnd) + " / " + std::to_string(totalCols),
+			14,
+			sf::FloatRect({ m_gridOrigin.x, m_gridOrigin.y - 24.f }, { gridWidth, 22.f }),
+			sf::Color(220, 220, 220),
+			1.f);
 	}
 
-	// Hotbar arrows and slots.
+	if (const std::optional<sf::Vector2i> hoveredTile = getTileAtPixel(mousePixelPosition))
 	{
-		sf::RectangleShape previousButton;
-		previousButton.setPosition(m_previousHotbarPageButtonBounds.position);
-		previousButton.setSize(m_previousHotbarPageButtonBounds.size);
-		previousButton.setFillColor(sf::Color(45, 45, 70));
-		previousButton.setOutlineColor(sf::Color::White);
-		previousButton.setOutlineThickness(2.f);
-		window.draw(previousButton);
-		drawTextCentered(window, "<", 28, m_previousHotbarPageButtonBounds, sf::Color::White, 2.f);
+		const int visibleCol = hoveredTile->x - m_viewStartCol;
+
+		sf::RectangleShape hoverRect;
+		hoverRect.setPosition({
+			m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
+			m_gridOrigin.y + static_cast<float>(hoveredTile->y) * m_tileSize
+			});
+		hoverRect.setSize({ m_tileSize, m_tileSize });
+		hoverRect.setFillColor(sf::Color::Transparent);
+		hoverRect.setOutlineColor(sf::Color::Yellow);
+		hoverRect.setOutlineThickness(3.f);
+		window.draw(hoverRect);
 	}
 
-	for (int i = 0; i < ToolbarSlotCount; ++i)
+	{
+		sf::RectangleShape previousPageButton;
+		previousPageButton.setPosition(m_previousHotbarPageButtonBounds.position);
+		previousPageButton.setSize(m_previousHotbarPageButtonBounds.size);
+		previousPageButton.setFillColor(sf::Color(45, 45, 70));
+		previousPageButton.setOutlineColor(sf::Color::White);
+		previousPageButton.setOutlineThickness(2.f);
+		window.draw(previousPageButton);
+
+		drawTextCentered(window, "<", 26, m_previousHotbarPageButtonBounds, sf::Color::White, 2.f);
+	}
+
+	for (int visibleIndex = 0; visibleIndex < ToolbarSlotCount; ++visibleIndex)
 	{
 		const sf::FloatRect slotBounds(
 			{
-				m_toolbarOrigin.x + static_cast<float>(i) * (m_toolbarSlotSize + m_toolbarSlotGap),
+				m_toolbarOrigin.x + static_cast<float>(visibleIndex) * (m_toolbarSlotSize + m_toolbarSlotGap),
 				m_toolbarOrigin.y
 			},
-			{ m_toolbarSlotSize, m_toolbarSlotSize });
+			{
+				m_toolbarSlotSize,
+				m_toolbarSlotSize
+			});
 
-		if (i < static_cast<int>(m_visibleToolbarToolIndices.size()))
-		{
-			const int toolIndex = m_visibleToolbarToolIndices[i];
-			if (toolIndex >= 0 && toolIndex < static_cast<int>(m_tools.size()))
-				drawToolPreview(window, m_tools[toolIndex], slotBounds, i + 1);
-		}
-		else
-		{
-			sf::RectangleShape emptySlot;
-			emptySlot.setPosition(slotBounds.position);
-			emptySlot.setSize(slotBounds.size);
-			emptySlot.setFillColor(sf::Color(30, 30, 38, 180));
-			emptySlot.setOutlineColor(sf::Color(100, 100, 110));
-			emptySlot.setOutlineThickness(1.f);
-			window.draw(emptySlot);
-		}
+			sf::RectangleShape slotBox;
+			slotBox.setPosition(slotBounds.position);
+			slotBox.setSize(slotBounds.size);
+			slotBox.setFillColor(sf::Color(35, 35, 45));
+
+			if (visibleIndex < static_cast<int>(m_visibleToolbarToolIndices.size()) &&
+				m_visibleToolbarToolIndices[visibleIndex] == m_selectedToolIndex)
+			{
+				slotBox.setOutlineColor(sf::Color::Yellow);
+				slotBox.setOutlineThickness(4.f);
+			}
+			else
+			{
+				slotBox.setOutlineColor(sf::Color::White);
+				slotBox.setOutlineThickness(2.f);
+			}
+
+			window.draw(slotBox);
+
+			if (visibleIndex >= static_cast<int>(m_visibleToolbarToolIndices.size()))
+				continue;
+
+			const int toolIndex = m_visibleToolbarToolIndices[visibleIndex];
+
+			if (toolIndex < 0 || toolIndex >= static_cast<int>(m_tools.size()))
+				continue;
+
+			drawToolPreview(window, m_tools[toolIndex], slotBounds, visibleIndex + 1);
 	}
 
 	{
-		sf::RectangleShape nextButton;
-		nextButton.setPosition(m_nextHotbarPageButtonBounds.position);
-		nextButton.setSize(m_nextHotbarPageButtonBounds.size);
-		nextButton.setFillColor(sf::Color(45, 45, 70));
-		nextButton.setOutlineColor(sf::Color::White);
-		nextButton.setOutlineThickness(2.f);
-		window.draw(nextButton);
-		drawTextCentered(window, ">", 28, m_nextHotbarPageButtonBounds, sf::Color::White, 2.f);
+		sf::RectangleShape nextPageButton;
+		nextPageButton.setPosition(m_nextHotbarPageButtonBounds.position);
+		nextPageButton.setSize(m_nextHotbarPageButtonBounds.size);
+		nextPageButton.setFillColor(sf::Color(45, 45, 70));
+		nextPageButton.setOutlineColor(sf::Color::White);
+		nextPageButton.setOutlineThickness(2.f);
+		window.draw(nextPageButton);
+
+		drawTextCentered(window, ">", 26, m_nextHotbarPageButtonBounds, sf::Color::White, 2.f);
 	}
 
-	const int totalPages = m_tools.empty()
-		? 1
-		: static_cast<int>((m_tools.size() - 1) / ToolbarSlotCount) + 1;
-
-	drawTextCentered(window,
-		"Hotbar " + std::to_string(m_hotbarPage + 1) + " / " + std::to_string(totalPages) +
-		"    Left place/select | Right erase | Middle pick | Wheel tool | F5 save | F9 load | Delete reset",
-		12,
-		sf::FloatRect({ 0.f, m_toolbarOrigin.y - 25.f }, { windowWidth, 20.f }),
+	drawTextCentered(
+		window,
+		"Left Click: place/select | Right Click: erase | Middle Click: color pick | Scroll Up/Down: next/previous hotbar tile | F5: save | F9: load | Delete: reset",
+		14,
+		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
 		sf::Color(230, 230, 230),
 		1.f);
 
-	// Temporary in-editor save popup.
-	if (m_popupTimer > 0.f && !m_popupMessage.empty())
+	if (!m_popupMessage.empty() && m_popupTimer > 0.f)
 	{
-		const float popupWidth = 430.f;
-		const float popupHeight = 72.f;
-		const sf::FloatRect popupBounds(
-			{ (windowWidth - popupWidth) * 0.5f, windowHeight * 0.5f - popupHeight * 0.5f },
-			{ popupWidth, popupHeight });
+		const sf::FloatRect popupRect(
+			{ windowWidth * 0.5f - 190.f, 90.f },
+			{ 380.f, 38.f });
 
-		sf::RectangleShape shadow;
-		shadow.setPosition({ popupBounds.position.x + 6.f, popupBounds.position.y + 6.f });
-		shadow.setSize(popupBounds.size);
-		shadow.setFillColor(sf::Color(0, 0, 0, 150));
-		window.draw(shadow);
+		sf::RectangleShape popupBox;
+		popupBox.setPosition(popupRect.position);
+		popupBox.setSize(popupRect.size);
+		popupBox.setFillColor(m_popupIsError ? sf::Color(130, 45, 45, 230) : sf::Color(45, 120, 60, 230));
+		popupBox.setOutlineColor(sf::Color::White);
+		popupBox.setOutlineThickness(2.f);
+		window.draw(popupBox);
 
-		sf::RectangleShape popup;
-		popup.setPosition(popupBounds.position);
-		popup.setSize(popupBounds.size);
-		popup.setFillColor(m_popupIsError ? sf::Color(120, 35, 35, 235) : sf::Color(35, 115, 55, 235));
-		popup.setOutlineColor(sf::Color::White);
-		popup.setOutlineThickness(3.f);
-		window.draw(popup);
-
-		drawTextCentered(window,
-			m_popupMessage,
-			22,
-			popupBounds,
-			sf::Color::White,
-			2.f);
+		drawTextCentered(window, m_popupMessage, 16, popupRect, sf::Color::White, 1.5f);
 	}
 }
 
@@ -1924,18 +1953,8 @@ void GAME1_LevelEditor::drawTextCentered(sf::RenderTarget& target,
 	text.setOutlineColor(sf::Color::Black);
 	text.setOutlineThickness(outlineThickness);
 
-	unsigned int fittedSize = size;
-	while (fittedSize > 9)
-	{
-		const sf::FloatRect testBounds = text.getLocalBounds();
-		if (testBounds.size.x <= rect.size.x - 6.f && testBounds.size.y <= rect.size.y + 8.f)
-			break;
-
-		--fittedSize;
-		text.setCharacterSize(fittedSize);
-	}
-
 	const sf::FloatRect bounds = text.getLocalBounds();
+
 	text.setPosition({
 		rect.position.x + (rect.size.x - bounds.size.x) * 0.5f - bounds.position.x,
 		rect.position.y + (rect.size.y - bounds.size.y) * 0.5f - bounds.position.y - 1.f
@@ -1949,59 +1968,46 @@ void GAME1_LevelEditor::drawToolPreview(sf::RenderTarget& target,
 	const sf::FloatRect& bounds,
 	int visibleSlotNumber) const
 {
-	sf::RectangleShape slotRect;
-	slotRect.setPosition(bounds.position);
-	slotRect.setSize(bounds.size);
-	slotRect.setFillColor(sf::Color(40, 40, 48, 230));
-
-	const bool isSelected = getSelectedTool() == &tool;
-
-	if (isSelected)
-	{
-		slotRect.setOutlineColor(sf::Color::Yellow);
-		slotRect.setOutlineThickness(4.f);
-	}
-	else
-	{
-		slotRect.setOutlineColor(sf::Color(180, 180, 180));
-		slotRect.setOutlineThickness(2.f);
-	}
-
-	target.draw(slotRect);
+	const float padding = 6.f;
 
 	const sf::FloatRect iconBounds(
-		{ bounds.position.x + 6.f, bounds.position.y + 6.f },
-		{ bounds.size.x - 12.f, bounds.size.y - 12.f }
-	);
+		{
+			bounds.position.x + padding,
+			bounds.position.y + padding
+		},
+		{
+			bounds.size.x - padding * 2.f,
+			bounds.size.y - padding * 2.f
+		});
 
-	if (tool.hasTexture)
-	{
-		drawTextureFitted(target, tool.texture, iconBounds);
-	}
-	else
-	{
-		sf::RectangleShape fallback;
-		fallback.setPosition(iconBounds.position);
-		fallback.setSize(iconBounds.size);
-		fallback.setFillColor(tool.fallbackColor);
-		target.draw(fallback);
-	}
+		if (tool.hasTexture)
+		{
+			drawTextureFitted(target, tool.texture, iconBounds);
+		}
+		else
+		{
+			sf::RectangleShape fallback;
+			fallback.setPosition(iconBounds.position);
+			fallback.setSize(iconBounds.size);
+			fallback.setFillColor(tool.fallbackColor);
+			target.draw(fallback);
+		}
 
-	// Number key indicator.
-	drawText(target,
-		std::to_string(visibleSlotNumber),
-		13,
-		{ bounds.position.x + 4.f, bounds.position.y + 1.f },
-		sf::Color::White,
-		1.f);
+		drawText(target,
+			std::to_string(visibleSlotNumber),
+			13,
+			{ bounds.position.x + 3.f, bounds.position.y + 1.f },
+			sf::Color::White,
+			1.5f);
 
-	// Tile-letter hotkey / saved map character.
-	drawText(target,
-		std::string(1, tool.tile),
-		17,
-		{ bounds.position.x + bounds.size.x - 16.f, bounds.position.y + bounds.size.y - 22.f },
-		sf::Color(255, 230, 120),
-		1.5f);
+		drawTextCentered(target,
+			tool.label,
+			13,
+			sf::FloatRect(
+				{ bounds.position.x, bounds.position.y + bounds.size.y - 18.f },
+				{ bounds.size.x, 16.f }),
+			sf::Color::White,
+			1.5f);
 }
 
 void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
@@ -2009,7 +2015,14 @@ void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
 	const sf::FloatRect& bounds) const
 {
 	if (tile == 'O')
+	{
+		sf::RectangleShape empty;
+		empty.setPosition(bounds.position);
+		empty.setSize(bounds.size);
+		empty.setFillColor(sf::Color(70, 150, 210));
+		target.draw(empty);
 		return;
+	}
 
 	const Tool* tool = getToolForTile(tile);
 
@@ -2037,6 +2050,7 @@ void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 	sf::Sprite sprite(texture);
 
 	const sf::FloatRect localBounds = sprite.getLocalBounds();
+
 	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 		return;
 
@@ -2051,8 +2065,11 @@ void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 
 const GAME1_LevelEditor::Tool* GAME1_LevelEditor::getSelectedTool() const
 {
-	if (m_selectedToolIndex < 0 || m_selectedToolIndex >= static_cast<int>(m_tools.size()))
+	if (m_selectedToolIndex < 0 ||
+		m_selectedToolIndex >= static_cast<int>(m_tools.size()))
+	{
 		return nullptr;
+	}
 
 	return &m_tools[m_selectedToolIndex];
 }

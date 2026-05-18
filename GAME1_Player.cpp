@@ -538,11 +538,6 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 				m_variableJumpActive = false;
 				m_releasedJumpGravityActive = false;
 
-				if (level.isBreakTile(col, topTile))
-				{
-					level.breakTile(col, topTile);
-				}
-
 				break;
 			}
 		}
@@ -573,9 +568,7 @@ void GAME1_Player::updateAnimationState()
 		return;
 	}
 
-	m_doubleJumpAnimationPlaying = false;
-
-	if (std::abs(m_velocity.x) > 8.f)
+	if (std::abs(m_velocity.x) > 5.f)
 	{
 		setAnimationState(AnimationState::Run);
 	}
@@ -602,53 +595,6 @@ void GAME1_Player::updateAnimation(float deltaTime)
 	if (animation.frames.empty())
 		return;
 
-	if (m_animationState == AnimationState::DoubleJump && m_doubleJumpAnimationPlaying)
-	{
-		m_animationTimer += deltaTime;
-
-		if (animation.frames.size() <= 1)
-		{
-			if (m_animationTimer >= animation.frameDuration)
-			{
-				m_animationTimer = 0.f;
-				m_doubleJumpAnimationPlaying = false;
-
-				if (!m_onGround && m_velocity.y < 0.f)
-					setAnimationState(AnimationState::Jump);
-				else if (!m_onGround)
-					setAnimationState(AnimationState::Fall);
-			}
-
-			return;
-		}
-
-		while (m_animationTimer >= animation.frameDuration)
-		{
-			m_animationTimer -= animation.frameDuration;
-
-			if (m_currentFrameIndex + 1 < animation.frames.size())
-			{
-				++m_currentFrameIndex;
-			}
-			else
-			{
-				m_doubleJumpAnimationPlaying = false;
-
-				if (!m_onGround && m_velocity.y < 0.f)
-					setAnimationState(AnimationState::Jump);
-				else if (!m_onGround)
-					setAnimationState(AnimationState::Fall);
-
-				break;
-			}
-		}
-
-		return;
-	}
-
-	if (animation.frames.size() <= 1)
-		return;
-
 	m_animationTimer += deltaTime;
 
 	while (m_animationTimer >= animation.frameDuration)
@@ -656,6 +602,41 @@ void GAME1_Player::updateAnimation(float deltaTime)
 		m_animationTimer -= animation.frameDuration;
 		m_currentFrameIndex = (m_currentFrameIndex + 1) % animation.frames.size();
 	}
+}
+
+const GAME1_Player::AnimationSet& GAME1_Player::getCurrentAnimationSet() const
+{
+	switch (m_animationState)
+	{
+	case AnimationState::Run:
+		return m_runAnimation;
+
+	case AnimationState::Jump:
+		return m_jumpAnimation;
+
+	case AnimationState::DoubleJump:
+		return m_doubleJumpAnimation;
+
+	case AnimationState::Fall:
+		return m_fallAnimation;
+
+	case AnimationState::Idle:
+	default:
+		return m_idleAnimation;
+	}
+}
+
+const sf::Texture* GAME1_Player::getCurrentTexture() const
+{
+	const AnimationSet& animation = getCurrentAnimationSet();
+
+	if (animation.frames.empty())
+		return nullptr;
+
+	if (m_currentFrameIndex >= animation.frames.size())
+		return &animation.frames[0];
+
+	return &animation.frames[m_currentFrameIndex];
 }
 
 void GAME1_Player::draw(sf::RenderTarget& target) const
@@ -668,27 +649,21 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 	sf::Sprite sprite(*texture);
 
 	const sf::FloatRect localBounds = sprite.getLocalBounds();
-
 	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
 		return;
 
 	const float scaleX = m_drawWidth / localBounds.size.x;
 	const float scaleY = m_drawHeight / localBounds.size.y;
 
-	if (m_facingDirection == FacingDirection::Left)
-	{
-		sprite.setScale({ -scaleX, scaleY });
+	sprite.setScale({
+		m_facingDirection == FacingDirection::Left ? -scaleX : scaleX,
+		scaleY
+		});
 
-		sprite.setPosition({
-			m_position.x + m_drawWidth,
-			m_position.y
-			});
-	}
-	else
-	{
-		sprite.setScale({ scaleX, scaleY });
-		sprite.setPosition(m_position);
-	}
+	sprite.setPosition({
+		m_facingDirection == FacingDirection::Left ? m_position.x + m_drawWidth : m_position.x,
+		m_position.y
+		});
 
 	target.draw(sprite);
 }
@@ -696,9 +671,22 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 sf::FloatRect GAME1_Player::getBounds() const
 {
 	return sf::FloatRect(
-		m_position,
+		{ m_position.x, m_position.y },
 		{ m_drawWidth, m_drawHeight }
 	);
+}
+
+bool GAME1_Player::isRespawning() const
+{
+	return m_respawning;
+}
+
+int GAME1_Player::getRespawnCountdown() const
+{
+	if (!m_respawning)
+		return 0;
+
+	return std::max(0, static_cast<int>(std::ceil(m_respawnTimer)));
 }
 
 void GAME1_Player::startRespawn()
@@ -709,104 +697,50 @@ void GAME1_Player::startRespawn()
 	m_respawning = true;
 	m_respawnTimer = m_respawnDuration;
 	m_velocity = { 0.f, 0.f };
-	m_horizontalInputHeld = false;
+	m_position = m_spawnPosition;
+	m_onGround = false;
+	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
 	m_canDoubleJump = true;
 	m_doubleJumpAnimationPlaying = false;
 	m_variableJumpActive = false;
 	m_releasedJumpGravityActive = false;
-
-	setAnimationState(AnimationState::Idle);
 }
 
 void GAME1_Player::updateRespawn(float deltaTime)
 {
+	if (!m_respawning)
+		return;
+
 	m_respawnTimer -= deltaTime;
 
 	if (m_respawnTimer <= 0.f)
 	{
-		m_respawnTimer = 0.f;
 		m_respawning = false;
+		m_respawnTimer = 0.f;
 		m_position = m_spawnPosition;
 		m_velocity = { 0.f, 0.f };
 		m_onGround = false;
-		m_horizontalInputHeld = false;
+		m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
 		m_coyoteTimer = 0.f;
+		m_jumpBufferTimer = 0.f;
 		m_canDoubleJump = true;
 		m_doubleJumpAnimationPlaying = false;
 		m_variableJumpActive = false;
 		m_releasedJumpGravityActive = false;
-
-		setAnimationState(AnimationState::Idle);
 	}
-}
-
-bool GAME1_Player::isRespawning() const
-{
-	return m_respawning;
-}
-
-int GAME1_Player::getRespawnCountdown() const
-{
-	return static_cast<int>(std::ceil(std::max(0.f, m_respawnTimer)));
-}
-
-const GAME1_Player::AnimationSet& GAME1_Player::getCurrentAnimationSet() const
-{
-	switch (m_animationState)
-	{
-	case AnimationState::Run:
-		if (!m_runAnimation.frames.empty())
-			return m_runAnimation;
-		break;
-
-	case AnimationState::Jump:
-		if (!m_jumpAnimation.frames.empty())
-			return m_jumpAnimation;
-		break;
-
-	case AnimationState::DoubleJump:
-		if (!m_doubleJumpAnimation.frames.empty())
-			return m_doubleJumpAnimation;
-		break;
-
-	case AnimationState::Fall:
-		if (!m_fallAnimation.frames.empty())
-			return m_fallAnimation;
-		break;
-
-	case AnimationState::Idle:
-	default:
-		break;
-	}
-
-	return m_idleAnimation;
-}
-
-const sf::Texture* GAME1_Player::getCurrentTexture() const
-{
-	const AnimationSet& animation = getCurrentAnimationSet();
-
-	if (animation.frames.empty())
-		return nullptr;
-
-	return &animation.frames[m_currentFrameIndex % animation.frames.size()];
-}
-
-const std::string& GAME1_Player::getLastError() const
-{
-	return m_lastError;
 }
 
 bool GAME1_Player::isWithinApexGravityWindow() const
 {
-	if (m_onGround)
+	if (m_gravity <= 0.f)
 		return false;
 
-	const float verticalSpeedWindow =
-		m_gravity * std::max(0.f, m_apexGravityTimeWindow);
+	if (m_velocity.y >= 0.f)
+		return m_velocity.y <= m_gravity * m_apexGravityTimeWindow;
 
-	return std::abs(m_velocity.y) <= verticalSpeedWindow;
+	return std::abs(m_velocity.y) <= m_gravity * m_apexGravityTimeWindow;
 }
 
 float GAME1_Player::moveTowards(float current, float target, float maxDelta)
@@ -814,5 +748,13 @@ float GAME1_Player::moveTowards(float current, float target, float maxDelta)
 	if (std::abs(target - current) <= maxDelta)
 		return target;
 
-	return current + (target > current ? maxDelta : -maxDelta);
+	if (target > current)
+		return current + maxDelta;
+
+	return current - maxDelta;
+}
+
+const std::string& GAME1_Player::getLastError() const
+{
+	return m_lastError;
 }
