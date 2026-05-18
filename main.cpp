@@ -204,7 +204,9 @@ namespace
 	{
 		const std::string floorTilePath = (kGame1ResourcesDirectory / "FloorTile.png").string();
 		const std::string breakBlockPath = (kGame1ResourcesDirectory / "breakblock.png").string();
-		const std::string playerPath = (kGame1ResourcesDirectory / "player.png").string();
+
+		const std::string playerIdleDirectory =
+			(kGame1ResourcesDirectory / "Player" / "PlayerIdle").string();
 
 		if (!level.loadFromFile(mapPath, floorTilePath, breakBlockPath))
 		{
@@ -218,7 +220,7 @@ namespace
 			return false;
 		}
 
-		if (!player.load(playerPath, { 100.f, 100.f }))
+		if (!player.load(playerIdleDirectory, { 100.f, 100.f }))
 		{
 			std::string msg =
 				"Game 1 player failed to load.\n\n" +

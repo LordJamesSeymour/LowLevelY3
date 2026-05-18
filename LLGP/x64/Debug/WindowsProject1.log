@@ -1,2 +1,10 @@
-﻿  main.cpp
+﻿  GAME1_Player.cpp
+  main.cpp
+  Generating Code...
+sfml-graphics-s-d.lib(Image.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Image.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-window-s-d.lib(Window.cpp.obj) : warning LNK4099: PDB 'sfml-window-s-d.pdb' was not found with 'sfml-window-s-d.lib(Window.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-window-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(MiniaudioUtils.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(MiniaudioUtils.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundBuffer.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundBuffer.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(InputSoundFile.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(InputSoundFile.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundStream.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundStream.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
   WindowsProject1.vcxproj -> C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\LLGP.exe

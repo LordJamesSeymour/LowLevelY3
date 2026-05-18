@@ -1,27 +1,27 @@
 #pragma once
 
 #include <SFML/Graphics.hpp>
+
 #include <optional>
 #include <string>
 
-// These are the three outcomes of clicking on the Game 1 menu.
 enum class GAME1_MenuAction
 {
 	None,
+	Quit,
 	Play,
-	LevelEditor,
-	Quit
+	LevelEditor
 };
 
-// Game 1's internal front menu.
-// This is separate from the new arcade hub, which now sits above all games.
 class GAME1_Menu
 {
 public:
-	bool load(const std::string& closeButtonPath,
-		const std::string& logoPath,
-		const std::string& playPath,
-		const std::string& levelEditorPath);
+	// Kept the old 4-argument signature so main.cpp does not need changing.
+	// The old PNG paths are no longer used because this menu is now text/button based.
+	bool load(const std::string& closeButtonTexturePath,
+		const std::string& logoTexturePath,
+		const std::string& playButtonTexturePath,
+		const std::string& levelEditorTexturePath);
 
 	void layout(const sf::RenderWindow& window);
 	GAME1_MenuAction handleClick(sf::Vector2f mousePosition) const;
@@ -30,20 +30,26 @@ public:
 	const std::string& getLastError() const;
 
 private:
-	static void scaleToWidth(sf::Sprite& sprite, float targetWidth);
-	static void scaleToSize(sf::Sprite& sprite, float targetWidth, float targetHeight);
-	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
+	struct Button
+	{
+		sf::RectangleShape box;
+		std::optional<sf::Text> text;
+		GAME1_MenuAction action = GAME1_MenuAction::None;
+	};
 
 private:
-	sf::Texture m_closeTexture;
-	sf::Texture m_logoTexture;
-	sf::Texture m_playTexture;
-	sf::Texture m_levelEditorTexture;
+	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
+	void centerTextInButton(Button& button);
 
-	std::optional<sf::Sprite> m_closeSprite;
-	std::optional<sf::Sprite> m_logoSprite;
-	std::optional<sf::Sprite> m_playSprite;
-	std::optional<sf::Sprite> m_levelEditorSprite;
+private:
+	sf::Font m_font;
+
+	std::optional<sf::Text> m_titleText;
+	std::optional<sf::Text> m_subtitleText;
+
+	Button m_playButton;
+	Button m_levelEditorButton;
+	Button m_backButton;
 
 	std::string m_lastError;
 };

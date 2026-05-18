@@ -1,149 +1,194 @@
 #include "GAME1_Menu.h"
 
-bool GAME1_Menu::load(const std::string& closeButtonPath,
-	const std::string& logoPath,
-	const std::string& playPath,
-	const std::string& levelEditorPath)
+bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
+	const std::string& logoTexturePath,
+	const std::string& playButtonTexturePath,
+	const std::string& levelEditorTexturePath)
 {
+	(void)closeButtonTexturePath;
+	(void)logoTexturePath;
+	(void)playButtonTexturePath;
+	(void)levelEditorTexturePath;
+
 	m_lastError.clear();
 
-	if (!m_closeTexture.loadFromFile(closeButtonPath))
+	const std::string fontPath = "assets/menu.ttf";
+
+	if (!m_font.openFromFile(fontPath))
 	{
-		m_lastError = "Failed to load close button texture: " + closeButtonPath;
+		m_lastError = "Failed to load SurfersQuest menu font: " + fontPath;
 		return false;
 	}
 
-	if (!m_logoTexture.loadFromFile(logoPath))
-	{
-		m_lastError = "Failed to load logo texture: " + logoPath;
-		return false;
-	}
+	m_titleText.emplace(m_font);
+	m_titleText->setString("SURFERS QUEST");
+	m_titleText->setCharacterSize(64);
+	m_titleText->setFillColor(sf::Color::White);
+	m_titleText->setOutlineColor(sf::Color::Black);
+	m_titleText->setOutlineThickness(4.f);
 
-	if (!m_playTexture.loadFromFile(playPath))
-	{
-		m_lastError = "Failed to load play button texture: " + playPath;
-		return false;
-	}
+	m_subtitleText.emplace(m_font);
+	m_subtitleText->setString("Platformer Adventure");
+	m_subtitleText->setCharacterSize(30);
+	m_subtitleText->setFillColor(sf::Color(255, 230, 120));
+	m_subtitleText->setOutlineColor(sf::Color::Black);
+	m_subtitleText->setOutlineThickness(2.f);
 
-	if (!m_levelEditorTexture.loadFromFile(levelEditorPath))
-	{
-		m_lastError = "Failed to load level editor texture: " + levelEditorPath;
-		return false;
-	}
+	m_playButton.action = GAME1_MenuAction::Play;
+	m_playButton.text.emplace(m_font);
+	m_playButton.text->setString("PLAY LEVELS");
 
-	// Create the four sprites once textures are ready.
-	m_closeSprite.emplace(m_closeTexture);
-	m_logoSprite.emplace(m_logoTexture);
-	m_playSprite.emplace(m_playTexture);
-	m_levelEditorSprite.emplace(m_levelEditorTexture);
+	m_levelEditorButton.action = GAME1_MenuAction::LevelEditor;
+	m_levelEditorButton.text.emplace(m_font);
+	m_levelEditorButton.text->setString("LEVEL EDITOR");
+
+	m_backButton.action = GAME1_MenuAction::Quit;
+	m_backButton.text.emplace(m_font);
+	m_backButton.text->setString("BACK TO ARCADE");
+
+	Button* buttons[] =
+	{
+		&m_playButton,
+		&m_levelEditorButton,
+		&m_backButton
+	};
+
+	for (Button* button : buttons)
+	{
+		button->box.setSize({ 360.f, 64.f });
+		button->box.setFillColor(sf::Color(35, 35, 45));
+		button->box.setOutlineColor(sf::Color::White);
+		button->box.setOutlineThickness(3.f);
+
+		if (button->text)
+		{
+			button->text->setCharacterSize(28);
+			button->text->setFillColor(sf::Color::White);
+			button->text->setOutlineColor(sf::Color::Black);
+			button->text->setOutlineThickness(2.f);
+		}
+	}
 
 	return true;
 }
 
 void GAME1_Menu::layout(const sf::RenderWindow& window)
 {
-	if (!m_closeSprite || !m_logoSprite || !m_playSprite || !m_levelEditorSprite)
-		return;
-
 	const float windowWidth = static_cast<float>(window.getSize().x);
 	const float windowHeight = static_cast<float>(window.getSize().y);
 
-	// Keep all button sizes consistent regardless of source image size.
-	scaleToSize(*m_closeSprite, 48.f, 48.f);
-	scaleToWidth(*m_logoSprite, 420.f);
-	scaleToWidth(*m_playSprite, 240.f);
-	scaleToWidth(*m_levelEditorSprite, 240.f);
+	if (m_titleText)
+	{
+		const sf::FloatRect bounds = m_titleText->getLocalBounds();
+		m_titleText->setPosition({
+			(windowWidth - bounds.size.x) * 0.5f - bounds.position.x,
+			78.f - bounds.position.y
+			});
+	}
 
-	const sf::FloatRect logoBounds = m_logoSprite->getGlobalBounds();
-	const sf::FloatRect playBounds = m_playSprite->getGlobalBounds();
-	const sf::FloatRect editorBounds = m_levelEditorSprite->getGlobalBounds();
-	const sf::FloatRect closeBounds = m_closeSprite->getGlobalBounds();
+	if (m_subtitleText)
+	{
+		const sf::FloatRect bounds = m_subtitleText->getLocalBounds();
+		m_subtitleText->setPosition({
+			(windowWidth - bounds.size.x) * 0.5f - bounds.position.x,
+			154.f - bounds.position.y
+			});
+	}
 
-	const float spacingAfterLogo = 35.f;
-	const float spacingBetweenButtons = 20.f;
+	const float buttonX = (windowWidth - m_playButton.box.getSize().x) * 0.5f;
+	const float startY = windowHeight * 0.5f - 70.f;
+	const float spacing = 86.f;
 
-	const float totalHeight =
-		logoBounds.size.y +
-		spacingAfterLogo +
-		playBounds.size.y +
-		spacingBetweenButtons +
-		editorBounds.size.y;
+	m_playButton.box.setPosition({ buttonX, startY });
+	m_levelEditorButton.box.setPosition({ buttonX, startY + spacing });
+	m_backButton.box.setPosition({ buttonX, startY + spacing * 2.f });
 
-	const float startY = (windowHeight - totalHeight) * 0.5f;
+	centerTextInButton(m_playButton);
+	centerTextInButton(m_levelEditorButton);
+	centerTextInButton(m_backButton);
+}
 
-	m_logoSprite->setPosition({
-		(windowWidth - logoBounds.size.x) * 0.5f,
-		startY
-		});
+void GAME1_Menu::centerTextInButton(Button& button)
+{
+	if (!button.text)
+		return;
 
-	m_playSprite->setPosition({
-		(windowWidth - playBounds.size.x) * 0.5f,
-		startY + logoBounds.size.y + spacingAfterLogo
-		});
+	const sf::FloatRect buttonBounds = button.box.getGlobalBounds();
+	const sf::FloatRect textBounds = button.text->getLocalBounds();
 
-	m_levelEditorSprite->setPosition({
-		(windowWidth - editorBounds.size.x) * 0.5f,
-		m_playSprite->getPosition().y + playBounds.size.y + spacingBetweenButtons
-		});
-
-	m_closeSprite->setPosition({
-		windowWidth - closeBounds.size.x - 20.f,
-		20.f
+	button.text->setPosition({
+		buttonBounds.position.x + (buttonBounds.size.x - textBounds.size.x) * 0.5f - textBounds.position.x,
+		buttonBounds.position.y + (buttonBounds.size.y - textBounds.size.y) * 0.5f - textBounds.position.y - 2.f
 		});
 }
 
 GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition) const
 {
-	if (!m_closeSprite || !m_playSprite || !m_levelEditorSprite)
-		return GAME1_MenuAction::None;
+	const Button* buttons[] =
+	{
+		&m_playButton,
+		&m_levelEditorButton,
+		&m_backButton
+	};
 
-	if (containsPoint(m_closeSprite->getGlobalBounds(), mousePosition))
-		return GAME1_MenuAction::Quit;
-
-	if (containsPoint(m_playSprite->getGlobalBounds(), mousePosition))
-		return GAME1_MenuAction::Play;
-
-	if (containsPoint(m_levelEditorSprite->getGlobalBounds(), mousePosition))
-		return GAME1_MenuAction::LevelEditor;
+	for (const Button* button : buttons)
+	{
+		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
+			return button->action;
+	}
 
 	return GAME1_MenuAction::None;
 }
 
 void GAME1_Menu::draw(sf::RenderWindow& window) const
 {
-	if (m_logoSprite) window.draw(*m_logoSprite);
-	if (m_playSprite) window.draw(*m_playSprite);
-	if (m_levelEditorSprite) window.draw(*m_levelEditorSprite);
-	if (m_closeSprite) window.draw(*m_closeSprite);
+	const sf::Vector2u windowSize = window.getSize();
+
+	sf::RectangleShape background;
+	background.setPosition({ 0.f, 0.f });
+	background.setSize({
+		static_cast<float>(windowSize.x),
+		static_cast<float>(windowSize.y)
+		});
+	background.setFillColor(sf::Color(18, 18, 28));
+	window.draw(background);
+
+	sf::RectangleShape frame;
+	frame.setPosition({ 24.f, 24.f });
+	frame.setSize({
+		static_cast<float>(windowSize.x) - 48.f,
+		static_cast<float>(windowSize.y) - 48.f
+		});
+	frame.setFillColor(sf::Color::Transparent);
+	frame.setOutlineColor(sf::Color(255, 230, 120));
+	frame.setOutlineThickness(3.f);
+	window.draw(frame);
+
+	if (m_titleText)
+		window.draw(*m_titleText);
+
+	if (m_subtitleText)
+		window.draw(*m_subtitleText);
+
+	const Button* buttons[] =
+	{
+		&m_playButton,
+		&m_levelEditorButton,
+		&m_backButton
+	};
+
+	for (const Button* button : buttons)
+	{
+		window.draw(button->box);
+
+		if (button->text)
+			window.draw(*button->text);
+	}
 }
 
 const std::string& GAME1_Menu::getLastError() const
 {
 	return m_lastError;
-}
-
-void GAME1_Menu::scaleToWidth(sf::Sprite& sprite, float targetWidth)
-{
-	const sf::FloatRect localBounds = sprite.getLocalBounds();
-
-	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
-		return;
-
-	const float scale = targetWidth / localBounds.size.x;
-	sprite.setScale({ scale, scale });
-}
-
-void GAME1_Menu::scaleToSize(sf::Sprite& sprite, float targetWidth, float targetHeight)
-{
-	const sf::FloatRect localBounds = sprite.getLocalBounds();
-
-	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
-		return;
-
-	sprite.setScale({
-		targetWidth / localBounds.size.x,
-		targetHeight / localBounds.size.y
-		});
 }
 
 bool GAME1_Menu::containsPoint(const sf::FloatRect& bounds, sf::Vector2f point)
