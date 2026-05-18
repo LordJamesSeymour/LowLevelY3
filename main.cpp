@@ -33,10 +33,13 @@ namespace
 	const std::filesystem::path kBombermanRootDirectory = "assets/Game#0/Bomberman";
 	const std::filesystem::path kBombermanMapsDirectory = "assets/Game#0/Bomberman/Maps";
 	const std::filesystem::path kBombermanSplashStillImagePath = "assets/Game#0/SplashScreen/BombermanSplashScreen.png";
+	const std::filesystem::path kBombermanSplashFramesDirectory = "assets/Game#0/SplashScreen/GIFs";
 
-	const std::filesystem::path kGame1ResourcesDirectory = "assets/Game#1/Resources";
-	const std::filesystem::path kGame1MapsDirectory = "assets/Game#1/Maps";
-	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/GIFs/SplashScreen";
+	const std::filesystem::path kGame1RootDirectory = "assets/Game#1/SurfersQuest";
+	const std::filesystem::path kGame1ResourcesDirectory = kGame1RootDirectory / "Resources";
+	const std::filesystem::path kGame1MapsDirectory = kGame1RootDirectory / "Maps";
+	const std::filesystem::path kGame1SplashStillImagePath = "assets/Game#1/SplashScreen/SidescrollerSplashScreen.png";
+	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/SplashScreen/GIFs";
 
 	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
 	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
@@ -311,17 +314,17 @@ int main()
 	hubGames.push_back({
 		"GAME #1",
 		"Bomberman",
-		"",
+		kBombermanSplashFramesDirectory.string(),
 		kBombermanSplashStillImagePath.string(),
 		false
 		});
 
 	hubGames.push_back({
 		"GAME #2",
-		"Toonland Platformer",
+		"Surfers Quest",
 		kGame1SplashFramesDirectory.string(),
-		"",
-		true
+		kGame1SplashStillImagePath.string(),
+		false
 		});
 
 	hubGames.push_back({
@@ -507,6 +510,11 @@ int main()
 
 			appState = newState;
 
+			if (appState == AppState::Hub)
+			{
+				hub.notifyUserActivity();
+			}
+
 			if (appState == AppState::GAME1_BombermanMenu)
 			{
 				bombermanMenu.startMusic();
@@ -592,6 +600,16 @@ int main()
 
 			if (appState == AppState::Hub)
 			{
+				if (event->is<sf::Event::KeyPressed>() ||
+					event->is<sf::Event::KeyReleased>() ||
+					event->is<sf::Event::MouseButtonPressed>() ||
+					event->is<sf::Event::MouseButtonReleased>() ||
+					event->is<sf::Event::MouseMoved>() ||
+					event->is<sf::Event::MouseWheelScrolled>())
+				{
+					hub.notifyUserActivity();
+				}
+
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Left)
@@ -759,7 +777,6 @@ int main()
 						const std::string previousError = bombermanEditor.getLastError();
 
 						bombermanEditor.handleKeyReleased(keyReleased->code);
-
 						ReportBombermanEditorResult(previousSavedPath, previousError);
 					}
 				}
@@ -775,7 +792,6 @@ int main()
 					const std::string previousError = bombermanEditor.getLastError();
 
 					bombermanEditor.handleMousePressed(mousePressed->button, mousePixelPosition);
-
 					ReportBombermanEditorResult(previousSavedPath, previousError);
 				}
 
@@ -786,7 +802,7 @@ int main()
 						bombermanEditor.handleMouseWheelScrolled(mouseWheelScrolled->delta);
 					}
 				}
-}
+			}
 			else if (appState == AppState::GAME1_Bomberman)
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -1081,8 +1097,16 @@ int main()
 
 			const float halfViewWidth = worldView.getSize().x * 0.5f;
 			const float minViewCenterX = halfViewWidth;
-			const float maxViewCenterX = std::max(halfViewWidth, game1Level.getPixelWidth() - halfViewWidth);
-			const float targetViewCenterX = std::clamp(playerCenterX, minViewCenterX, maxViewCenterX);
+			const float maxViewCenterX = std::max(
+				halfViewWidth,
+				game1Level.getPixelWidth() - halfViewWidth
+			);
+
+			const float targetViewCenterX = std::clamp(
+				playerCenterX,
+				minViewCenterX,
+				maxViewCenterX
+			);
 
 			worldView.setCenter({
 				targetViewCenterX,
@@ -1140,14 +1164,6 @@ int main()
 
 			window.clear(sf::Color(24, 24, 34));
 			game2Menu.draw(window);
-			window.display();
-		}
-		else
-		{
-			game2Game.update(deltaTime, window.getSize());
-
-			window.clear(sf::Color::Black);
-			game2Game.draw(window);
 			window.display();
 		}
 	}

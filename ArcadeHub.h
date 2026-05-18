@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-// These are the clickable actions the hub can return.
 enum class ArcadeHubAction
 {
 	None,
@@ -14,9 +13,6 @@ enum class ArcadeHubAction
 	LaunchGame
 };
 
-// Each hub entry can use either:
-// - a folder of PNG frames for animation, or
-// - a single still image path
 struct ArcadeHubGameEntry
 {
 	std::string label;
@@ -25,8 +21,6 @@ struct ArcadeHubGameEntry
 	std::string splashFramesDirectory;
 	std::string splashStillImagePath;
 
-	// If true, the game still appears in the hub,
-	// but gets a lock overlay and cannot be launched.
 	bool isLocked = false;
 };
 
@@ -41,6 +35,7 @@ public:
 	void updateClockText();
 	void updateAnimation(float deltaTime);
 	void updateVisualTheme(float totalTimeSeconds);
+	void notifyUserActivity();
 
 	void layout(const sf::RenderWindow& window);
 
@@ -64,6 +59,10 @@ private:
 	struct LoadedGameCard
 	{
 		ArcadeHubGameEntry data;
+
+		sf::Texture splashStillTexture;
+		bool hasSplashStillTexture = false;
+
 		std::vector<sf::Texture> splashFrames;
 
 		std::size_t currentFrameIndex = 0;
@@ -83,22 +82,21 @@ private:
 
 	std::vector<LoadedGameCard> m_games;
 
-	// Lock overlay asset
 	sf::Texture m_lockTexture;
 	bool m_hasLockTexture = false;
 
-	// The currently selected game.
 	std::size_t m_selectedIndex = 0;
 
-	// Swipe transition state.
 	bool m_isSwiping = false;
 	std::size_t m_previousIndex = 0;
-	int m_swipeDirection = 1; // +1 = right, -1 = left
+	int m_swipeDirection = 1;
 	float m_swipeTimer = 0.f;
 	float m_swipeDuration = 0.58f;
 
-	// Frame playback speed for animated splash sequences.
 	float m_animationFrameDuration = 1.f / 24.f;
+
+	float m_idleTimer = 0.f;
+	float m_idleDelayBeforeAnimation = 5.f;
 
 	std::optional<sf::Text> m_projectNameText;
 	std::optional<sf::Text> m_clockText;

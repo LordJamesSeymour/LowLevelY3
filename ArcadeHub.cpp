@@ -76,6 +76,7 @@ bool ArcadeHub::load(const std::string& fontPath,
 	m_swipeTimer = 0.f;
 	m_swipeDirection = 1;
 	m_hasLockTexture = false;
+	m_idleTimer = 0.f;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -152,53 +153,74 @@ bool ArcadeHub::load(const std::string& fontPath,
 
 		bool loadedAnyTexture = false;
 
+		if (!entry.splashStillImagePath.empty())
+		{
+			if (!card.splashStillTexture.loadFromFile(entry.splashStillImagePath))
+			{
+				m_lastError = "Failed to load splash still image: " + entry.splashStillImagePath;
+				return false;
+			}
+
+			card.hasSplashStillTexture = true;
+			loadedAnyTexture = true;
+		}
+
 		if (!entry.splashFramesDirectory.empty())
 		{
 			const fs::path framesDirectory = entry.splashFramesDirectory;
 
-			if (fs::exists(framesDirectory) && fs::is_directory(framesDirectory))
+			if (!fs::exists(framesDirectory) || !fs::is_directory(framesDirectory))
 			{
-				std::vector<fs::path> framePaths;
-
-				for (const auto& fileEntry : fs::directory_iterator(framesDirectory))
-				{
-					if (fileEntry.is_regular_file() && IsPngFile(fileEntry.path()))
-					{
-						framePaths.push_back(fileEntry.path());
-					}
-				}
-
-				std::sort(framePaths.begin(), framePaths.end(),
-					[](const fs::path& a, const fs::path& b)
-					{
-						return a.filename().string() < b.filename().string();
-					});
-
-				for (const fs::path& framePath : framePaths)
-				{
-					sf::Texture texture;
-					if (!texture.loadFromFile(framePath.string()))
-					{
-						m_lastError = "Failed to load splash frame: " + framePath.string();
-						return false;
-					}
-
-					card.splashFrames.push_back(std::move(texture));
-				}
-
-				loadedAnyTexture = !card.splashFrames.empty();
+				m_lastError = "Failed to load splash GIF frames: folder does not exist: " + entry.splashFramesDirectory;
+				return false;
 			}
+
+			std::vector<fs::path> framePaths;
+
+			for (const auto& fileEntry : fs::directory_iterator(framesDirectory))
+			{
+				if (fileEntry.is_regular_file() && IsPngFile(fileEntry.path()))
+				{
+					framePaths.push_back(fileEntry.path());
+				}
+			}
+
+			std::sort(framePaths.begin(), framePaths.end(),
+				[](const fs::path& a, const fs::path& b)
+				{
+					return a.filename().string() < b.filename().string();
+				});
+
+			if (framePaths.empty())
+			{
+				m_lastError = "Failed to load splash GIF frames: no PNG files found in: " + entry.splashFramesDirectory;
+				return false;
+			}
+
+			card.splashFrames.reserve(framePaths.size());
+
+			for (const fs::path& framePath : framePaths)
+			{
+				sf::Texture texture;
+
+				if (!texture.loadFromFile(framePath.string()))
+				{
+					m_lastError = "Failed to load splash frame: " + framePath.string();
+					return false;
+				}
+
+				card.splashFrames.push_back(std::move(texture));
+			}
+
+			loadedAnyTexture = true;
 		}
 
-		if (!loadedAnyTexture && !entry.splashStillImagePath.empty())
+		if (!loadedAnyTexture)
 		{
-			sf::Texture texture;
-
-			if (texture.loadFromFile(entry.splashStillImagePath))
-			{
-				card.splashFrames.push_back(std::move(texture));
-				loadedAnyTexture = true;
-			}
+			m_lastError =
+				"Arcade hub game has no valid splash image or splash frames: " +
+				entry.displayName;
+			return false;
 		}
 
 		m_games.push_back(std::move(card));
@@ -217,11 +239,31 @@ void ArcadeHub::updateClockText()
 	}
 }
 
+void ArcadeHub::notifyUserActivity()
+{
+	m_idleTimer = 0.f;
+
+	for (LoadedGameCard& card : m_games)
+	{
+		card.currentFrameIndex = 0;
+		card.animationTimer = 0.f;
+	}
+}
+
 void ArcadeHub::updateAnimation(float deltaTime)
 {
+	m_idleTimer += deltaTime;
+
 	for (LoadedGameCard& card : m_games)
 	{
 		if (card.splashFrames.size() <= 1)
+			continue;
+
+		const bool shouldAnimate =
+			!card.hasSplashStillTexture ||
+			m_idleTimer >= m_idleDelayBeforeAnimation;
+
+		if (!shouldAnimate)
 			continue;
 
 		card.animationTimer += deltaTime;
@@ -268,9 +310,9 @@ void ArcadeHub::updateVisualTheme(float totalTimeSeconds)
 		else
 		{
 			const sf::Color subdued(
-				FloatToByte(m_themeMid.r * 0.45f),
-				FloatToByte(m_themeMid.g * 0.45f),
-				FloatToByte(m_themeMid.b * 0.45f)
+				FloatToByte(static_cast<float>(m_themeMid.r) * 0.45f),
+				FloatToByte(static_cast<float>(m_themeMid.g) * 0.45f),
+				FloatToByte(static_cast<float>(m_themeMid.b) * 0.45f)
 			);
 
 			m_leftArrowText->setFillColor(subdued);
@@ -370,6 +412,8 @@ void ArcadeHub::layout(const sf::RenderWindow& window)
 
 void ArcadeHub::navigateLeft()
 {
+	notifyUserActivity();
+
 	if (m_games.size() <= 1 || m_isSwiping)
 		return;
 
@@ -387,6 +431,8 @@ void ArcadeHub::navigateLeft()
 
 void ArcadeHub::navigateRight()
 {
+	notifyUserActivity();
+
 	if (m_games.size() <= 1 || m_isSwiping)
 		return;
 
@@ -613,10 +659,21 @@ const sf::Texture* ArcadeHub::getCurrentTextureForGame(std::size_t gameIndex) co
 
 	const LoadedGameCard& card = m_games[gameIndex];
 
-	if (card.splashFrames.empty())
-		return nullptr;
+	const bool shouldShowAnimatedFrames =
+		!card.splashFrames.empty() &&
+		(!card.hasSplashStillTexture || m_idleTimer >= m_idleDelayBeforeAnimation);
 
-	return &card.splashFrames[card.currentFrameIndex % card.splashFrames.size()];
+	if (shouldShowAnimatedFrames)
+	{
+		return &card.splashFrames[card.currentFrameIndex % card.splashFrames.size()];
+	}
+
+	if (card.hasSplashStillTexture)
+	{
+		return &card.splashStillTexture;
+	}
+
+	return nullptr;
 }
 
 void ArcadeHub::draw(sf::RenderTarget& target) const
@@ -649,9 +706,9 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 	innerFrame.setSize({ width - 36.f, height - 36.f });
 	innerFrame.setFillColor(sf::Color::Transparent);
 	innerFrame.setOutlineColor(sf::Color(
-		static_cast<std::uint8_t>(std::clamp(m_themeBright.r * 0.55f, 0.f, 255.f)),
-		static_cast<std::uint8_t>(std::clamp(m_themeBright.g * 0.55f, 0.f, 255.f)),
-		static_cast<std::uint8_t>(std::clamp(m_themeBright.b * 0.55f, 0.f, 255.f))
+		FloatToByte(static_cast<float>(m_themeBright.r) * 0.55f),
+		FloatToByte(static_cast<float>(m_themeBright.g) * 0.55f),
+		FloatToByte(static_cast<float>(m_themeBright.b) * 0.55f)
 	));
 	innerFrame.setOutlineThickness(1.f);
 	target.draw(innerFrame);
@@ -780,33 +837,45 @@ sf::Color ArcadeHub::ColorFromHSV(float hueDegrees, float saturation, float valu
 
 	if (hueSection >= 0.f && hueSection < 1.f)
 	{
-		r1 = chroma; g1 = x; b1 = 0.f;
+		r1 = chroma;
+		g1 = x;
+		b1 = 0.f;
 	}
 	else if (hueSection < 2.f)
 	{
-		r1 = x; g1 = chroma; b1 = 0.f;
+		r1 = x;
+		g1 = chroma;
+		b1 = 0.f;
 	}
 	else if (hueSection < 3.f)
 	{
-		r1 = 0.f; g1 = chroma; b1 = x;
+		r1 = 0.f;
+		g1 = chroma;
+		b1 = x;
 	}
 	else if (hueSection < 4.f)
 	{
-		r1 = 0.f; g1 = x; b1 = chroma;
+		r1 = 0.f;
+		g1 = x;
+		b1 = chroma;
 	}
 	else if (hueSection < 5.f)
 	{
-		r1 = x; g1 = 0.f; b1 = chroma;
+		r1 = x;
+		g1 = 0.f;
+		b1 = chroma;
 	}
 	else
 	{
-		r1 = chroma; g1 = 0.f; b1 = x;
+		r1 = chroma;
+		g1 = 0.f;
+		b1 = x;
 	}
 
 	return sf::Color(
-		static_cast<std::uint8_t>(std::clamp((r1 + m) * 255.f, 0.f, 255.f)),
-		static_cast<std::uint8_t>(std::clamp((g1 + m) * 255.f, 0.f, 255.f)),
-		static_cast<std::uint8_t>(std::clamp((b1 + m) * 255.f, 0.f, 255.f))
+		FloatToByte((r1 + m) * 255.f),
+		FloatToByte((g1 + m) * 255.f),
+		FloatToByte((b1 + m) * 255.f)
 	);
 }
 
