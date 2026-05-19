@@ -23,7 +23,12 @@ public:
 	void stopMusic();
 
 	void layout(const sf::RenderWindow& window);
-	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition) const;
+	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition);
+
+	void selectPreviousButton();
+	void selectNextButton();
+	GAME1_BombermanMenuAction activateSelectedButton() const;
+
 	void draw(sf::RenderWindow& window) const;
 
 	const std::string& getLastError() const;
@@ -39,6 +44,9 @@ private:
 private:
 	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
 	void centerTextInButton(Button& button);
+	void refreshSelectionVisuals();
+	Button* getButtonByIndex(int index);
+	const Button* getButtonByIndex(int index) const;
 
 	bool tryOpenMusicFile(const std::vector<std::string>& candidatePaths);
 
@@ -53,6 +61,8 @@ private:
 	Button m_playLevelsButton;
 	Button m_levelEditorButton;
 	Button m_backButton;
+
+	int m_selectedButtonIndex = 0;
 
 	std::string m_lastError;
 };

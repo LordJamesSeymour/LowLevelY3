@@ -15,6 +15,7 @@ bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 	(void)levelEditorTexturePath;
 
 	m_lastError.clear();
+	m_selectedButtonIndex = 0;
 
 	GAME1_SurfersQuestAudio::initialise((std::filesystem::path("assets") / "Game#1" / "SurfersQuest" / "Resources").string());
 
@@ -62,25 +63,24 @@ bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 	for (Button* button : buttons)
 	{
 		button->box.setSize({ 360.f, 64.f });
-		button->box.setFillColor(sf::Color(35, 35, 45));
-		button->box.setOutlineColor(sf::Color::White);
 		button->box.setOutlineThickness(3.f);
 
 		if (button->text)
 		{
 			button->text->setCharacterSize(28);
-			button->text->setFillColor(sf::Color::White);
 			button->text->setOutlineColor(sf::Color::Black);
 			button->text->setOutlineThickness(2.f);
 		}
 	}
 
+	refreshSelectionVisuals();
 	return true;
 }
 
 void GAME1_Menu::layout(const sf::RenderWindow& window)
 {
 	startMusic();
+
 	const float windowWidth = static_cast<float>(window.getSize().x);
 	const float windowHeight = static_cast<float>(window.getSize().y);
 
@@ -131,20 +131,14 @@ void GAME1_Menu::centerTextInButton(Button& button)
 
 GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 {
-	const Button* buttons[] =
+	for (int i = 0; i < 3; ++i)
 	{
-		&m_playButton,
-		&m_levelEditorButton,
-		&m_backButton
-	};
-
-	for (const Button* button : buttons)
-	{
-		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
+		Button* button = getButtonByIndex(i);
+		if (button != nullptr && containsPoint(button->box.getGlobalBounds(), mousePosition))
 		{
-			// Keep Menu_01 playing when going from the SurfersQuest menu
-			// into the SurfersQuest level selector.
-			// Stop it only when leaving the SurfersQuest menu flow.
+			m_selectedButtonIndex = i;
+			refreshSelectionVisuals();
+
 			if (button->action != GAME1_MenuAction::Play)
 				stopMusic();
 
@@ -155,6 +149,24 @@ GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 	return GAME1_MenuAction::None;
 }
 
+void GAME1_Menu::selectPreviousButton()
+{
+	m_selectedButtonIndex = (m_selectedButtonIndex + 2) % 3;
+	refreshSelectionVisuals();
+}
+
+void GAME1_Menu::selectNextButton()
+{
+	m_selectedButtonIndex = (m_selectedButtonIndex + 1) % 3;
+	refreshSelectionVisuals();
+}
+
+GAME1_MenuAction GAME1_Menu::activateSelectedButton() const
+{
+	const Button* button = getButtonByIndex(m_selectedButtonIndex);
+	return button != nullptr ? button->action : GAME1_MenuAction::None;
+}
+
 void GAME1_Menu::startMusic()
 {
 	GAME1_SurfersQuestAudio::playMenu();
@@ -163,6 +175,48 @@ void GAME1_Menu::startMusic()
 void GAME1_Menu::stopMusic()
 {
 	GAME1_SurfersQuestAudio::stopAll();
+}
+
+void GAME1_Menu::refreshSelectionVisuals()
+{
+	for (int i = 0; i < 3; ++i)
+	{
+		Button* button = getButtonByIndex(i);
+		if (button == nullptr)
+			continue;
+
+		const bool selected = i == m_selectedButtonIndex;
+
+		button->box.setFillColor(selected ? sf::Color(55, 55, 78) : sf::Color(35, 35, 45));
+		button->box.setOutlineColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
+
+		if (button->text)
+		{
+			button->text->setFillColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
+		}
+	}
+}
+
+GAME1_Menu::Button* GAME1_Menu::getButtonByIndex(int index)
+{
+	switch (index)
+	{
+	case 0: return &m_playButton;
+	case 1: return &m_levelEditorButton;
+	case 2: return &m_backButton;
+	default: return nullptr;
+	}
+}
+
+const GAME1_Menu::Button* GAME1_Menu::getButtonByIndex(int index) const
+{
+	switch (index)
+	{
+	case 0: return &m_playButton;
+	case 1: return &m_levelEditorButton;
+	case 2: return &m_backButton;
+	default: return nullptr;
+	}
 }
 
 void GAME1_Menu::draw(sf::RenderWindow& window) const
@@ -177,17 +231,6 @@ void GAME1_Menu::draw(sf::RenderWindow& window) const
 		});
 	background.setFillColor(sf::Color(18, 18, 28));
 	window.draw(background);
-
-	sf::RectangleShape frame;
-	frame.setPosition({ 24.f, 24.f });
-	frame.setSize({
-		static_cast<float>(windowSize.x) - 48.f,
-		static_cast<float>(windowSize.y) - 48.f
-		});
-	frame.setFillColor(sf::Color::Transparent);
-	frame.setOutlineColor(sf::Color(255, 230, 120));
-	frame.setOutlineThickness(3.f);
-	window.draw(frame);
 
 	if (m_titleText)
 		window.draw(*m_titleText);

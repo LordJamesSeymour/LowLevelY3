@@ -28,6 +28,12 @@ public:
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanLevelSelectAction handleClick(sf::Vector2f mousePosition);
 
+	void selectPreviousSlot();
+	void selectNextSlot();
+	void selectPreviousPage();
+	void selectNextPage();
+	GAME1_BombermanLevelSelectAction activateSelectedSlot();
+
 	void draw(sf::RenderWindow& window) const;
 
 	const std::string& getSelectedLevelPath() const;
@@ -39,6 +45,7 @@ private:
 	static int extractLevelNumber(const std::filesystem::path& path);
 
 	void rebuildVisibleSlots();
+	void updateSelectionVisuals();
 	void centerTextInRect(sf::Text& text, const sf::FloatRect& rect);
 
 private:
@@ -48,6 +55,7 @@ private:
 	std::vector<std::string> m_levelPaths;
 
 	int m_currentPage = 0;
+	int m_selectedVisibleSlot = 0;
 	std::string m_selectedLevelPath;
 
 	std::optional<sf::Text> m_titleText;

@@ -145,13 +145,11 @@ void GAME1_BombermanLevelSelect::rebuildVisibleSlots()
 			const std::filesystem::path path(m_levelPaths[levelIndex]);
 			m_slotTexts[i]->setString(path.stem().string());
 			m_slotTexts[i]->setFillColor(sf::Color::White);
-			m_slotBoxes[i].setFillColor(sf::Color(36, 36, 48));
 		}
 		else
 		{
 			m_slotTexts[i]->setString("<empty>");
 			m_slotTexts[i]->setFillColor(sf::Color(150, 150, 150));
-			m_slotBoxes[i].setFillColor(sf::Color(26, 26, 34));
 		}
 	}
 
@@ -166,6 +164,116 @@ void GAME1_BombermanLevelSelect::rebuildVisibleSlots()
 			" / " + std::to_string(totalPages)
 		);
 	}
+}
+
+
+void GAME1_BombermanLevelSelect::updateSelectionVisuals()
+{
+	bool selectedSlotIsValid =
+		m_selectedVisibleSlot >= 0 &&
+		m_selectedVisibleSlot < SlotCount &&
+		m_slotActive[m_selectedVisibleSlot];
+
+	if (!selectedSlotIsValid)
+	{
+		m_selectedVisibleSlot = 0;
+
+		for (int i = 0; i < SlotCount; ++i)
+		{
+			if (m_slotActive[i])
+			{
+				m_selectedVisibleSlot = i;
+				selectedSlotIsValid = true;
+				break;
+			}
+		}
+	}
+
+	for (int i = 0; i < SlotCount; ++i)
+	{
+		if (m_slotActive[i])
+		{
+			m_slotBoxes[i].setFillColor(i == m_selectedVisibleSlot
+				? sf::Color(70, 70, 105)
+				: sf::Color(36, 36, 48));
+			m_slotBoxes[i].setOutlineColor(i == m_selectedVisibleSlot
+				? sf::Color(255, 220, 120)
+				: sf::Color::White);
+		}
+		else
+		{
+			m_slotBoxes[i].setFillColor(sf::Color(26, 26, 34));
+			m_slotBoxes[i].setOutlineColor(sf::Color(90, 90, 105));
+		}
+	}
+}
+
+void GAME1_BombermanLevelSelect::selectPreviousSlot()
+{
+	for (int step = 0; step < SlotCount; ++step)
+	{
+		m_selectedVisibleSlot = (m_selectedVisibleSlot + SlotCount - 1) % SlotCount;
+
+		if (m_slotActive[m_selectedVisibleSlot])
+			break;
+	}
+
+	updateSelectionVisuals();
+}
+
+void GAME1_BombermanLevelSelect::selectNextSlot()
+{
+	for (int step = 0; step < SlotCount; ++step)
+	{
+		m_selectedVisibleSlot = (m_selectedVisibleSlot + 1) % SlotCount;
+
+		if (m_slotActive[m_selectedVisibleSlot])
+			break;
+	}
+
+	updateSelectionVisuals();
+}
+
+void GAME1_BombermanLevelSelect::selectPreviousPage()
+{
+	if (m_currentPage <= 0)
+		return;
+
+	--m_currentPage;
+	m_selectedVisibleSlot = 0;
+	rebuildVisibleSlots();
+}
+
+void GAME1_BombermanLevelSelect::selectNextPage()
+{
+	const int totalPages = m_levelPaths.empty()
+		? 1
+		: static_cast<int>((m_levelPaths.size() - 1) / SlotCount) + 1;
+
+	if (m_currentPage + 1 >= totalPages)
+		return;
+
+	++m_currentPage;
+	m_selectedVisibleSlot = 0;
+	rebuildVisibleSlots();
+}
+
+GAME1_BombermanLevelSelectAction GAME1_BombermanLevelSelect::activateSelectedSlot()
+{
+	if (m_selectedVisibleSlot < 0 ||
+		m_selectedVisibleSlot >= SlotCount ||
+		!m_slotActive[m_selectedVisibleSlot])
+	{
+		return GAME1_BombermanLevelSelectAction::None;
+	}
+
+	const int levelIndex = m_currentPage * SlotCount + m_selectedVisibleSlot;
+
+	if (levelIndex < 0 || levelIndex >= static_cast<int>(m_levelPaths.size()))
+		return GAME1_BombermanLevelSelectAction::None;
+
+	m_selectedLevelPath = m_levelPaths[levelIndex];
+	return GAME1_BombermanLevelSelectAction::SelectedLevel;
 }
 
 void GAME1_BombermanLevelSelect::layout(const sf::RenderWindow& window)
@@ -260,6 +368,9 @@ GAME1_BombermanLevelSelectAction GAME1_BombermanLevelSelect::handleClick(sf::Vec
 
 		if (containsPoint(m_slotBoxes[i].getGlobalBounds(), mousePosition))
 		{
+			m_selectedVisibleSlot = i;
+			updateSelectionVisuals();
+
 			const int levelIndex = m_currentPage * SlotCount + i;
 
 			if (levelIndex >= 0 && levelIndex < static_cast<int>(m_levelPaths.size()))

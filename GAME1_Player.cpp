@@ -4,6 +4,8 @@
 
 #include "GAME1_SurfersQuestAudio.h"
 
+#include "ArcadeInput.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -325,7 +327,7 @@ bool GAME1_Player::loadAnimationFramesFromDirectory(AnimationSet& animation,
 
 void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 {
-	if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape))
+	if (ArcadeInput::isBackHeld())
 	{
 		stopMusic();
 	}
@@ -334,7 +336,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 	{
 		GAME1_SurfersQuestAudio::playDeath();
 
-		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter))
+		if (ArcadeInput::isConfirmHeld())
 		{
 			resetGame();
 		}
@@ -393,13 +395,8 @@ void GAME1_Player::handleInput(float deltaTime)
 {
 	m_horizontalInputHeld = false;
 
-	const bool leftHeld =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
-
-	const bool rightHeld =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+	const bool leftHeld = ArcadeInput::isMoveLeftHeld();
+	const bool rightHeld = ArcadeInput::isMoveRightHeld();
 
 	const bool dropThroughHeld = isDropThroughHeld();
 	const bool phasePressedThisFrame = dropThroughHeld && !m_phaseHeldLastFrame;
@@ -487,7 +484,7 @@ void GAME1_Player::handleInput(float deltaTime)
 
 	m_jumpBufferTimer = std::max(0.f, m_jumpBufferTimer - deltaTime);
 
-	const bool jumpHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+	const bool jumpHeld = ArcadeInput::isPrimaryHeld();
 	const bool jumpPressedThisFrame = jumpHeld && !m_jumpHeldLastFrame;
 	const bool jumpReleasedThisFrame = !jumpHeld && m_jumpHeldLastFrame;
 
@@ -1425,7 +1422,7 @@ void GAME1_Player::resetGame()
 	m_velocity = { 0.f, 0.f };
 
 	m_onGround = false;
-	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+	m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
 	m_phaseHeldLastFrame = isDropThroughHeld();
 	resetMovementSoundTimers();
 
@@ -1511,7 +1508,7 @@ void GAME1_Player::startRespawn()
 	m_previousPosition = m_spawnPosition;
 
 	m_onGround = false;
-	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+	m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
 	m_phaseHeldLastFrame = isDropThroughHeld();
 	resetMovementSoundTimers();
 
@@ -1553,7 +1550,7 @@ void GAME1_Player::updateRespawn(float deltaTime)
 		m_velocity = { 0.f, 0.f };
 
 		m_onGround = false;
-		m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
 		m_phaseHeldLastFrame = isDropThroughHeld();
 		resetMovementSoundTimers();
 
@@ -1581,8 +1578,7 @@ bool GAME1_Player::isWithinApexGravityWindow() const
 
 bool GAME1_Player::isDropThroughHeld() const
 {
-	return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+	return ArcadeInput::isSecondaryHeld();
 }
 
 bool GAME1_Player::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)

@@ -145,6 +145,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ArcadeHub.h" />
+    <ClInclude Include="ArcadeInput.h" />
     <ClInclude Include="BombermanBomb.h" />
     <ClInclude Include="BombermanEnemy.h" />
     <ClInclude Include="BombermanLevel.h" />
@@ -169,6 +170,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ArcadeHub.cpp" />
+    <ClCompile Include="ArcadeInput.cpp" />
     <ClCompile Include="BombermanEnemy.cpp" />
     <ClCompile Include="BombermanLevel.cpp" />
     <ClCompile Include="BombermanPlayer.cpp" />

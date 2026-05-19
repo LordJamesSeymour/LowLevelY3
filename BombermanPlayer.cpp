@@ -2,6 +2,8 @@
 
 #include "BombermanLevel.h"
 
+#include "ArcadeInput.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -289,21 +291,10 @@ BombermanPlayer::HeldInputState BombermanPlayer::readInputState() const
 {
 	HeldInputState input;
 
-	input.up =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up);
-
-	input.down =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down);
-
-	input.left =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
-
-	input.right =
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+	input.up = ArcadeInput::isMoveUpHeld();
+	input.down = ArcadeInput::isMoveDownHeld();
+	input.left = ArcadeInput::isMoveLeftHeld();
+	input.right = ArcadeInput::isMoveRightHeld();
 
 	return input;
 }

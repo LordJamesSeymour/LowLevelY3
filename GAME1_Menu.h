@@ -26,6 +26,10 @@ public:
 	void layout(const sf::RenderWindow& window);
 	GAME1_MenuAction handleClick(sf::Vector2f mousePosition);
 
+	void selectPreviousButton();
+	void selectNextButton();
+	GAME1_MenuAction activateSelectedButton() const;
+
 	void startMusic();
 	void stopMusic();
 	void draw(sf::RenderWindow& window) const;
@@ -43,6 +47,9 @@ private:
 private:
 	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
 	void centerTextInButton(Button& button);
+	void refreshSelectionVisuals();
+	Button* getButtonByIndex(int index);
+	const Button* getButtonByIndex(int index) const;
 
 private:
 	sf::Font m_font;
@@ -53,6 +60,8 @@ private:
 	Button m_playButton;
 	Button m_levelEditorButton;
 	Button m_backButton;
+
+	int m_selectedButtonIndex = 0;
 
 	std::string m_lastError;
 };

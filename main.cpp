@@ -13,6 +13,7 @@
 #endif
 
 #include "ArcadeHub.h"
+#include "ArcadeInput.h"
 
 #include "GAME1_BombermanWindow.h"
 #include "GAME1_BombermanMenu.h"
@@ -599,6 +600,89 @@ int main()
 			}
 		};
 
+
+	auto ExecuteBombermanMenuAction = [&](GAME1_BombermanMenuAction action)
+		{
+			switch (action)
+			{
+			case GAME1_BombermanMenuAction::PlayLevels:
+				bombermanLevelSelect.refreshLevelList();
+				SetAppState(AppState::GAME1_BombermanLevelSelect);
+				break;
+
+			case GAME1_BombermanMenuAction::LevelEditor:
+				bombermanEditor.reset();
+
+				if (!bombermanEditor.getLastError().empty())
+				{
+					ShowError(bombermanEditor.getLastError());
+				}
+				else
+				{
+					SetAppState(AppState::GAME1_BombermanEditor);
+				}
+
+				break;
+
+			case GAME1_BombermanMenuAction::BackToHub:
+				SetAppState(AppState::Hub);
+				break;
+
+			case GAME1_BombermanMenuAction::None:
+			default:
+				break;
+			}
+		};
+
+	auto ExecuteSurfersQuestMenuAction = [&](GAME1_MenuAction action)
+		{
+			switch (action)
+			{
+			case GAME1_MenuAction::Quit:
+				SetAppState(AppState::Hub);
+				break;
+
+			case GAME1_MenuAction::Play:
+				game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
+				SetAppState(AppState::GAME1_LevelSelect);
+				break;
+
+			case GAME1_MenuAction::LevelEditor:
+				game1Editor.resetEmpty();
+				SetAppState(AppState::GAME1_Editor);
+				break;
+
+			case GAME1_MenuAction::None:
+			default:
+				break;
+			}
+		};
+
+	auto ExecuteSurfersQuestLevelSelectAction = [&](GAME1_LevelSelectAction action)
+		{
+			switch (action)
+			{
+			case GAME1_LevelSelectAction::Back:
+				SetAppState(AppState::GAME1_Menu);
+				break;
+
+			case GAME1_LevelSelectAction::SelectedLevel:
+				if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getSelectedLevelPath()))
+					return false;
+
+				SetAppState(AppState::GAME1_Game);
+				break;
+
+			case GAME1_LevelSelectAction::PreviousPage:
+			case GAME1_LevelSelectAction::NextPage:
+			case GAME1_LevelSelectAction::None:
+			default:
+				break;
+			}
+
+			return true;
+		};
+
 	auto ReportBombermanEditorResult =
 		[&](const std::string& previousSavedPath, const std::string& previousError)
 		{
@@ -640,6 +724,8 @@ int main()
 	{
 		const float deltaTime = clock.restart().asSeconds();
 		totalAppTime += deltaTime;
+
+		ArcadeInput::update();
 
 		bombermanEditor.layout(window);
 		bombermanLevelSelect.layout(window);
@@ -763,35 +849,7 @@ int main()
 							static_cast<float>(mousePressed->position.y)
 						);
 
-						switch (bombermanMenu.handleClick(mousePosition))
-						{
-						case GAME1_BombermanMenuAction::PlayLevels:
-							bombermanLevelSelect.refreshLevelList();
-							SetAppState(AppState::GAME1_BombermanLevelSelect);
-							break;
-
-						case GAME1_BombermanMenuAction::LevelEditor:
-							bombermanEditor.reset();
-
-							if (!bombermanEditor.getLastError().empty())
-							{
-								ShowError(bombermanEditor.getLastError());
-							}
-							else
-							{
-								SetAppState(AppState::GAME1_BombermanEditor);
-							}
-
-							break;
-
-						case GAME1_BombermanMenuAction::BackToHub:
-							SetAppState(AppState::Hub);
-							break;
-
-						case GAME1_BombermanMenuAction::None:
-						default:
-							break;
-						}
+						ExecuteBombermanMenuAction(bombermanMenu.handleClick(mousePosition));
 					}
 				}
 			}
@@ -917,26 +975,7 @@ int main()
 							static_cast<float>(mousePressed->position.y)
 						);
 
-						switch (game1Menu.handleClick(mousePosition))
-						{
-						case GAME1_MenuAction::Quit:
-							SetAppState(AppState::Hub);
-							break;
-
-						case GAME1_MenuAction::Play:
-							game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
-							SetAppState(AppState::GAME1_LevelSelect);
-							break;
-
-						case GAME1_MenuAction::LevelEditor:
-							game1Editor.resetEmpty();
-							SetAppState(AppState::GAME1_Editor);
-							break;
-
-						case GAME1_MenuAction::None:
-						default:
-							break;
-						}
+						ExecuteSurfersQuestMenuAction(game1Menu.handleClick(mousePosition));
 					}
 				}
 			}
@@ -959,15 +998,8 @@ int main()
 							static_cast<float>(mousePressed->position.y)
 						);
 
-						const int slotIndex = game1LevelSelect.handleClick(mousePosition);
-
-						if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
-						{
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
-								return -1;
-
-							SetAppState(AppState::GAME1_Game);
-						}
+						if (!ExecuteSurfersQuestLevelSelectAction(game1LevelSelect.handleClick(mousePosition)))
+							return -1;
 					}
 				}
 			}
@@ -1078,6 +1110,155 @@ int main()
 					}
 				}
 			}
+		}
+
+
+		if (appState == AppState::Hub)
+		{
+			if (ArcadeInput::hasControllerActivity())
+				hub.notifyUserActivity();
+
+			if (ArcadeInput::isControllerMoveLeftPressed())
+				hub.navigateLeft();
+
+			if (ArcadeInput::isControllerMoveRightPressed())
+				hub.navigateRight();
+
+			if (ArcadeInput::isControllerConfirmPressed() && !hub.isTransitioning())
+				TryLaunchSelectedHubGame();
+		}
+		else if (appState == AppState::GAME1_BombermanMenu)
+		{
+			if (ArcadeInput::isBackPressed() || ArcadeInput::isCancelPressed())
+			{
+				SetAppState(AppState::Hub);
+			}
+			else
+			{
+				if (ArcadeInput::isMoveUpPressed())
+					bombermanMenu.selectPreviousButton();
+
+				if (ArcadeInput::isMoveDownPressed())
+					bombermanMenu.selectNextButton();
+
+				if (ArcadeInput::isConfirmPressed() || ArcadeInput::isPrimaryPressed())
+					ExecuteBombermanMenuAction(bombermanMenu.activateSelectedButton());
+			}
+		}
+		else if (appState == AppState::GAME1_BombermanLevelSelect)
+		{
+			if (ArcadeInput::isControllerBackPressed() || ArcadeInput::isControllerSecondaryPressed())
+			{
+				SetAppState(AppState::GAME1_BombermanMenu);
+			}
+			else
+			{
+				if (ArcadeInput::isControllerMoveUpPressed())
+					bombermanLevelSelect.selectPreviousSlot();
+
+				if (ArcadeInput::isControllerMoveDownPressed())
+					bombermanLevelSelect.selectNextSlot();
+
+				if (ArcadeInput::isControllerMoveLeftPressed())
+					bombermanLevelSelect.selectPreviousPage();
+
+				if (ArcadeInput::isControllerMoveRightPressed())
+					bombermanLevelSelect.selectNextPage();
+
+				if (ArcadeInput::isControllerConfirmPressed() || ArcadeInput::isControllerPrimaryPressed())
+				{
+					const GAME1_BombermanLevelSelectAction action = bombermanLevelSelect.activateSelectedSlot();
+
+					if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
+					{
+						if (!bombermanWindow.loadMapFromFile(bombermanLevelSelect.getSelectedLevelPath()))
+						{
+							std::string msg =
+								"Bomberman level failed to load.\n\n" +
+								bombermanWindow.getLastError() +
+								"\n\nCurrent working directory:\n" +
+								std::filesystem::current_path().string();
+
+							ShowError(msg);
+							return -1;
+						}
+
+						SetAppState(AppState::GAME1_Bomberman);
+					}
+				}
+			}
+		}
+		else if (appState == AppState::GAME1_Bomberman)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+				SetAppState(AppState::GAME1_BombermanMenu);
+		}
+		else if (appState == AppState::GAME1_Menu)
+		{
+			if (ArcadeInput::isBackPressed() || ArcadeInput::isCancelPressed())
+			{
+				SetAppState(AppState::Hub);
+			}
+			else
+			{
+				if (ArcadeInput::isMoveUpPressed())
+					game1Menu.selectPreviousButton();
+
+				if (ArcadeInput::isMoveDownPressed())
+					game1Menu.selectNextButton();
+
+				if (ArcadeInput::isConfirmPressed() || ArcadeInput::isPrimaryPressed())
+					ExecuteSurfersQuestMenuAction(game1Menu.activateSelectedButton());
+			}
+		}
+		else if (appState == AppState::GAME1_LevelSelect)
+		{
+			if (ArcadeInput::isBackPressed() || ArcadeInput::isCancelPressed())
+			{
+				SetAppState(AppState::GAME1_Menu);
+			}
+			else
+			{
+				if (ArcadeInput::isMoveUpPressed())
+					game1LevelSelect.selectPreviousSlot();
+
+				if (ArcadeInput::isMoveDownPressed())
+					game1LevelSelect.selectNextSlot();
+
+				if (ArcadeInput::isMoveLeftPressed())
+					game1LevelSelect.selectPreviousPage();
+
+				if (ArcadeInput::isMoveRightPressed())
+					game1LevelSelect.selectNextPage();
+
+				if (ArcadeInput::isConfirmPressed() || ArcadeInput::isPrimaryPressed())
+				{
+					if (!ExecuteSurfersQuestLevelSelectAction(game1LevelSelect.activateSelectedSlot()))
+						return -1;
+				}
+			}
+		}
+		else if (appState == AppState::GAME1_Game)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+				SetAppState(AppState::GAME1_Menu);
+		}
+		else if (appState == AppState::GAME2_Menu)
+		{
+			if (ArcadeInput::isControllerBackPressed() || ArcadeInput::isControllerSecondaryPressed())
+			{
+				SetAppState(AppState::Hub);
+			}
+			else if (ArcadeInput::isControllerConfirmPressed() || ArcadeInput::isControllerPrimaryPressed())
+			{
+				game2Game.reset(window.getSize());
+				SetAppState(AppState::GAME2_Game);
+			}
+		}
+		else if (appState == AppState::GAME2_Game)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+				SetAppState(AppState::GAME2_Menu);
 		}
 
 		ApplyWindowView(window);

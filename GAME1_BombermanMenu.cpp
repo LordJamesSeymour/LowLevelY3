@@ -1,6 +1,5 @@
 #include "GAME1_BombermanMenu.h"
 
-
 #include <filesystem>
 
 bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
@@ -9,6 +8,7 @@ bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& b
 
 	m_lastError.clear();
 	m_hasMusic = false;
+	m_selectedButtonIndex = 0;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -52,18 +52,17 @@ bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& b
 	for (Button* button : buttons)
 	{
 		button->box.setSize({ 340.f, 64.f });
-		button->box.setFillColor(sf::Color(35, 35, 45));
-		button->box.setOutlineColor(sf::Color::White);
 		button->box.setOutlineThickness(3.f);
 
 		if (button->text)
 		{
 			button->text->setCharacterSize(28);
-			button->text->setFillColor(sf::Color::White);
 			button->text->setOutlineColor(sf::Color::Black);
 			button->text->setOutlineThickness(2.f);
 		}
 	}
+
+	refreshSelectionVisuals();
 
 	const fs::path audioDirectory = fs::path(bombermanRootDirectory) / "Resources" / "Audio";
 
@@ -171,22 +170,80 @@ void GAME1_BombermanMenu::centerTextInButton(Button& button)
 		});
 }
 
-GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePosition) const
+GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePosition)
 {
-	const Button* buttons[] =
+	for (int i = 0; i < 3; ++i)
 	{
-		&m_playLevelsButton,
-		&m_levelEditorButton,
-		&m_backButton
-	};
-
-	for (const Button* button : buttons)
-	{
-		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
+		Button* button = getButtonByIndex(i);
+		if (button != nullptr && containsPoint(button->box.getGlobalBounds(), mousePosition))
+		{
+			m_selectedButtonIndex = i;
+			refreshSelectionVisuals();
 			return button->action;
+		}
 	}
 
 	return GAME1_BombermanMenuAction::None;
+}
+
+void GAME1_BombermanMenu::selectPreviousButton()
+{
+	m_selectedButtonIndex = (m_selectedButtonIndex + 2) % 3;
+	refreshSelectionVisuals();
+}
+
+void GAME1_BombermanMenu::selectNextButton()
+{
+	m_selectedButtonIndex = (m_selectedButtonIndex + 1) % 3;
+	refreshSelectionVisuals();
+}
+
+GAME1_BombermanMenuAction GAME1_BombermanMenu::activateSelectedButton() const
+{
+	const Button* button = getButtonByIndex(m_selectedButtonIndex);
+	return button != nullptr ? button->action : GAME1_BombermanMenuAction::None;
+}
+
+void GAME1_BombermanMenu::refreshSelectionVisuals()
+{
+	for (int i = 0; i < 3; ++i)
+	{
+		Button* button = getButtonByIndex(i);
+		if (button == nullptr)
+			continue;
+
+		const bool selected = i == m_selectedButtonIndex;
+
+		button->box.setFillColor(selected ? sf::Color(55, 55, 78) : sf::Color(35, 35, 45));
+		button->box.setOutlineColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
+
+		if (button->text)
+		{
+			button->text->setFillColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
+		}
+	}
+}
+
+GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonByIndex(int index)
+{
+	switch (index)
+	{
+	case 0: return &m_playLevelsButton;
+	case 1: return &m_levelEditorButton;
+	case 2: return &m_backButton;
+	default: return nullptr;
+	}
+}
+
+const GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonByIndex(int index) const
+{
+	switch (index)
+	{
+	case 0: return &m_playLevelsButton;
+	case 1: return &m_levelEditorButton;
+	case 2: return &m_backButton;
+	default: return nullptr;
+	}
 }
 
 void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
@@ -201,17 +258,6 @@ void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
 		});
 	background.setFillColor(sf::Color(18, 18, 28));
 	window.draw(background);
-
-	sf::RectangleShape frame;
-	frame.setPosition({ 24.f, 24.f });
-	frame.setSize({
-		static_cast<float>(windowSize.x) - 48.f,
-		static_cast<float>(windowSize.y) - 48.f
-		});
-	frame.setFillColor(sf::Color::Transparent);
-	frame.setOutlineColor(sf::Color(255, 230, 120));
-	frame.setOutlineThickness(3.f);
-	window.draw(frame);
 
 	if (m_titleText)
 		window.draw(*m_titleText);
