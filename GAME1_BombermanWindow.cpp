@@ -251,7 +251,7 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	if (!loadLevelAndActors(true))
 		return false;
 
-	refreshUiText({ 1024, 640 });
+	refreshUiText({ 1024, 600 });
 
 	return true;
 }
@@ -2527,13 +2527,20 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 	if (m_helpText)
 	{
-		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    E: Punch Bomb / Break Block    R: Restart Current Level    ESC: Menu");
+		m_helpText->setString("WASD / Arrows: Move    Space: Bomb    E: Punch / Break Block    R: Restart    ESC: Menu    CTRL+F: Fullscreen");
 
-		const sf::FloatRect bounds = m_helpText->getLocalBounds();
+		m_helpText->setCharacterSize(20);
+
+		sf::FloatRect bounds = m_helpText->getLocalBounds();
+		if (bounds.size.x > static_cast<float>(windowSize.x) - 36.f)
+		{
+			m_helpText->setCharacterSize(18);
+			bounds = m_helpText->getLocalBounds();
+		}
 
 		m_helpText->setPosition({
 			(static_cast<float>(windowSize.x) - bounds.size.x) * 0.5f - bounds.position.x,
-			static_cast<float>(windowSize.y) - 42.f - bounds.position.y
+			static_cast<float>(windowSize.y) - 38.f - bounds.position.y
 			});
 	}
 

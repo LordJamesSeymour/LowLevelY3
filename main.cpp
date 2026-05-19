@@ -50,11 +50,8 @@ namespace
 	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
 	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
 
-#if defined(__linux__)
 	const sf::Vector2u kDefaultWindowSize{ 1024, 600 };
-#else
-	const sf::Vector2u kDefaultWindowSize{ 1024, 640 };
-#endif
+	const char* kWindowTitle = "Arcade Collection";
 
 	enum class AppState
 	{
@@ -116,6 +113,47 @@ namespace
 			return true;
 
 		return texture.resize(newSize);
+	}
+
+
+	bool IsCtrlHeld()
+	{
+		return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) ||
+			sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl);
+	}
+
+	bool RecreateGameWindow(sf::RenderWindow& window,
+		bool fullscreen,
+		sf::Texture& crtFrameTexture,
+		bool& crtShaderEnabled,
+		GAME2_Game* game2Game = nullptr)
+	{
+		if (fullscreen)
+		{
+			window.create(sf::VideoMode::getDesktopMode(), kWindowTitle, sf::State::Fullscreen);
+		}
+		else
+		{
+			window.create(sf::VideoMode(kDefaultWindowSize), kWindowTitle, sf::Style::Default);
+		}
+
+		window.setFramerateLimit(60);
+		ApplyWindowView(window);
+
+		if (!ResizeTexture(crtFrameTexture, window.getSize()))
+		{
+			crtShaderEnabled = false;
+			return false;
+		}
+
+		crtFrameTexture.setSmooth(false);
+
+		if (game2Game != nullptr)
+		{
+			game2Game->reset(window.getSize());
+		}
+
+		return true;
 	}
 
 	std::string TryFindSolutionInFolder(const std::filesystem::path& folder)
@@ -276,7 +314,7 @@ namespace
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode(kDefaultWindowSize), "Arcade Collection");
+	sf::RenderWindow window(sf::VideoMode(kDefaultWindowSize), kWindowTitle);
 	window.setFramerateLimit(60);
 
 	ApplyWindowView(window);
@@ -292,6 +330,7 @@ int main()
 
 	sf::Shader crtShader;
 	bool crtShaderEnabled = false;
+	bool isFullscreen = false;
 
 	if (sf::Shader::isAvailable())
 	{
@@ -579,6 +618,22 @@ int main()
 			}
 		};
 
+	auto ToggleFullscreen = [&]()
+		{
+			isFullscreen = !isFullscreen;
+
+			if (!RecreateGameWindow(
+				window,
+				isFullscreen,
+				crtFrameTexture,
+				crtShaderEnabled,
+				&game2Game))
+			{
+				ShowError("Failed to recreate the game window while toggling fullscreen.");
+				window.close();
+			}
+		};
+
 	sf::Clock clock;
 
 	while (window.isOpen())
@@ -596,6 +651,15 @@ int main()
 			if (event->is<sf::Event::Closed>())
 			{
 				window.close();
+			}
+
+			if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+			{
+				if (keyReleased->code == sf::Keyboard::Key::F && IsCtrlHeld())
+				{
+					ToggleFullscreen();
+					continue;
+				}
 			}
 
 			if (const auto* resized = event->getIf<sf::Event::Resized>())

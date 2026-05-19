@@ -737,7 +737,11 @@ void ArcadeHub::draw(sf::RenderTarget& target) const
 		: static_cast<float>(m_games.size()) * (dotRadius * 2.f) + static_cast<float>(m_games.size() - 1) * dotGap;
 
 	const float dotsStartX = (width - totalDotsWidth) * 0.5f;
-	const float dotsY = m_splashButtonBounds.position.y + m_splashButtonBounds.size.y + 108.f;
+	const sf::FloatRect creditBounds = m_creditText->getGlobalBounds();
+	const float dotsY =
+		creditBounds.position.y +
+		(creditBounds.size.y * 0.5f) -
+		dotRadius;
 
 	for (std::size_t i = 0; i < m_games.size(); ++i)
 	{
