@@ -238,6 +238,8 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 
 	m_onGround = false;
 	m_jumpHeldLastFrame = false;
+	m_phaseHeldLastFrame = false;
+	resetMovementSoundTimers();
 
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
@@ -379,6 +381,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 
 	updateAnimationState();
 	updateAnimation(deltaTime);
+	updateMovementSounds(deltaTime, level);
 
 	if (m_position.y > 1200.f)
 	{
@@ -398,9 +401,17 @@ void GAME1_Player::handleInput(float deltaTime)
 		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
 		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
 
-	if (isDropThroughHeld() && m_onGround)
+	const bool dropThroughHeld = isDropThroughHeld();
+	const bool phasePressedThisFrame = dropThroughHeld && !m_phaseHeldLastFrame;
+
+	if (dropThroughHeld && m_onGround)
 	{
 		m_dropThroughTimer = m_dropThroughDuration;
+
+		if (phasePressedThisFrame && m_groundedOnOneWayPlatform)
+		{
+			GAME1_SurfersQuestAudio::playPlayerPhase();
+		}
 	}
 
 	const bool wallJumpAvailable =
@@ -515,6 +526,7 @@ void GAME1_Player::handleInput(float deltaTime)
 	}
 
 	m_jumpHeldLastFrame = jumpHeld;
+	m_phaseHeldLastFrame = dropThroughHeld;
 }
 
 void GAME1_Player::applyGravity(float deltaTime)
@@ -544,6 +556,7 @@ void GAME1_Player::applyGravity(float deltaTime)
 
 void GAME1_Player::performGroundJump()
 {
+	GAME1_SurfersQuestAudio::playPlayerJump();
 	m_velocity.y = -m_jumpSpeed;
 	m_onGround = false;
 	m_wallGrabActive = false;
@@ -562,6 +575,7 @@ void GAME1_Player::performGroundJump()
 
 void GAME1_Player::performWallJump()
 {
+	GAME1_SurfersQuestAudio::playPlayerJump();
 	m_velocity.y = -m_jumpSpeed;
 
 	if (m_touchingWallLeft && !m_touchingWallRight)
@@ -613,6 +627,7 @@ void GAME1_Player::performWallJump()
 
 void GAME1_Player::performDoubleJump()
 {
+	GAME1_SurfersQuestAudio::playPlayerDoubleJump();
 	m_velocity.y = -m_jumpSpeed;
 	m_onGround = false;
 	m_wallGrabActive = false;
@@ -869,6 +884,7 @@ void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 	if (m_damageCooldownTimer > 0.f)
 		return;
 
+	playDamageOrDeathSoundForDamage(m_spikeDamage);
 	m_health = std::max(0, m_health - m_spikeDamage);
 	m_damageCooldownTimer = m_damageCooldownDuration;
 
@@ -879,6 +895,82 @@ void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 	{
 		loseLifeAndRespawn();
 	}
+}
+
+void GAME1_Player::updateMovementSounds(float deltaTime, const GAME1_Level& level)
+{
+	if (m_gameOver || m_respawning)
+	{
+		resetMovementSoundTimers();
+		return;
+	}
+
+	const bool movingOnGround =
+		m_onGround &&
+		!m_wallGrabActive &&
+		std::abs(m_velocity.x) > 35.f;
+
+	if (movingOnGround)
+	{
+		m_footstepTimer -= deltaTime;
+
+		if (m_footstepTimer <= 0.f)
+		{
+			const sf::FloatRect bounds = getBounds();
+			const sf::Vector2f footPosition(
+				bounds.position.x + bounds.size.x * 0.5f,
+				bounds.position.y + bounds.size.y + 2.f);
+
+			GAME1_SurfersQuestAudio::playFootstep(level.getSurfaceTagAtWorldPosition(footPosition));
+			m_footstepTimer = m_footstepInterval;
+		}
+	}
+	else
+	{
+		m_footstepTimer = 0.f;
+	}
+
+	const bool activelyWallgrabbing =
+		m_wallGrabActive &&
+		std::abs(m_velocity.y) > 2.f;
+
+	if (activelyWallgrabbing)
+	{
+		m_wallgrabSoundTimer -= deltaTime;
+
+		if (m_wallgrabSoundTimer <= 0.f)
+		{
+			GAME1_SurfersQuestAudio::playWallgrab();
+			m_wallgrabSoundTimer = m_wallgrabSoundInterval;
+		}
+	}
+	else
+	{
+		m_wallgrabSoundTimer = 0.f;
+	}
+}
+
+void GAME1_Player::resetMovementSoundTimers()
+{
+	m_footstepTimer = 0.f;
+	m_wallgrabSoundTimer = 0.f;
+}
+
+void GAME1_Player::playDamageOrDeathSoundForDamage(int damage) const
+{
+	if (wouldDamageCauseFinalDeath(damage))
+	{
+		GAME1_SurfersQuestAudio::playPlayerDeath();
+	}
+	else
+	{
+		GAME1_SurfersQuestAudio::playPlayerDamage();
+	}
+}
+
+bool GAME1_Player::wouldDamageCauseFinalDeath(int damage) const
+{
+	return m_health - std::max(0, damage) <= 0 && m_lives <= 1;
 }
 
 void GAME1_Player::startHitAnimation()
@@ -1281,7 +1373,9 @@ void GAME1_Player::takeEnemyDamage(const sf::FloatRect& enemyBounds, int damage)
 	if (m_damageCooldownTimer > 0.f || m_gameOver)
 		return;
 
-	m_health = std::max(0, m_health - std::max(0, damage));
+	const int resolvedDamage = std::max(0, damage);
+	playDamageOrDeathSoundForDamage(resolvedDamage);
+	m_health = std::max(0, m_health - resolvedDamage);
 	m_damageCooldownTimer = m_damageCooldownDuration;
 
 	startHitAnimation();
@@ -1332,6 +1426,8 @@ void GAME1_Player::resetGame()
 
 	m_onGround = false;
 	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+	m_phaseHeldLastFrame = isDropThroughHeld();
+	resetMovementSoundTimers();
 
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
@@ -1385,6 +1481,7 @@ void GAME1_Player::beginGameOver()
 	m_jumpBufferTimer = 0.f;
 	m_variableJumpActive = false;
 	m_releasedJumpGravityActive = false;
+	resetMovementSoundTimers();
 
 	setAnimationState(AnimationState::Idle);
 	GAME1_SurfersQuestAudio::playDeath();
@@ -1415,6 +1512,8 @@ void GAME1_Player::startRespawn()
 
 	m_onGround = false;
 	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+	m_phaseHeldLastFrame = isDropThroughHeld();
+	resetMovementSoundTimers();
 
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
@@ -1455,6 +1554,8 @@ void GAME1_Player::updateRespawn(float deltaTime)
 
 		m_onGround = false;
 		m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_phaseHeldLastFrame = isDropThroughHeld();
+		resetMovementSoundTimers();
 
 		m_coyoteTimer = 0.f;
 		m_jumpBufferTimer = 0.f;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <optional>
 #include <unordered_set>
@@ -618,6 +619,33 @@ char GAME1_Level::getTile(int col, int row) const
 		return 'O';
 
 	return m_rows[row][col];
+}
+
+GAME1_SurfaceTag GAME1_Level::getSurfaceTagForTile(int col, int row) const
+{
+	if (!isInside(col, row))
+		return GAME1_SurfaceTag::Grass;
+
+	const char tile = m_rows[row][col];
+
+	if (isOneWayPlatformCode(tile))
+		return GAME1_SurfaceTag::Floor;
+
+	// Current SurfersQuest world tiles all use grass footsteps.
+	// Rock is implemented as a future surface tag and can be assigned here later
+	// when rock-specific walkable tiles are introduced.
+	if (isFloorTile(tile))
+		return GAME1_SurfaceTag::Grass;
+
+	return GAME1_SurfaceTag::Grass;
+}
+
+GAME1_SurfaceTag GAME1_Level::getSurfaceTagAtWorldPosition(sf::Vector2f worldPosition) const
+{
+	const int col = static_cast<int>(std::floor(worldPosition.x / static_cast<float>(TileSize)));
+	const int row = static_cast<int>(std::floor(worldPosition.y / static_cast<float>(TileSize)));
+
+	return getSurfaceTagForTile(col, row);
 }
 
 int GAME1_Level::getWorldNumber() const

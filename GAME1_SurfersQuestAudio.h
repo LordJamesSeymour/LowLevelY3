@@ -2,8 +2,15 @@
 
 #include <SFML/Audio.hpp>
 
+#include "GAME1_Level.h"
+
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <optional>
+#include <random>
 #include <string>
+#include <vector>
 
 class GAME1_SurfersQuestAudio
 {
@@ -19,6 +26,7 @@ public:
 			return;
 
 		stopAll();
+		clearSfx();
 
 		s_resourcesDirectory = normalisedResourcesPath;
 		s_loaded = true;
@@ -46,6 +54,28 @@ public:
 		{
 			s_deathMusic.setLooping(true);
 			s_deathMusic.setVolume(65.f);
+		}
+
+		const fs::path audioDirectory = resourcesPath / "Audio";
+		const fs::path playerAudioDirectory = audioDirectory / "Player";
+
+		loadBuffer(s_playerDamageBuffer, s_hasPlayerDamageBuffer, (playerAudioDirectory / "PlayerDamage.wav").string());
+		loadBuffer(s_playerDeathBuffer, s_hasPlayerDeathBuffer, (playerAudioDirectory / "PlayerDeath.wav").string());
+		loadBuffer(s_playerJumpBuffer, s_hasPlayerJumpBuffer, (playerAudioDirectory / "PlayerJump.wav").string());
+		loadBuffer(s_playerDoubleJumpBuffer, s_hasPlayerDoubleJumpBuffer, (playerAudioDirectory / "PlayerDoubleJump.wav").string());
+		loadBuffer(s_playerPhaseBuffer, s_hasPlayerPhaseBuffer, (playerAudioDirectory / "PlayerPhase.wav").string());
+		loadBuffer(s_enemyDeathBuffer, s_hasEnemyDeathBuffer, (audioDirectory / "Enemy" / "EnemyDeath.wav").string());
+
+		loadSoundPoolFromDirectory(s_floorStepBuffers, playerAudioDirectory / "Steps" / "Floor");
+		loadSoundPoolFromDirectory(s_grassStepBuffers, playerAudioDirectory / "Steps" / "Grass");
+		loadSoundPoolFromDirectory(s_rockStepBuffers, playerAudioDirectory / "Steps" / "Rock");
+		loadSoundPoolFromDirectory(s_wallgrabBuffers, playerAudioDirectory / "Wallgrab");
+
+		if (!s_rngSeeded)
+		{
+			std::random_device rd;
+			s_rng.seed(rd());
+			s_rngSeeded = true;
 		}
 	}
 
@@ -76,6 +106,60 @@ public:
 			s_deathMusic.stop();
 
 		s_activeTrack = Track::None;
+	}
+
+	static void playPlayerDamage()
+	{
+		playBuffer(s_playerDamageBuffer, s_hasPlayerDamageBuffer, s_playerDamageSound, 100.f);
+	}
+
+	static void playPlayerDeath()
+	{
+		playBuffer(s_playerDeathBuffer, s_hasPlayerDeathBuffer, s_playerDeathSound, 100.f);
+	}
+
+	static void playPlayerJump()
+	{
+		playBuffer(s_playerJumpBuffer, s_hasPlayerJumpBuffer, s_playerJumpSound, 95.f);
+	}
+
+	static void playPlayerDoubleJump()
+	{
+		playBuffer(s_playerDoubleJumpBuffer, s_hasPlayerDoubleJumpBuffer, s_playerDoubleJumpSound, 95.f);
+	}
+
+	static void playPlayerPhase()
+	{
+		playBuffer(s_playerPhaseBuffer, s_hasPlayerPhaseBuffer, s_playerPhaseSound, 95.f);
+	}
+
+	static void playEnemyDeath()
+	{
+		playBuffer(s_enemyDeathBuffer, s_hasEnemyDeathBuffer, s_enemyDeathSound, 100.f);
+	}
+
+	static void playFootstep(GAME1_SurfaceTag surfaceTag)
+	{
+		switch (surfaceTag)
+		{
+		case GAME1_SurfaceTag::Floor:
+			playFromPool(s_floorStepBuffers, s_footstepSound, 78.f);
+			break;
+
+		case GAME1_SurfaceTag::Rock:
+			playFromPool(s_rockStepBuffers, s_footstepSound, 78.f);
+			break;
+
+		case GAME1_SurfaceTag::Grass:
+		default:
+			playFromPool(s_grassStepBuffers, s_footstepSound, 78.f);
+			break;
+		}
+	}
+
+	static void playWallgrab()
+	{
+		playFromPool(s_wallgrabBuffers, s_wallgrabSound, 78.f);
 	}
 
 private:
@@ -166,6 +250,116 @@ private:
 		}
 	}
 
+	static std::string toLower(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(),
+			[](unsigned char c)
+			{
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return value;
+	}
+
+	static bool isWavFile(const std::filesystem::path& path)
+	{
+		return path.has_extension() && toLower(path.extension().string()) == ".wav";
+	}
+
+	static bool loadBuffer(sf::SoundBuffer& buffer, bool& hasBuffer, const std::string& path)
+	{
+		hasBuffer = buffer.loadFromFile(path);
+		return hasBuffer;
+	}
+
+	static void loadSoundPoolFromDirectory(std::vector<sf::SoundBuffer>& buffers, const std::filesystem::path& directory)
+	{
+		namespace fs = std::filesystem;
+
+		buffers.clear();
+
+		if (!fs::exists(directory) || !fs::is_directory(directory))
+			return;
+
+		std::vector<fs::path> paths;
+
+		for (const auto& entry : fs::directory_iterator(directory))
+		{
+			if (entry.is_regular_file() && isWavFile(entry.path()))
+				paths.push_back(entry.path());
+		}
+
+		std::sort(paths.begin(), paths.end(),
+			[](const fs::path& a, const fs::path& b)
+			{
+				return a.filename().string() < b.filename().string();
+			});
+
+		buffers.reserve(paths.size());
+
+		for (const fs::path& path : paths)
+		{
+			sf::SoundBuffer buffer;
+
+			if (buffer.loadFromFile(path.string()))
+				buffers.push_back(std::move(buffer));
+		}
+	}
+
+	static void playBuffer(const sf::SoundBuffer& buffer,
+		bool hasBuffer,
+		std::optional<sf::Sound>& sound,
+		float volume)
+	{
+		if (!hasBuffer)
+			return;
+
+		sound.emplace(buffer);
+		sound->setVolume(volume);
+		sound->setPitch(1.f);
+		sound->play();
+	}
+
+	static void playFromPool(const std::vector<sf::SoundBuffer>& buffers,
+		std::optional<sf::Sound>& sound,
+		float volume)
+	{
+		if (buffers.empty())
+			return;
+
+		std::uniform_int_distribution<std::size_t> distribution(0, buffers.size() - 1);
+		const sf::SoundBuffer& buffer = buffers[distribution(s_rng)];
+
+		sound.emplace(buffer);
+		sound->setVolume(volume);
+		sound->setPitch(1.f);
+		sound->play();
+	}
+
+	static void clearSfx()
+	{
+		s_playerDamageSound.reset();
+		s_playerDeathSound.reset();
+		s_playerJumpSound.reset();
+		s_playerDoubleJumpSound.reset();
+		s_playerPhaseSound.reset();
+		s_enemyDeathSound.reset();
+		s_footstepSound.reset();
+		s_wallgrabSound.reset();
+
+		s_floorStepBuffers.clear();
+		s_grassStepBuffers.clear();
+		s_rockStepBuffers.clear();
+		s_wallgrabBuffers.clear();
+
+		s_hasPlayerDamageBuffer = false;
+		s_hasPlayerDeathBuffer = false;
+		s_hasPlayerJumpBuffer = false;
+		s_hasPlayerDoubleJumpBuffer = false;
+		s_hasPlayerPhaseBuffer = false;
+		s_hasEnemyDeathBuffer = false;
+	}
+
 private:
 	inline static sf::Music s_menuMusic;
 	inline static sf::Music s_gameplayMusic;
@@ -175,7 +369,38 @@ private:
 	inline static bool s_hasGameplayMusic = false;
 	inline static bool s_hasDeathMusic = false;
 
+	inline static sf::SoundBuffer s_playerDamageBuffer;
+	inline static sf::SoundBuffer s_playerDeathBuffer;
+	inline static sf::SoundBuffer s_playerJumpBuffer;
+	inline static sf::SoundBuffer s_playerDoubleJumpBuffer;
+	inline static sf::SoundBuffer s_playerPhaseBuffer;
+	inline static sf::SoundBuffer s_enemyDeathBuffer;
+
+	inline static bool s_hasPlayerDamageBuffer = false;
+	inline static bool s_hasPlayerDeathBuffer = false;
+	inline static bool s_hasPlayerJumpBuffer = false;
+	inline static bool s_hasPlayerDoubleJumpBuffer = false;
+	inline static bool s_hasPlayerPhaseBuffer = false;
+	inline static bool s_hasEnemyDeathBuffer = false;
+
+	inline static std::vector<sf::SoundBuffer> s_floorStepBuffers;
+	inline static std::vector<sf::SoundBuffer> s_grassStepBuffers;
+	inline static std::vector<sf::SoundBuffer> s_rockStepBuffers;
+	inline static std::vector<sf::SoundBuffer> s_wallgrabBuffers;
+
+	inline static std::optional<sf::Sound> s_playerDamageSound;
+	inline static std::optional<sf::Sound> s_playerDeathSound;
+	inline static std::optional<sf::Sound> s_playerJumpSound;
+	inline static std::optional<sf::Sound> s_playerDoubleJumpSound;
+	inline static std::optional<sf::Sound> s_playerPhaseSound;
+	inline static std::optional<sf::Sound> s_enemyDeathSound;
+	inline static std::optional<sf::Sound> s_footstepSound;
+	inline static std::optional<sf::Sound> s_wallgrabSound;
+
 	inline static bool s_loaded = false;
 	inline static std::string s_resourcesDirectory;
 	inline static Track s_activeTrack = Track::None;
+
+	inline static std::mt19937 s_rng;
+	inline static bool s_rngSeeded = false;
 };

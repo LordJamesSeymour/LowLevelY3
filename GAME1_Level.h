@@ -18,6 +18,13 @@ struct GAME1_LevelEnemySpawn
 	sf::Vector2f position{ 0.f, 0.f };
 };
 
+enum class GAME1_SurfaceTag
+{
+	Grass,
+	Rock,
+	Floor
+};
+
 // This class owns the tile map data for Game 1 / SurfersQuest.
 // It loads the map, draws all world-specific floor tile variants,
 // and answers collision / special-tile queries.
@@ -57,6 +64,8 @@ public:
 	bool isSpikeTrapTile(int col, int row) const;
 	bool isOneWayPlatformTile(int col, int row) const;
 	char getTile(int col, int row) const;
+	GAME1_SurfaceTag getSurfaceTagForTile(int col, int row) const;
+	GAME1_SurfaceTag getSurfaceTagAtWorldPosition(sf::Vector2f worldPosition) const;
 
 	int getWorldNumber() const;
 	sf::Vector2f getPlayerSpawnPosition() const;

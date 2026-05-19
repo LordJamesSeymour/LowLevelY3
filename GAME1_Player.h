@@ -75,6 +75,10 @@ private:
 
 	void checkSpikeTrapCollisions(GAME1_Level& level);
 	void takeSpikeDamage(const sf::FloatRect& spikeBounds);
+	void updateMovementSounds(float deltaTime, const GAME1_Level& level);
+	void resetMovementSoundTimers();
+	void playDamageOrDeathSoundForDamage(int damage) const;
+	bool wouldDamageCauseFinalDeath(int damage) const;
 	void startHitAnimation();
 	void applyKnockbackFromTile(const sf::FloatRect& tileBounds);
 
@@ -156,6 +160,7 @@ private:
 
 	bool m_onGround = false;
 	bool m_jumpHeldLastFrame = false;
+	bool m_phaseHeldLastFrame = false;
 
 	float m_coyoteTimer = 0.f;
 	float m_coyoteTime = 0.30f;
@@ -186,6 +191,11 @@ private:
 
 	float m_drawWidth = 48.f;
 	float m_drawHeight = 48.f;
+
+	float m_footstepTimer = 0.f;
+	float m_footstepInterval = 0.24f;
+	float m_wallgrabSoundTimer = 0.f;
+	float m_wallgrabSoundInterval = 0.18f;
 
 	sf::Font m_uiFont;
 	bool m_hasUiFont = false;

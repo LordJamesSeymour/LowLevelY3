@@ -2,6 +2,7 @@
 
 #include "GAME1_Level.h"
 #include "GAME1_Player.h"
+#include "GAME1_SurfersQuestAudio.h"
 
 #include <algorithm>
 #include <cctype>
@@ -535,6 +536,7 @@ void GAME1_Enemy::takeStompDamage()
 
 	if (m_health <= 0)
 	{
+		GAME1_SurfersQuestAudio::playEnemyDeath();
 		m_alive = false;
 		m_state = BehaviourState::Hit;
 		m_velocity = { 0.f, 0.f };

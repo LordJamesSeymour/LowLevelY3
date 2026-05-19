@@ -1,4 +1,10 @@
-﻿sfml-graphics-s-d.lib(Transformable.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Transformable.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+﻿  GAME1_Enemy.cpp
+  GAME1_Level.cpp
+  GAME1_Menu.cpp
+  GAME1_Player.cpp
+  main.cpp
+  Generating Code...
+sfml-graphics-s-d.lib(Transformable.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Transformable.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Shape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(CircleShape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(CircleShape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Texture.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Texture.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
