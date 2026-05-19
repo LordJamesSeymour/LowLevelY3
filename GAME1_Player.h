@@ -54,6 +54,7 @@ private:
 	void applyGravity(float deltaTime);
 
 	void performGroundJump();
+	void performWallJump();
 	void performDoubleJump();
 
 	void moveHorizontal(float deltaTime, GAME1_Level& level);
@@ -101,42 +102,31 @@ private:
 	sf::Vector2f m_spawnPosition{ 100.f, 100.f };
 	sf::Vector2f m_velocity{ 0.f, 0.f };
 
-	// 1.5x faster than the older 220 value.
 	float m_moveSpeed = 330.f;
-
-	// Current tuned jump strength.
 	float m_jumpSpeed = 650.f;
-
 	float m_gravity = 1500.f;
 
-	// Slower acceleration so the build-up is actually visible.
 	float m_momentumBuildTime = 0.35f;
-
-	// Longer stop time so releasing input gives a visible slide.
 	float m_frictionStopTime = 0.55f;
 
-	// Apex modifier:
-	// For roughly 0.15s before the apex and 0.15s after the apex,
-	// gravity is reduced slightly so the player gets more air control
-	// without receiving extra horizontal speed.
 	float m_apexGravityTimeWindow = 0.15f;
 	float m_apexGravityMultiplier = 0.65f;
 
-	// Wall grab:
-	// When falling while touching a solid wall, falling speed is clamped to 25%,
-	// which is the requested 75% reduction.
 	float m_wallGrabBaseFallSpeed = 700.f;
 	float m_wallGrabFallSpeedMultiplier = 0.25f;
+
+	float m_wallJumpNudgeDistance = 5.f;
+	float m_wallJumpControlLockTimer = 0.f;
+	float m_wallJumpControlLockDuration = 0.16f;
+
 	bool m_wallGrabActive = false;
 	bool m_touchingWallLeft = false;
 	bool m_touchingWallRight = false;
 
-	// One-way platform drop-through.
 	float m_dropThroughTimer = 0.f;
 	float m_dropThroughDuration = 0.22f;
 	bool m_groundedOnOneWayPlatform = false;
 
-	// Spike trap / health system.
 	int m_maxHealth = 100;
 	int m_health = 100;
 	int m_spikeDamage = 25;
@@ -159,10 +149,8 @@ private:
 	bool m_canDoubleJump = true;
 	bool m_doubleJumpAnimationPlaying = false;
 
-	// Variable jump only applies to the normal jump, never the double jump.
 	bool m_variableJumpActive = false;
 
-	// Instead of killing velocity on jump release, we increase gravity while rising.
 	bool m_releasedJumpGravityActive = false;
 	float m_releasedJumpGravityMultiplier = 4.0f;
 

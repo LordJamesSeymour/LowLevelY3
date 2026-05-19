@@ -121,13 +121,16 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 	const fs::path jumpDirectory = playerRootDirectory / "PlayerJump";
 	const fs::path doubleJumpDirectory = playerRootDirectory / "PlayerDoubleJump";
 	const fs::path fallDirectory = playerRootDirectory / "PlayerFall";
+
 	const fs::path wallGrabDirectory = ResolveFirstExistingDirectory(
 		{
 			playerRootDirectory / "PlayerWallgrab",
 			playerRootDirectory / "PlayerWallGrab",
 			playerRootDirectory / "PlayerWallgrabAnimation",
-			playerRootDirectory / "Wallgrab"
+			playerRootDirectory / "Wallgrab",
+			playerRootDirectory / "WallGrab"
 		});
+
 	const fs::path hitDirectory = ResolveFirstExistingDirectory(
 		{
 			playerRootDirectory / "PlayerHit",
@@ -212,6 +215,8 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 	m_wallGrabActive = false;
 	m_touchingWallLeft = false;
 	m_touchingWallRight = false;
+	m_wallJumpControlLockTimer = 0.f;
+
 	m_dropThroughTimer = 0.f;
 	m_groundedOnOneWayPlatform = false;
 
@@ -311,15 +316,25 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 	}
 
 	m_previousPosition = m_position;
+
 	m_damageCooldownTimer = std::max(0.f, m_damageCooldownTimer - deltaTime);
 	m_dropThroughTimer = std::max(0.f, m_dropThroughTimer - deltaTime);
+	m_wallJumpControlLockTimer = std::max(0.f, m_wallJumpControlLockTimer - deltaTime);
+
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+
+	updateWallGrabState(level);
 
 	handleInput(deltaTime);
 	applyGravity(deltaTime);
 
 	moveHorizontal(deltaTime, level);
 	updateWallGrabState(level);
+
 	moveVertical(deltaTime, level);
+	updateWallGrabState(level);
+
 	checkSpikeTrapCollisions(level);
 
 	updateAnimationState();
@@ -348,55 +363,68 @@ void GAME1_Player::handleInput(float deltaTime)
 		m_dropThroughTimer = m_dropThroughDuration;
 	}
 
-	float targetVelocityX = 0.f;
+	const bool wallJumpAvailable =
+		!m_onGround &&
+		(m_wallGrabActive || m_touchingWallLeft || m_touchingWallRight);
 
-	if (leftHeld && !rightHeld)
+	if (m_wallJumpControlLockTimer <= 0.f)
 	{
-		targetVelocityX = -m_moveSpeed;
-		m_facingDirection = FacingDirection::Left;
-		m_horizontalInputHeld = true;
-	}
-	else if (rightHeld && !leftHeld)
-	{
-		targetVelocityX = m_moveSpeed;
-		m_facingDirection = FacingDirection::Right;
-		m_horizontalInputHeld = true;
-	}
-	else
-	{
-		targetVelocityX = 0.f;
-		m_horizontalInputHeld = false;
-	}
+		float targetVelocityX = 0.f;
 
-	const float accelerationPerSecond =
-		m_moveSpeed / std::max(0.001f, m_momentumBuildTime);
-
-	const float noInputFrictionPerSecond =
-		m_moveSpeed / std::max(0.001f, m_frictionStopTime);
-
-	if (m_horizontalInputHeld)
-	{
-		m_velocity.x = moveTowards(
-			m_velocity.x,
-			targetVelocityX,
-			accelerationPerSecond * deltaTime
-		);
-	}
-	else
-	{
-		m_velocity.x = moveTowards(
-			m_velocity.x,
-			0.f,
-			noInputFrictionPerSecond * deltaTime
-		);
-
-		if (std::abs(m_velocity.x) < 0.01f)
+		if (leftHeld && !rightHeld)
 		{
-			m_velocity.x = 0.f;
+			targetVelocityX = -m_moveSpeed;
+			m_facingDirection = FacingDirection::Left;
+			m_horizontalInputHeld = true;
+		}
+		else if (rightHeld && !leftHeld)
+		{
+			targetVelocityX = m_moveSpeed;
+			m_facingDirection = FacingDirection::Right;
+			m_horizontalInputHeld = true;
+		}
+		else
+		{
+			targetVelocityX = 0.f;
+			m_horizontalInputHeld = false;
+		}
+
+		const float accelerationPerSecond =
+			m_moveSpeed / std::max(0.001f, m_momentumBuildTime);
+
+		const float noInputFrictionPerSecond =
+			m_moveSpeed / std::max(0.001f, m_frictionStopTime);
+
+		if (m_horizontalInputHeld)
+		{
+			m_velocity.x = moveTowards(
+				m_velocity.x,
+				targetVelocityX,
+				accelerationPerSecond * deltaTime
+			);
+		}
+		else
+		{
+			m_velocity.x = moveTowards(
+				m_velocity.x,
+				0.f,
+				noInputFrictionPerSecond * deltaTime
+			);
+
+			if (std::abs(m_velocity.x) < 0.01f)
+			{
+				m_velocity.x = 0.f;
+			}
 		}
 	}
 
-	if (m_onGround)
+	const bool technicallyGrounded =
+		m_onGround ||
+		m_wallGrabActive ||
+		m_touchingWallLeft ||
+		m_touchingWallRight;
+
+	if (technicallyGrounded)
 	{
 		m_coyoteTimer = m_coyoteTime;
 		m_canDoubleJump = true;
@@ -432,9 +460,11 @@ void GAME1_Player::handleInput(float deltaTime)
 
 	if (m_jumpBufferTimer > 0.f)
 	{
-		const bool canUseGroundOrCoyoteJump = m_onGround || m_coyoteTimer > 0.f;
-
-		if (canUseGroundOrCoyoteJump)
+		if (wallJumpAvailable)
+		{
+			performWallJump();
+		}
+		else if (m_onGround || m_coyoteTimer > 0.f)
 		{
 			performGroundJump();
 		}
@@ -451,17 +481,11 @@ void GAME1_Player::applyGravity(float deltaTime)
 {
 	float gravityMultiplier = 1.f;
 
-	// Apex modifier:
-	// Near the top of the jump arc, gravity is softened instead of boosting speed.
-	// This gives the player a little extra air-control time without changing horizontal speed.
 	if (isWithinApexGravityWindow())
 	{
 		gravityMultiplier *= m_apexGravityMultiplier;
 	}
 
-	// Variable jump height:
-	// Releasing Space early still increases gravity while rising.
-	// This stacks with the apex modifier if the release happens near the apex.
 	if (m_variableJumpActive &&
 		m_releasedJumpGravityActive &&
 		m_velocity.y < 0.f)
@@ -496,6 +520,59 @@ void GAME1_Player::performGroundJump()
 	setAnimationState(AnimationState::Jump);
 }
 
+void GAME1_Player::performWallJump()
+{
+	float awayFromWallDirection = 0.f;
+
+	if (m_touchingWallLeft && !m_touchingWallRight)
+	{
+		awayFromWallDirection = 1.f;
+	}
+	else if (m_touchingWallRight && !m_touchingWallLeft)
+	{
+		awayFromWallDirection = -1.f;
+	}
+	else
+	{
+		awayFromWallDirection =
+			m_facingDirection == FacingDirection::Left
+			? 1.f
+			: -1.f;
+	}
+
+	// Normalised 45-degree jump.
+	// Direction is: away from wall + upward.
+	// Dividing by sqrt(2) keeps the total jump force equal to m_jumpSpeed.
+	const float diagonalComponent = m_jumpSpeed / std::sqrt(2.f);
+
+	m_velocity.x = awayFromWallDirection * diagonalComponent;
+	m_velocity.y = -diagonalComponent;
+
+	m_position.x += awayFromWallDirection * m_wallJumpNudgeDistance;
+
+	m_facingDirection = awayFromWallDirection > 0.f
+		? FacingDirection::Right
+		: FacingDirection::Left;
+
+	m_onGround = false;
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+
+	m_wallJumpControlLockTimer = m_wallJumpControlLockDuration;
+
+	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
+
+	m_canDoubleJump = true;
+	m_doubleJumpAnimationPlaying = false;
+
+	m_variableJumpActive = true;
+	m_releasedJumpGravityActive = false;
+
+	setAnimationState(AnimationState::Jump);
+}
+
 void GAME1_Player::performDoubleJump()
 {
 	m_velocity.y = -m_jumpSpeed;
@@ -516,9 +593,6 @@ void GAME1_Player::performDoubleJump()
 
 void GAME1_Player::moveHorizontal(float deltaTime, GAME1_Level& level)
 {
-	m_touchingWallLeft = false;
-	m_touchingWallRight = false;
-
 	m_position.x += m_velocity.x * deltaTime;
 
 	sf::FloatRect bounds = getBounds();
@@ -585,16 +659,26 @@ void GAME1_Player::updateWallGrabState(GAME1_Level& level)
 
 	m_wallGrabActive = true;
 
+	m_coyoteTimer = m_coyoteTime;
+	m_canDoubleJump = true;
+	m_doubleJumpAnimationPlaying = false;
+
 	const float wallGrabMaxFallSpeed =
 		std::max(1.f, m_wallGrabBaseFallSpeed * m_wallGrabFallSpeedMultiplier);
 
 	if (m_velocity.y > wallGrabMaxFallSpeed)
+	{
 		m_velocity.y = wallGrabMaxFallSpeed;
+	}
 
 	if (m_touchingWallLeft && !m_touchingWallRight)
+	{
 		m_facingDirection = FacingDirection::Left;
+	}
 	else if (m_touchingWallRight && !m_touchingWallLeft)
+	{
 		m_facingDirection = FacingDirection::Right;
+	}
 }
 
 bool GAME1_Player::detectWallContact(GAME1_Level& level, bool& touchingLeft, bool& touchingRight) const
@@ -606,16 +690,24 @@ bool GAME1_Player::detectWallContact(GAME1_Level& level, bool& touchingLeft, boo
 
 	const int topTile = GetTopTile(bounds);
 	const int bottomTile = GetBottomTile(bounds);
-	const int leftProbeTile = static_cast<int>(std::floor((bounds.position.x - 1.f) / static_cast<float>(GAME1_Level::TileSize)));
-	const int rightProbeTile = static_cast<int>(std::floor((bounds.position.x + bounds.size.x + 1.f) / static_cast<float>(GAME1_Level::TileSize)));
+
+	const int leftProbeTile =
+		static_cast<int>(std::floor((bounds.position.x - 2.f) / static_cast<float>(GAME1_Level::TileSize)));
+
+	const int rightProbeTile =
+		static_cast<int>(std::floor((bounds.position.x + bounds.size.x + 2.f) / static_cast<float>(GAME1_Level::TileSize)));
 
 	for (int row = topTile; row <= bottomTile; ++row)
 	{
 		if (level.isSolidTile(leftProbeTile, row))
+		{
 			touchingLeft = true;
+		}
 
 		if (level.isSolidTile(rightProbeTile, row))
+		{
 			touchingRight = true;
+		}
 	}
 
 	return touchingLeft || touchingRight;
@@ -644,6 +736,7 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 			const bool solidTile = level.isSolidTile(col, bottomTile);
 
 			bool oneWayPlatformCollision = false;
+
 			if (!solidTile && level.isOneWayPlatformTile(col, bottomTile))
 			{
 				const float platformTop = static_cast<float>(bottomTile * GAME1_Level::TileSize);
@@ -714,8 +807,14 @@ void GAME1_Player::checkSpikeTrapCollisions(GAME1_Level& level)
 				continue;
 
 			const sf::FloatRect spikeBounds(
-				{ static_cast<float>(col * GAME1_Level::TileSize), static_cast<float>(row * GAME1_Level::TileSize) },
-				{ static_cast<float>(GAME1_Level::TileSize), static_cast<float>(GAME1_Level::TileSize) }
+				{
+					static_cast<float>(col * GAME1_Level::TileSize),
+					static_cast<float>(row * GAME1_Level::TileSize)
+				},
+				{
+					static_cast<float>(GAME1_Level::TileSize),
+					static_cast<float>(GAME1_Level::TileSize)
+				}
 			);
 
 			if (rectsIntersect(playerBounds, spikeBounds))
@@ -753,9 +852,11 @@ void GAME1_Player::startHitAnimation()
 void GAME1_Player::applyKnockbackFromTile(const sf::FloatRect& tileBounds)
 {
 	const sf::FloatRect playerBounds = getBounds();
+
 	const sf::Vector2f playerCenter(
 		playerBounds.position.x + playerBounds.size.x * 0.5f,
 		playerBounds.position.y + playerBounds.size.y * 0.5f);
+
 	const sf::Vector2f tileCenter(
 		tileBounds.position.x + tileBounds.size.x * 0.5f,
 		tileBounds.position.y + tileBounds.size.y * 0.5f);
@@ -789,14 +890,20 @@ void GAME1_Player::applyKnockbackFromTile(const sf::FloatRect& tileBounds)
 	}
 
 	if (std::abs(direction.x) < 0.15f)
+	{
 		direction.x = 0.f;
+	}
 
 	m_velocity.x = direction.x * m_spikeKnockbackHorizontal;
 
 	if (direction.y < 0.f || std::abs(direction.y) < 0.15f)
+	{
 		m_velocity.y = -m_spikeKnockbackVertical;
+	}
 	else
+	{
 		m_velocity.y = m_spikeKnockbackVertical * 0.45f;
+	}
 
 	m_onGround = false;
 	m_wallGrabActive = false;
@@ -995,6 +1102,7 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		sf::Sprite sprite(*texture);
 
 		const sf::FloatRect localBounds = sprite.getLocalBounds();
+
 		if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
 		{
 			const float scaleX = m_drawWidth / localBounds.size.x;
@@ -1019,6 +1127,7 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		const sf::View view = target.getView();
 		const sf::Vector2f viewSize = view.getSize();
 		const sf::Vector2f viewCenter = view.getCenter();
+
 		const sf::Vector2f topLeft(
 			viewCenter.x - viewSize.x * 0.5f,
 			viewCenter.y - viewSize.y * 0.5f);
@@ -1030,6 +1139,7 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		healthText.setOutlineColor(sf::Color::Black);
 		healthText.setOutlineThickness(2.f);
 		healthText.setPosition({ topLeft.x + 18.f, topLeft.y + 16.f });
+
 		target.draw(healthText);
 	}
 }
@@ -1072,25 +1182,32 @@ void GAME1_Player::startRespawn()
 
 	m_respawning = true;
 	m_respawnTimer = m_respawnDuration;
+
 	m_health = m_maxHealth;
 	m_damageCooldownTimer = 0.f;
 	m_hitAnimationPlaying = false;
+
 	m_dropThroughTimer = 0.f;
 	m_wallGrabActive = false;
 	m_touchingWallLeft = false;
 	m_touchingWallRight = false;
+	m_wallJumpControlLockTimer = 0.f;
 	m_groundedOnOneWayPlatform = false;
+
 	m_velocity = { 0.f, 0.f };
 	m_position = m_spawnPosition;
 	m_previousPosition = m_spawnPosition;
+
 	m_onGround = false;
 	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
 	m_coyoteTimer = 0.f;
 	m_jumpBufferTimer = 0.f;
 	m_canDoubleJump = true;
 	m_doubleJumpAnimationPlaying = false;
 	m_variableJumpActive = false;
 	m_releasedJumpGravityActive = false;
+
 	setAnimationState(AnimationState::Idle);
 }
 
@@ -1105,25 +1222,32 @@ void GAME1_Player::updateRespawn(float deltaTime)
 	{
 		m_respawning = false;
 		m_respawnTimer = 0.f;
+
 		m_health = m_maxHealth;
 		m_damageCooldownTimer = 0.f;
 		m_hitAnimationPlaying = false;
+
 		m_dropThroughTimer = 0.f;
 		m_wallGrabActive = false;
 		m_touchingWallLeft = false;
 		m_touchingWallRight = false;
+		m_wallJumpControlLockTimer = 0.f;
 		m_groundedOnOneWayPlatform = false;
+
 		m_position = m_spawnPosition;
 		m_previousPosition = m_spawnPosition;
 		m_velocity = { 0.f, 0.f };
+
 		m_onGround = false;
 		m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
 		m_coyoteTimer = 0.f;
 		m_jumpBufferTimer = 0.f;
 		m_canDoubleJump = true;
 		m_doubleJumpAnimationPlaying = false;
 		m_variableJumpActive = false;
 		m_releasedJumpGravityActive = false;
+
 		setAnimationState(AnimationState::Idle);
 	}
 }
