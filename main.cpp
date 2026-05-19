@@ -6,7 +6,11 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <iostream>
+
+#if defined(_WIN32)
 #include <windows.h>
+#endif
 
 #include "ArcadeHub.h"
 
@@ -46,6 +50,12 @@ namespace
 	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
 	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
 
+#if defined(__linux__)
+	const sf::Vector2u kDefaultWindowSize{ 1024, 600 };
+#else
+	const sf::Vector2u kDefaultWindowSize{ 1024, 640 };
+#endif
+
 	enum class AppState
 	{
 		Hub,
@@ -66,12 +76,20 @@ namespace
 
 	void ShowError(const std::string& message)
 	{
+#if defined(_WIN32)
 		MessageBoxA(nullptr, message.c_str(), "Project Error", MB_OK | MB_ICONERROR);
+#else
+		std::cerr << "[PROJECT ERROR] " << message << std::endl;
+#endif
 	}
 
 	void ShowInfo(const std::string& message)
 	{
+#if defined(_WIN32)
 		MessageBoxA(nullptr, message.c_str(), "Info", MB_OK | MB_ICONINFORMATION);
+#else
+		std::cout << "[INFO] " << message << std::endl;
+#endif
 	}
 
 	void ApplyWindowView(sf::RenderWindow& window)
@@ -136,7 +154,7 @@ namespace
 			folder = folder.parent_path();
 		}
 
-		return "Project Name";
+		return "LLGP";
 	}
 
 	bool IsValidLevelFile(const std::filesystem::path& path)
@@ -258,7 +276,7 @@ namespace
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode({ 1024, 640 }), "Arcade Collection");
+	sf::RenderWindow window(sf::VideoMode(kDefaultWindowSize), "Arcade Collection");
 	window.setFramerateLimit(60);
 
 	ApplyWindowView(window);
