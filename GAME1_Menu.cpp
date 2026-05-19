@@ -1,5 +1,9 @@
 #include "GAME1_Menu.h"
 
+#include "GAME1_SurfersQuestAudio.h"
+
+#include <filesystem>
+
 bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 	const std::string& logoTexturePath,
 	const std::string& playButtonTexturePath,
@@ -11,6 +15,8 @@ bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 	(void)levelEditorTexturePath;
 
 	m_lastError.clear();
+
+	GAME1_SurfersQuestAudio::initialise((std::filesystem::path("assets") / "Game#1" / "SurfersQuest" / "Resources").string());
 
 	const std::string fontPath = "assets/menu.ttf";
 
@@ -74,6 +80,7 @@ bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 
 void GAME1_Menu::layout(const sf::RenderWindow& window)
 {
+	startMusic();
 	const float windowWidth = static_cast<float>(window.getSize().x);
 	const float windowHeight = static_cast<float>(window.getSize().y);
 
@@ -122,7 +129,7 @@ void GAME1_Menu::centerTextInButton(Button& button)
 		});
 }
 
-GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition) const
+GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 {
 	const Button* buttons[] =
 	{
@@ -134,10 +141,28 @@ GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition) const
 	for (const Button* button : buttons)
 	{
 		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
+		{
+			// Keep Menu_01 playing when going from the SurfersQuest menu
+			// into the SurfersQuest level selector.
+			// Stop it only when leaving the SurfersQuest menu flow.
+			if (button->action != GAME1_MenuAction::Play)
+				stopMusic();
+
 			return button->action;
+		}
 	}
 
 	return GAME1_MenuAction::None;
+}
+
+void GAME1_Menu::startMusic()
+{
+	GAME1_SurfersQuestAudio::playMenu();
+}
+
+void GAME1_Menu::stopMusic()
+{
+	GAME1_SurfersQuestAudio::stopAll();
 }
 
 void GAME1_Menu::draw(sf::RenderWindow& window) const

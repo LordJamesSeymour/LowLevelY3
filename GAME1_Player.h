@@ -15,6 +15,9 @@ public:
 	void update(float deltaTime, GAME1_Level& level);
 	void draw(sf::RenderTarget& target) const;
 
+	void resetGame();
+	void stopMusic();
+
 	sf::FloatRect getBounds() const;
 
 	bool isRespawning() const;
@@ -22,6 +25,9 @@ public:
 
 	int getHealth() const;
 	int getMaxHealth() const;
+	int getLives() const;
+	int getMaxLives() const;
+	bool isGameOver() const;
 
 	const std::string& getLastError() const;
 
@@ -76,6 +82,8 @@ private:
 		const std::string& directoryPath,
 		const std::string& readableName);
 
+	void loseLifeAndRespawn();
+	void beginGameOver();
 	void startRespawn();
 	void updateRespawn(float deltaTime);
 
@@ -115,6 +123,7 @@ private:
 	float m_wallGrabBaseFallSpeed = 700.f;
 	float m_wallGrabFallSpeedMultiplier = 0.25f;
 
+	float m_wallJumpHorizontalSpeed = 520.f;
 	float m_wallJumpNudgeDistance = 5.f;
 	float m_wallJumpControlLockTimer = 0.f;
 	float m_wallJumpControlLockDuration = 0.16f;
@@ -129,6 +138,10 @@ private:
 
 	int m_maxHealth = 100;
 	int m_health = 100;
+
+	int m_maxLives = 3;
+	int m_lives = 3;
+	bool m_gameOver = false;
 	int m_spikeDamage = 25;
 	float m_damageCooldownTimer = 0.f;
 	float m_damageCooldownDuration = 0.75f;

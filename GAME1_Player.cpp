@@ -2,6 +2,8 @@
 
 #include "GAME1_Level.h"
 
+#include "GAME1_SurfersQuestAudio.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -203,12 +205,26 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 
 	m_hasUiFont = m_uiFont.openFromFile("assets/menu.ttf");
 
+	fs::path resourcesDirectory = playerRootDirectory;
+
+	if (ToLower(resourcesDirectory.filename().string()) != "resources")
+	{
+		const fs::path parentDirectory = playerRootDirectory.parent_path();
+
+		if (!parentDirectory.empty())
+			resourcesDirectory = parentDirectory;
+	}
+
+	GAME1_SurfersQuestAudio::initialise(resourcesDirectory.string());
+
 	m_position = startPosition;
 	m_previousPosition = startPosition;
 	m_spawnPosition = startPosition;
 	m_velocity = { 0.f, 0.f };
 
 	m_health = m_maxHealth;
+	m_lives = m_maxLives;
+	m_gameOver = false;
 	m_damageCooldownTimer = 0.f;
 	m_hitAnimationPlaying = false;
 
@@ -307,6 +323,30 @@ bool GAME1_Player::loadAnimationFramesFromDirectory(AnimationSet& animation,
 
 void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 {
+	if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape))
+	{
+		stopMusic();
+	}
+
+	if (m_gameOver)
+	{
+		GAME1_SurfersQuestAudio::playDeath();
+
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter))
+		{
+			resetGame();
+		}
+		else
+		{
+			setAnimationState(AnimationState::Idle);
+			updateAnimation(deltaTime);
+		}
+
+		return;
+	}
+
+	GAME1_SurfersQuestAudio::playGameplay();
+
 	if (m_respawning)
 	{
 		setAnimationState(AnimationState::Idle);
@@ -342,7 +382,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 
 	if (m_position.y > 1200.f)
 	{
-		startRespawn();
+		loseLifeAndRespawn();
 	}
 }
 
@@ -522,37 +562,35 @@ void GAME1_Player::performGroundJump()
 
 void GAME1_Player::performWallJump()
 {
-	float awayFromWallDirection = 0.f;
+	m_velocity.y = -m_jumpSpeed;
 
 	if (m_touchingWallLeft && !m_touchingWallRight)
 	{
-		awayFromWallDirection = 1.f;
+		m_position.x += m_wallJumpNudgeDistance;
+		m_velocity.x = m_wallJumpHorizontalSpeed;
+		m_facingDirection = FacingDirection::Right;
 	}
 	else if (m_touchingWallRight && !m_touchingWallLeft)
 	{
-		awayFromWallDirection = -1.f;
+		m_position.x -= m_wallJumpNudgeDistance;
+		m_velocity.x = -m_wallJumpHorizontalSpeed;
+		m_facingDirection = FacingDirection::Left;
 	}
 	else
 	{
-		awayFromWallDirection =
-			m_facingDirection == FacingDirection::Left
-			? 1.f
-			: -1.f;
+		if (m_facingDirection == FacingDirection::Left)
+		{
+			m_position.x += m_wallJumpNudgeDistance;
+			m_velocity.x = m_wallJumpHorizontalSpeed;
+			m_facingDirection = FacingDirection::Right;
+		}
+		else
+		{
+			m_position.x -= m_wallJumpNudgeDistance;
+			m_velocity.x = -m_wallJumpHorizontalSpeed;
+			m_facingDirection = FacingDirection::Left;
+		}
 	}
-
-	// Normalised 45-degree jump.
-	// Direction is: away from wall + upward.
-	// Dividing by sqrt(2) keeps the total jump force equal to m_jumpSpeed.
-	const float diagonalComponent = m_jumpSpeed / std::sqrt(2.f);
-
-	m_velocity.x = awayFromWallDirection * diagonalComponent;
-	m_velocity.y = -diagonalComponent;
-
-	m_position.x += awayFromWallDirection * m_wallJumpNudgeDistance;
-
-	m_facingDirection = awayFromWallDirection > 0.f
-		? FacingDirection::Right
-		: FacingDirection::Left;
 
 	m_onGround = false;
 	m_wallGrabActive = false;
@@ -839,7 +877,7 @@ void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 
 	if (m_health <= 0)
 	{
-		startRespawn();
+		loseLifeAndRespawn();
 	}
 }
 
@@ -1141,6 +1179,54 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		healthText.setPosition({ topLeft.x + 18.f, topLeft.y + 16.f });
 
 		target.draw(healthText);
+
+		sf::Text livesText(m_uiFont);
+		livesText.setString("Lives: " + std::to_string(m_lives) + " / " + std::to_string(m_maxLives));
+		livesText.setCharacterSize(22);
+		livesText.setFillColor(sf::Color::White);
+		livesText.setOutlineColor(sf::Color::Black);
+		livesText.setOutlineThickness(2.f);
+		livesText.setPosition({ topLeft.x + 18.f, topLeft.y + 44.f });
+
+		target.draw(livesText);
+
+		if (m_gameOver)
+		{
+			const sf::FloatRect popupRect(
+				{ topLeft.x + viewSize.x * 0.5f - 245.f, topLeft.y + viewSize.y * 0.5f - 82.f },
+				{ 490.f, 164.f });
+
+			sf::RectangleShape popupBox;
+			popupBox.setPosition(popupRect.position);
+			popupBox.setSize(popupRect.size);
+			popupBox.setFillColor(sf::Color(130, 45, 45, 230));
+			popupBox.setOutlineColor(sf::Color::White);
+			popupBox.setOutlineThickness(3.f);
+			target.draw(popupBox);
+
+			auto drawCenteredText = [this, &target](const std::string& string, unsigned int size, sf::Vector2f position, sf::Color fill)
+				{
+					sf::Text text(m_uiFont);
+					text.setString(string);
+					text.setCharacterSize(size);
+					text.setFillColor(fill);
+					text.setOutlineColor(sf::Color::Black);
+					text.setOutlineThickness(2.f);
+
+					const sf::FloatRect bounds = text.getLocalBounds();
+					text.setPosition({
+						position.x - bounds.size.x * 0.5f - bounds.position.x,
+						position.y - bounds.size.y * 0.5f - bounds.position.y
+						});
+
+					target.draw(text);
+				};
+
+			const float centerX = popupRect.position.x + popupRect.size.x * 0.5f;
+			drawCenteredText("OUT OF LIVES", 34, { centerX, popupRect.position.y + 38.f }, sf::Color::White);
+			drawCenteredText("ENTER  -  RESTART", 22, { centerX, popupRect.position.y + 91.f }, sf::Color(255, 230, 120));
+			drawCenteredText("ESC  -  BACK TO MENU", 22, { centerX, popupRect.position.y + 127.f }, sf::Color(230, 230, 230));
+		}
 	}
 }
 
@@ -1173,6 +1259,103 @@ int GAME1_Player::getHealth() const
 int GAME1_Player::getMaxHealth() const
 {
 	return m_maxHealth;
+}
+
+int GAME1_Player::getLives() const
+{
+	return m_lives;
+}
+
+int GAME1_Player::getMaxLives() const
+{
+	return m_maxLives;
+}
+
+bool GAME1_Player::isGameOver() const
+{
+	return m_gameOver;
+}
+
+void GAME1_Player::resetGame()
+{
+	m_gameOver = false;
+	m_lives = m_maxLives;
+	m_health = m_maxHealth;
+	m_damageCooldownTimer = 0.f;
+	m_hitAnimationPlaying = false;
+
+	m_respawning = false;
+	m_respawnTimer = 0.f;
+
+	m_dropThroughTimer = 0.f;
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+	m_wallJumpControlLockTimer = 0.f;
+	m_groundedOnOneWayPlatform = false;
+
+	m_position = m_spawnPosition;
+	m_previousPosition = m_spawnPosition;
+	m_velocity = { 0.f, 0.f };
+
+	m_onGround = false;
+	m_jumpHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
+	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
+	m_canDoubleJump = true;
+	m_doubleJumpAnimationPlaying = false;
+	m_variableJumpActive = false;
+	m_releasedJumpGravityActive = false;
+
+	setAnimationState(AnimationState::Idle);
+	GAME1_SurfersQuestAudio::playGameplay();
+}
+
+void GAME1_Player::stopMusic()
+{
+	GAME1_SurfersQuestAudio::stopAll();
+}
+
+void GAME1_Player::loseLifeAndRespawn()
+{
+	if (m_gameOver)
+		return;
+
+	m_lives = std::max(0, m_lives - 1);
+
+	if (m_lives <= 0)
+	{
+		beginGameOver();
+		return;
+	}
+
+	startRespawn();
+}
+
+void GAME1_Player::beginGameOver()
+{
+	m_gameOver = true;
+	m_respawning = false;
+	m_respawnTimer = 0.f;
+	m_health = 0;
+	m_velocity = { 0.f, 0.f };
+	m_damageCooldownTimer = 0.f;
+	m_hitAnimationPlaying = false;
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+	m_wallJumpControlLockTimer = 0.f;
+	m_dropThroughTimer = 0.f;
+	m_groundedOnOneWayPlatform = false;
+	m_onGround = false;
+	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
+	m_variableJumpActive = false;
+	m_releasedJumpGravityActive = false;
+
+	setAnimationState(AnimationState::Idle);
+	GAME1_SurfersQuestAudio::playDeath();
 }
 
 void GAME1_Player::startRespawn()

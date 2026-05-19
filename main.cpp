@@ -20,6 +20,7 @@
 #include "GAME1_Menu.h"
 #include "GAME1_LevelEditor.h"
 #include "GAME1_LevelSelect.h"
+#include "GAME1_SurfersQuestAudio.h"
 
 #include "GAME2_Menu.h"
 #include "GAME2_Game.h"
@@ -87,15 +88,15 @@ namespace
 		window.setView(sf::View(visibleArea));
 	}
 
-	bool ResizeRenderTexture(sf::RenderTexture& renderTexture, sf::Vector2u newSize)
+	bool ResizeTexture(sf::Texture& texture, sf::Vector2u newSize)
 	{
 		if (newSize.x == 0 || newSize.y == 0)
 			return false;
 
-		if (renderTexture.getSize() == newSize)
+		if (texture.getSize() == newSize)
 			return true;
 
-		return renderTexture.resize(newSize);
+		return texture.resize(newSize);
 	}
 
 	std::string TryFindSolutionInFolder(const std::filesystem::path& folder)
@@ -240,23 +241,23 @@ int main()
 
 	ApplyWindowView(window);
 
-	sf::RenderTexture hubRenderTexture;
-	if (!hubRenderTexture.resize(window.getSize()))
+	sf::Texture crtFrameTexture;
+	if (!crtFrameTexture.resize(window.getSize()))
 	{
-		ShowError("Failed to create the hub render texture.");
+		ShowError("Failed to create the CRT frame texture.");
 		return -1;
 	}
 
-	hubRenderTexture.setSmooth(true);
+	crtFrameTexture.setSmooth(false);
 
-	sf::Shader hubCrtShader;
-	bool hubCrtShaderEnabled = false;
+	sf::Shader crtShader;
+	bool crtShaderEnabled = false;
 
 	if (sf::Shader::isAvailable())
 	{
-		if (hubCrtShader.loadFromFile(kHubShaderPath.string(), sf::Shader::Type::Fragment))
+		if (crtShader.loadFromFile(kHubShaderPath.string(), sf::Shader::Type::Fragment))
 		{
-			hubCrtShaderEnabled = true;
+			crtShaderEnabled = true;
 		}
 	}
 
@@ -451,12 +452,28 @@ int main()
 
 	AppState appState = AppState::Hub;
 
+	auto IsSurfersQuestState = [](AppState state)
+		{
+			return state == AppState::GAME1_Menu ||
+				state == AppState::GAME1_LevelSelect ||
+				state == AppState::GAME1_Game ||
+				state == AppState::GAME1_Editor;
+		};
+
 	auto SetAppState = [&](AppState newState)
 		{
-			if (appState == AppState::GAME1_BombermanMenu &&
+			const AppState previousState = appState;
+
+			if (previousState == AppState::GAME1_BombermanMenu &&
 				newState != AppState::GAME1_BombermanMenu)
 			{
 				bombermanMenu.stopMusic();
+			}
+
+			if (IsSurfersQuestState(previousState) &&
+				!IsSurfersQuestState(newState))
+			{
+				game1Menu.stopMusic();
 			}
 
 			appState = newState;
@@ -469,6 +486,17 @@ int main()
 			if (appState == AppState::GAME1_BombermanMenu)
 			{
 				bombermanMenu.startMusic();
+			}
+
+			if (appState == AppState::GAME1_Menu ||
+				appState == AppState::GAME1_LevelSelect)
+			{
+				game1Menu.startMusic();
+			}
+
+			if (appState == AppState::GAME1_Editor)
+			{
+				game1Menu.stopMusic();
 			}
 		};
 
@@ -535,13 +563,13 @@ int main()
 
 				ApplyWindowView(window);
 
-				if (!ResizeRenderTexture(hubRenderTexture, window.getSize()))
+				if (!ResizeTexture(crtFrameTexture, window.getSize()))
 				{
-					hubCrtShaderEnabled = false;
+					crtShaderEnabled = false;
 				}
 				else
 				{
-					hubRenderTexture.setSmooth(true);
+					crtFrameTexture.setSmooth(false);
 				}
 
 				if (appState == AppState::GAME2_Game)
@@ -949,6 +977,34 @@ int main()
 
 		ApplyWindowView(window);
 
+		auto DisplayFrame = [&]()
+			{
+				ApplyWindowView(window);
+
+				if (crtShaderEnabled && ResizeTexture(crtFrameTexture, window.getSize()))
+				{
+					crtFrameTexture.update(window);
+
+					sf::Sprite frameSprite(crtFrameTexture);
+					frameSprite.setPosition({ 0.f, 0.f });
+
+					crtShader.setUniform("u_texture", sf::Shader::CurrentTexture);
+					crtShader.setUniform("u_time", totalAppTime);
+					crtShader.setUniform("u_resolution", sf::Vector2f(
+						static_cast<float>(window.getSize().x),
+						static_cast<float>(window.getSize().y)
+					));
+
+					sf::RenderStates shaderStates;
+					shaderStates.shader = &crtShader;
+
+					window.clear(sf::Color::Black);
+					window.draw(frameSprite, shaderStates);
+				}
+
+				window.display();
+			};
+
 		if (appState == AppState::Hub)
 		{
 			hub.updateClockText();
@@ -956,40 +1012,9 @@ int main()
 			hub.updateVisualTheme(totalAppTime);
 			hub.layout(window);
 
-			if (!ResizeRenderTexture(hubRenderTexture, window.getSize()))
-			{
-				hubCrtShaderEnabled = false;
-			}
-
-			if (hubCrtShaderEnabled)
-			{
-				hubRenderTexture.clear(sf::Color::Black);
-				hub.draw(hubRenderTexture);
-				hubRenderTexture.display();
-
-				sf::Sprite hubSprite(hubRenderTexture.getTexture());
-				hubSprite.setPosition({ 0.f, 0.f });
-
-				hubCrtShader.setUniform("u_texture", sf::Shader::CurrentTexture);
-				hubCrtShader.setUniform("u_time", totalAppTime);
-				hubCrtShader.setUniform("u_resolution", sf::Vector2f(
-					static_cast<float>(window.getSize().x),
-					static_cast<float>(window.getSize().y)
-				));
-
-				sf::RenderStates shaderStates;
-				shaderStates.shader = &hubCrtShader;
-
-				window.clear(sf::Color::Black);
-				window.draw(hubSprite, shaderStates);
-				window.display();
-			}
-			else
-			{
-				window.clear(sf::Color::Black);
-				hub.draw(window);
-				window.display();
-			}
+			window.clear(sf::Color::Black);
+			hub.draw(window);
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_BombermanMenu)
 		{
@@ -997,7 +1022,7 @@ int main()
 
 			window.clear(sf::Color::Black);
 			bombermanMenu.draw(window);
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_BombermanLevelSelect)
 		{
@@ -1005,7 +1030,7 @@ int main()
 
 			window.clear(sf::Color::Black);
 			bombermanLevelSelect.draw(window);
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_BombermanEditor)
 		{
@@ -1013,7 +1038,7 @@ int main()
 
 			window.clear(sf::Color::Black);
 			bombermanEditor.draw(window, sf::Mouse::getPosition(window));
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_Bomberman)
 		{
@@ -1022,7 +1047,7 @@ int main()
 
 			window.clear(sf::Color::Black);
 			bombermanWindow.draw(window);
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
@@ -1072,7 +1097,7 @@ int main()
 				window.draw(respawnText);
 			}
 
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_Editor)
 		{
@@ -1080,7 +1105,7 @@ int main()
 
 			window.clear(sf::Color(80, 170, 255));
 			game1Editor.draw(window, sf::Mouse::getPosition(window));
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_LevelSelect)
 		{
@@ -1088,7 +1113,7 @@ int main()
 
 			window.clear(sf::Color(25, 25, 35));
 			game1LevelSelect.draw(window);
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_Menu)
 		{
@@ -1096,7 +1121,7 @@ int main()
 
 			window.clear(sf::Color(30, 30, 40));
 			game1Menu.draw(window);
-			window.display();
+			DisplayFrame();
 		}
 		else if (appState == AppState::GAME2_Menu)
 		{
@@ -1104,8 +1129,9 @@ int main()
 
 			window.clear(sf::Color(24, 24, 34));
 			game2Menu.draw(window);
-			window.display();
+			DisplayFrame();
 		}
+
 	}
 
 	return 0;

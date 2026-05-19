@@ -1,5 +1,6 @@
 #include "GAME1_BombermanWindow.h"
 
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -2457,8 +2458,7 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 
 		window.draw(*m_statusText);
 	}
-
-	window.setView(previousView);
+window.setView(previousView);
 }
 
 void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)

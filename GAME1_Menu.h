@@ -24,7 +24,10 @@ public:
 		const std::string& levelEditorTexturePath);
 
 	void layout(const sf::RenderWindow& window);
-	GAME1_MenuAction handleClick(sf::Vector2f mousePosition) const;
+	GAME1_MenuAction handleClick(sf::Vector2f mousePosition);
+
+	void startMusic();
+	void stopMusic();
 	void draw(sf::RenderWindow& window) const;
 
 	const std::string& getLastError() const;

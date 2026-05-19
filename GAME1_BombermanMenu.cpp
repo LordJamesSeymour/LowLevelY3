@@ -1,5 +1,6 @@
 #include "GAME1_BombermanMenu.h"
 
+
 #include <filesystem>
 
 bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
