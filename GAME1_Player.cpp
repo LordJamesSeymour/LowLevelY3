@@ -1261,6 +1261,38 @@ int GAME1_Player::getMaxHealth() const
 	return m_maxHealth;
 }
 
+sf::Vector2f GAME1_Player::getVelocity() const
+{
+	return m_velocity;
+}
+
+void GAME1_Player::bounceAfterEnemyStomp()
+{
+	m_velocity.y = -m_jumpSpeed * 0.62f;
+	m_onGround = false;
+	m_wallGrabActive = false;
+	m_coyoteTimer = 0.f;
+	m_variableJumpActive = true;
+	m_releasedJumpGravityActive = false;
+}
+
+void GAME1_Player::takeEnemyDamage(const sf::FloatRect& enemyBounds, int damage)
+{
+	if (m_damageCooldownTimer > 0.f || m_gameOver)
+		return;
+
+	m_health = std::max(0, m_health - std::max(0, damage));
+	m_damageCooldownTimer = m_damageCooldownDuration;
+
+	startHitAnimation();
+	applyKnockbackFromTile(enemyBounds);
+
+	if (m_health <= 0)
+	{
+		loseLifeAndRespawn();
+	}
+}
+
 int GAME1_Player::getLives() const
 {
 	return m_lives;

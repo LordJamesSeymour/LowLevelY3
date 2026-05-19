@@ -25,6 +25,10 @@ public:
 
 	int getHealth() const;
 	int getMaxHealth() const;
+
+	sf::Vector2f getVelocity() const;
+	void bounceAfterEnemyStomp();
+	void takeEnemyDamage(const sf::FloatRect& enemyBounds, int damage);
 	int getLives() const;
 	int getMaxLives() const;
 	bool isGameOver() const;

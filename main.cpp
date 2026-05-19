@@ -20,6 +20,7 @@
 #include "GAME1_Menu.h"
 #include "GAME1_LevelEditor.h"
 #include "GAME1_LevelSelect.h"
+#include "GAME1_Enemy.h"
 #include "GAME1_SurfersQuestAudio.h"
 
 #include "GAME2_Menu.h"
@@ -201,7 +202,7 @@ namespace
 		return result;
 	}
 
-	bool LoadGame1(GAME1_Level& level, GAME1_Player& player, const std::string& mapPath)
+	bool LoadGame1(GAME1_Level& level, GAME1_Player& player, std::vector<GAME1_Enemy>& enemies, const std::string& mapPath)
 	{
 		const std::string playerIdleDirectory =
 			(kGame1ResourcesDirectory / "Player" / "PlayerIdle").string();
@@ -228,6 +229,27 @@ namespace
 
 			ShowError(msg);
 			return false;
+		}
+
+		enemies.clear();
+
+		for (const GAME1_LevelEnemySpawn& spawn : level.getEnemySpawns())
+		{
+			GAME1_Enemy enemy;
+
+			if (!enemy.load((kGame1ResourcesDirectory / "Enemies").string(), GAME1_EnemyType::Basic, spawn.position))
+			{
+				std::string msg =
+					"Game 1 enemy failed to load.\n\n" +
+					enemy.getLastError() +
+					"\n\nCurrent working directory:\n" +
+					std::filesystem::current_path().string();
+
+				ShowError(msg);
+				return false;
+			}
+
+			enemies.push_back(std::move(enemy));
 		}
 
 		return true;
@@ -421,6 +443,7 @@ int main()
 
 	GAME1_Level game1Level;
 	GAME1_Player game1Player;
+	std::vector<GAME1_Enemy> game1Enemies;
 
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
@@ -858,7 +881,7 @@ int main()
 
 						if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
 						{
-							if (!LoadGame1(game1Level, game1Player, game1LevelSelect.getLevelPathAt(slotIndex)))
+							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
 
 							SetAppState(AppState::GAME1_Game);
@@ -1053,6 +1076,26 @@ int main()
 		{
 			game1Player.update(deltaTime, game1Level);
 
+			for (GAME1_Enemy& enemy : game1Enemies)
+			{
+				enemy.update(deltaTime, game1Level, game1Player);
+			}
+
+			for (GAME1_Enemy& enemy : game1Enemies)
+			{
+				enemy.handlePlayerCollision(game1Player);
+			}
+
+			game1Enemies.erase(
+				std::remove_if(
+					game1Enemies.begin(),
+					game1Enemies.end(),
+					[](const GAME1_Enemy& enemy)
+					{
+						return !enemy.isActive();
+					}),
+				game1Enemies.end());
+
 			sf::View worldView = window.getDefaultView();
 
 			const sf::FloatRect playerBounds = game1Player.getBounds();
@@ -1080,6 +1123,12 @@ int main()
 
 			window.clear(sf::Color(120, 190, 255));
 			game1Level.draw(window);
+
+			for (const GAME1_Enemy& enemy : game1Enemies)
+			{
+				enemy.draw(window);
+			}
+
 			game1Player.draw(window);
 
 			ApplyWindowView(window);

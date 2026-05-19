@@ -336,6 +336,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_lastError.clear();
 	m_floorTextures.clear();
 	m_specialTileTextures.clear();
+	m_enemySpawns.clear();
 	m_worldNumber = 1;
 	m_playerSpawnPosition = { 100.f, 100.f };
 	m_resourcesDirectory = resourcesDirectory;
@@ -428,6 +429,21 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				continue;
 			}
 
+			if (tile == BasicEnemySpawnTile)
+			{
+				m_enemySpawns.push_back(
+					{
+						GAME1_LevelEnemyType::Basic,
+						{
+							static_cast<float>(col * TileSize),
+							static_cast<float>(row * TileSize)
+						}
+					});
+
+				rawRows[row][col] = 'O';
+				continue;
+			}
+
 			if (tile == 'O' || isFloorTile(tile) || isSupportedSpecialTileCode(tile))
 				continue;
 
@@ -436,7 +452,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				std::string(1, tile) +
 				"' at row " + std::to_string(row + 1) +
 				", column " + std::to_string(col + 1) +
-				". Use O for empty, P for player spawn, a floor tile letter from the editor, ^ for spikes, or [/= /] for one-way platforms.";
+				". Use O for empty, P for player spawn, e for enemy spawn, a floor tile letter from the editor, ^ for spikes, or [/= /] for one-way platforms.";
 			return false;
 		}
 	}
@@ -612,6 +628,11 @@ int GAME1_Level::getWorldNumber() const
 sf::Vector2f GAME1_Level::getPlayerSpawnPosition() const
 {
 	return m_playerSpawnPosition;
+}
+
+const std::vector<GAME1_LevelEnemySpawn>& GAME1_Level::getEnemySpawns() const
+{
+	return m_enemySpawns;
 }
 
 int GAME1_Level::getWidthInTiles() const

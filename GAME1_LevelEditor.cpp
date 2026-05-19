@@ -1,6 +1,5 @@
 #include "GAME1_LevelEditor.h"
 
-
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -158,6 +157,7 @@ namespace
 	{
 		return code == 'O' ||
 			code == 'P' ||
+			code == 'e' ||
 			code == 'B' ||
 			code == '^' ||
 			code == '[' ||
@@ -459,6 +459,22 @@ void GAME1_LevelEditor::buildTools()
 		playerSpawnTool.hasTexture = loadFirstTextureFromDirectory(playerSpawnTool.texture, playerIdleDirectory.string());
 
 	addTool(std::move(playerSpawnTool));
+
+	Tool enemyTool;
+	enemyTool.tile = 'e';
+	enemyTool.label = "e";
+	enemyTool.description = "Enemy spawn";
+	enemyTool.fallbackColor = sf::Color(240, 90, 90);
+
+	const fs::path enemyIdleDirectory = getResourcesDirectory() / "Enemies" / "EnemyIdle";
+	const fs::path preferredEnemyIdleFrame = enemyIdleDirectory / "EnemyIdle_0.png";
+
+	if (fs::exists(preferredEnemyIdleFrame))
+		enemyTool.hasTexture = loadTexture(enemyTool.texture, preferredEnemyIdleFrame.string());
+	else
+		enemyTool.hasTexture = loadFirstTextureFromDirectory(enemyTool.texture, enemyIdleDirectory.string());
+
+	addTool(std::move(enemyTool));
 
 	const fs::path tilesDirectory = getTilesDirectory();
 

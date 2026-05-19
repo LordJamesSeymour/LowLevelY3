@@ -154,6 +154,7 @@
     <ClInclude Include="GAME1_BombermanLevelSelect.h" />
     <ClInclude Include="GAME1_BombermanMenu.h" />
     <ClInclude Include="GAME1_BombermanWindow.h" />
+    <ClInclude Include="GAME1_Enemy.h" />
     <ClInclude Include="GAME1_Level.h" />
     <ClInclude Include="GAME1_LevelEditor.h" />
     <ClInclude Include="GAME1_LevelSelect.h" />
@@ -175,6 +176,7 @@
     <ClCompile Include="GAME1_BombermanLevelSelect.cpp" />
     <ClCompile Include="GAME1_BombermanMenu.cpp" />
     <ClCompile Include="GAME1_BombermanWindow.cpp" />
+    <ClCompile Include="GAME1_Enemy.cpp" />
     <ClCompile Include="GAME1_Level.cpp" />
     <ClCompile Include="GAME1_LevelEditor.cpp" />
     <ClCompile Include="GAME1_LevelSelect.cpp" />
