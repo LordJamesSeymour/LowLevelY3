@@ -24,13 +24,10 @@ public:
 
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition);
-
-	void selectPreviousButton();
-	void selectNextButton();
-	GAME1_BombermanMenuAction activateSelectedButton() const;
-
+	bool handleKeyReleased(sf::Keyboard::Key key);
 	void draw(sf::RenderWindow& window) const;
 
+	bool isControlsPopupOpen() const;
 	const std::string& getLastError() const;
 
 private:
@@ -44,9 +41,20 @@ private:
 private:
 	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
 	void centerTextInButton(Button& button);
-	void refreshSelectionVisuals();
-	Button* getButtonByIndex(int index);
-	const Button* getButtonByIndex(int index) const;
+
+	void showPreviousControlsPage();
+	void showNextControlsPage();
+	std::string getControlsPopupTitle() const;
+	std::string getControlsPopupBody() const;
+
+	void drawTextCentered(sf::RenderTarget& target,
+		const std::string& string,
+		unsigned int size,
+		const sf::FloatRect& rect,
+		sf::Color fill,
+		float outlineThickness = 2.f) const;
+
+	void drawControlsPopup(sf::RenderTarget& target, sf::Vector2u windowSize) const;
 
 	bool tryOpenMusicFile(const std::vector<std::string>& candidatePaths);
 
@@ -61,8 +69,13 @@ private:
 	Button m_playLevelsButton;
 	Button m_levelEditorButton;
 	Button m_backButton;
+	Button m_controlsButton;
 
-	int m_selectedButtonIndex = 0;
+	bool m_controlsPopupOpen = false;
+	int m_controlsPopupPage = 0;
+	sf::FloatRect m_popupBounds;
+	sf::FloatRect m_popupPreviousPageButtonBounds;
+	sf::FloatRect m_popupNextPageButtonBounds;
 
 	std::string m_lastError;
 };

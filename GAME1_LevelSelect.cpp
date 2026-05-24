@@ -95,7 +95,9 @@ void GAME1_LevelSelect::rebuildVisibleSlots()
 		m_slotActive[i] = false;
 
 		const int levelIndex = getLevelIndexForSlot(i);
-		const bool hasLevel = levelIndex >= 0 && levelIndex < static_cast<int>(m_levelPaths.size());
+		const bool hasLevel =
+			levelIndex >= 0 &&
+			levelIndex < static_cast<int>(m_levelPaths.size());
 
 		if (hasLevel)
 		{
@@ -161,12 +163,29 @@ void GAME1_LevelSelect::refreshSelectionVisuals()
 		const bool active = m_slotActive[i];
 		const bool selected = active && i == m_selectedSlot;
 
-		m_slotBoxes[i].setFillColor(selected ? sf::Color(55, 55, 78) : active ? sf::Color(36, 36, 48) : sf::Color(26, 26, 34));
-		m_slotBoxes[i].setOutlineColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
+		m_slotBoxes[i].setFillColor(
+			selected
+			? sf::Color(55, 55, 78)
+			: active
+			? sf::Color(36, 36, 48)
+			: sf::Color(26, 26, 34)
+		);
+
+		m_slotBoxes[i].setOutlineColor(
+			selected
+			? sf::Color(255, 220, 120)
+			: sf::Color::White
+		);
 
 		if (m_slotTexts[i])
 		{
-			m_slotTexts[i]->setFillColor(selected ? sf::Color(255, 220, 120) : active ? sf::Color::White : sf::Color(150, 150, 150));
+			m_slotTexts[i]->setFillColor(
+				selected
+				? sf::Color(255, 220, 120)
+				: active
+				? sf::Color::White
+				: sf::Color(150, 150, 150)
+			);
 		}
 	}
 }
@@ -233,21 +252,23 @@ void GAME1_LevelSelect::layout(const sf::RenderWindow& window)
 		centerTextInRect(*m_nextText, m_nextButton.getGlobalBounds());
 }
 
-GAME1_LevelSelectAction GAME1_LevelSelect::handleClick(sf::Vector2f mousePosition)
+int GAME1_LevelSelect::handleClick(sf::Vector2f mousePosition)
 {
+	// The old main.cpp only understands returned slot indices.
+	// Back currently stays as -1; Escape still returns to the SurfersQuest menu.
 	if (containsPoint(m_backButton.getGlobalBounds(), mousePosition))
-		return GAME1_LevelSelectAction::Back;
+		return -1;
 
 	if (containsPoint(m_previousButton.getGlobalBounds(), mousePosition))
 	{
 		selectPreviousPage();
-		return GAME1_LevelSelectAction::PreviousPage;
+		return -1;
 	}
 
 	if (containsPoint(m_nextButton.getGlobalBounds(), mousePosition))
 	{
 		selectNextPage();
-		return GAME1_LevelSelectAction::NextPage;
+		return -1;
 	}
 
 	for (int i = 0; i < SlotCount; ++i)
@@ -260,11 +281,11 @@ GAME1_LevelSelectAction GAME1_LevelSelect::handleClick(sf::Vector2f mousePositio
 			m_selectedSlot = i;
 			refreshSelectionVisuals();
 			m_selectedLevelPath = m_visibleLevelPaths[i];
-			return GAME1_LevelSelectAction::SelectedLevel;
+			return i;
 		}
 	}
 
-	return GAME1_LevelSelectAction::None;
+	return -1;
 }
 
 void GAME1_LevelSelect::selectPreviousSlot()
@@ -321,16 +342,16 @@ void GAME1_LevelSelect::selectNextPage()
 	rebuildVisibleSlots();
 }
 
-GAME1_LevelSelectAction GAME1_LevelSelect::activateSelectedSlot()
+int GAME1_LevelSelect::activateSelectedSlot()
 {
 	if (m_selectedSlot < 0 || m_selectedSlot >= SlotCount)
-		return GAME1_LevelSelectAction::None;
+		return -1;
 
 	if (!m_slotActive[m_selectedSlot])
-		return GAME1_LevelSelectAction::None;
+		return -1;
 
 	m_selectedLevelPath = m_visibleLevelPaths[m_selectedSlot];
-	return GAME1_LevelSelectAction::SelectedLevel;
+	return m_selectedSlot;
 }
 
 void GAME1_LevelSelect::draw(sf::RenderWindow& window) const

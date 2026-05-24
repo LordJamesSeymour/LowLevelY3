@@ -6,17 +6,15 @@
 #include <string>
 #include <vector>
 
-enum class GAME1_LevelSelectAction
-{
-	None,
-	Back,
-	PreviousPage,
-	NextPage,
-	SelectedLevel
-};
-
 // SurfersQuest level selection screen.
 // Styled to match the Bomberman level selector for a consistent arcade UI.
+//
+// IMPORTANT:
+// This class intentionally keeps handleClick() returning an int slot index
+// because the existing main.cpp expects:
+//     const int slotIndex = game1LevelSelect.handleClick(...);
+// Bomberman's level select uses an enum action system, but this older
+// SurfersQuest level selector must stay compatible with the int-based flow.
 class GAME1_LevelSelect
 {
 public:
@@ -27,13 +25,13 @@ public:
 	void setLevels(const std::vector<std::string>& levelPaths);
 
 	void layout(const sf::RenderWindow& window);
-	GAME1_LevelSelectAction handleClick(sf::Vector2f mousePosition);
+	int handleClick(sf::Vector2f mousePosition);
 
 	void selectPreviousSlot();
 	void selectNextSlot();
 	void selectPreviousPage();
 	void selectNextPage();
-	GAME1_LevelSelectAction activateSelectedSlot();
+	int activateSelectedSlot();
 
 	void draw(sf::RenderWindow& window) const;
 

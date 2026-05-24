@@ -1049,15 +1049,6 @@ void GAME1_BombermanLevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mou
 
 	drawTextCentered(">", 28, m_nextHotbarPageButtonBounds, sf::Color::White);
 
-	const float controlsY = std::min(windowHeight - 28.f, m_toolbarOrigin.y + m_toolbarSlotSize + 8.f);
-
-	drawTextCentered(
-		"Controls: Left Click = place/select    Right Click = erase    Middle Mouse = pick tile/tool    Mouse Wheel = cycle visible tools    Letter keys = select tile    Shift+B/T/C = Bomber/Tree/Chomper    Enter = save    Backspace = reset",
-		14,
-		sf::FloatRect({ 0.f, controlsY }, { windowWidth, 24.f }),
-		sf::Color(220, 220, 220),
-		1.5f
-	);
 }
 
 void GAME1_BombermanLevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2i mousePixelPosition)

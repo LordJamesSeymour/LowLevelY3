@@ -1,5 +1,6 @@
 #include "GAME1_BombermanMenu.h"
 
+#include <algorithm>
 #include <filesystem>
 
 bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
@@ -8,7 +9,8 @@ bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& b
 
 	m_lastError.clear();
 	m_hasMusic = false;
-	m_selectedButtonIndex = 0;
+	m_controlsPopupOpen = false;
+	m_controlsPopupPage = 0;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -42,27 +44,40 @@ bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& b
 	m_backButton.text.emplace(m_font);
 	m_backButton.text->setString("BACK TO ARCADE");
 
-	Button* buttons[] =
+	Button* menuButtons[] =
 	{
 		&m_playLevelsButton,
 		&m_levelEditorButton,
 		&m_backButton
 	};
 
-	for (Button* button : buttons)
+	for (Button* button : menuButtons)
 	{
 		button->box.setSize({ 340.f, 64.f });
+		button->box.setFillColor(sf::Color(35, 35, 45));
+		button->box.setOutlineColor(sf::Color::White);
 		button->box.setOutlineThickness(3.f);
 
 		if (button->text)
 		{
 			button->text->setCharacterSize(28);
+			button->text->setFillColor(sf::Color::White);
 			button->text->setOutlineColor(sf::Color::Black);
 			button->text->setOutlineThickness(2.f);
 		}
 	}
 
-	refreshSelectionVisuals();
+	m_controlsButton.action = GAME1_BombermanMenuAction::None;
+	m_controlsButton.box.setSize({ 58.f, 58.f });
+	m_controlsButton.box.setFillColor(sf::Color(35, 35, 45));
+	m_controlsButton.box.setOutlineColor(sf::Color(255, 230, 120));
+	m_controlsButton.box.setOutlineThickness(3.f);
+	m_controlsButton.text.emplace(m_font);
+	m_controlsButton.text->setString("(?)");
+	m_controlsButton.text->setCharacterSize(24);
+	m_controlsButton.text->setFillColor(sf::Color::White);
+	m_controlsButton.text->setOutlineColor(sf::Color::Black);
+	m_controlsButton.text->setOutlineThickness(2.f);
 
 	const fs::path audioDirectory = fs::path(bombermanRootDirectory) / "Resources" / "Audio";
 
@@ -154,6 +169,59 @@ void GAME1_BombermanMenu::layout(const sf::RenderWindow& window)
 	centerTextInButton(m_playLevelsButton);
 	centerTextInButton(m_levelEditorButton);
 	centerTextInButton(m_backButton);
+
+	m_controlsButton.box.setPosition({ windowWidth - 92.f, 36.f });
+	centerTextInButton(m_controlsButton);
+
+	// The popup is deliberately narrower now so the < and > buttons can sit
+	// fully outside the popup border instead of overlapping the text area.
+	const float arrowSize = 56.f;
+	const float arrowPadding = 24.f;
+	const float screenEdgePadding = 18.f;
+
+	const float horizontalSpaceNeededForArrows =
+		(arrowSize + arrowPadding + screenEdgePadding) * 2.f;
+
+	const float popupWidth = std::min(
+		760.f,
+		std::max(520.f, windowWidth - horizontalSpaceNeededForArrows)
+	);
+
+	const float popupHeight = std::min(
+		450.f,
+		std::max(350.f, windowHeight - 150.f)
+	);
+
+	m_popupBounds = sf::FloatRect(
+		{ (windowWidth - popupWidth) * 0.5f, (windowHeight - popupHeight) * 0.5f },
+		{ popupWidth, popupHeight }
+	);
+
+	const float arrowY =
+		m_popupBounds.position.y +
+		(m_popupBounds.size.y - arrowSize) * 0.5f;
+
+	m_popupPreviousPageButtonBounds = sf::FloatRect(
+		{
+			m_popupBounds.position.x - arrowSize - arrowPadding,
+			arrowY
+		},
+		{
+			arrowSize,
+			arrowSize
+		}
+	);
+
+	m_popupNextPageButtonBounds = sf::FloatRect(
+		{
+			m_popupBounds.position.x + m_popupBounds.size.x + arrowPadding,
+			arrowY
+		},
+		{
+			arrowSize,
+			arrowSize
+		}
+	);
 }
 
 void GAME1_BombermanMenu::centerTextInButton(Button& button)
@@ -172,78 +240,115 @@ void GAME1_BombermanMenu::centerTextInButton(Button& button)
 
 GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePosition)
 {
-	for (int i = 0; i < 3; ++i)
+	if (containsPoint(m_controlsButton.box.getGlobalBounds(), mousePosition))
 	{
-		Button* button = getButtonByIndex(i);
-		if (button != nullptr && containsPoint(button->box.getGlobalBounds(), mousePosition))
+		m_controlsPopupOpen = !m_controlsPopupOpen;
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	if (m_controlsPopupOpen)
+	{
+		if (containsPoint(m_popupPreviousPageButtonBounds, mousePosition))
 		{
-			m_selectedButtonIndex = i;
-			refreshSelectionVisuals();
-			return button->action;
+			showPreviousControlsPage();
+			return GAME1_BombermanMenuAction::None;
 		}
+
+		if (containsPoint(m_popupNextPageButtonBounds, mousePosition))
+		{
+			showNextControlsPage();
+			return GAME1_BombermanMenuAction::None;
+		}
+
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	const Button* buttons[] =
+	{
+		&m_playLevelsButton,
+		&m_levelEditorButton,
+		&m_backButton
+	};
+
+	for (const Button* button : buttons)
+	{
+		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
+			return button->action;
 	}
 
 	return GAME1_BombermanMenuAction::None;
 }
 
-void GAME1_BombermanMenu::selectPreviousButton()
+bool GAME1_BombermanMenu::handleKeyReleased(sf::Keyboard::Key key)
 {
-	m_selectedButtonIndex = (m_selectedButtonIndex + 2) % 3;
-	refreshSelectionVisuals();
-}
+	if (!m_controlsPopupOpen)
+		return false;
 
-void GAME1_BombermanMenu::selectNextButton()
-{
-	m_selectedButtonIndex = (m_selectedButtonIndex + 1) % 3;
-	refreshSelectionVisuals();
-}
-
-GAME1_BombermanMenuAction GAME1_BombermanMenu::activateSelectedButton() const
-{
-	const Button* button = getButtonByIndex(m_selectedButtonIndex);
-	return button != nullptr ? button->action : GAME1_BombermanMenuAction::None;
-}
-
-void GAME1_BombermanMenu::refreshSelectionVisuals()
-{
-	for (int i = 0; i < 3; ++i)
+	if (key == sf::Keyboard::Key::Escape)
 	{
-		Button* button = getButtonByIndex(i);
-		if (button == nullptr)
-			continue;
-
-		const bool selected = i == m_selectedButtonIndex;
-
-		button->box.setFillColor(selected ? sf::Color(55, 55, 78) : sf::Color(35, 35, 45));
-		button->box.setOutlineColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
-
-		if (button->text)
-		{
-			button->text->setFillColor(selected ? sf::Color(255, 220, 120) : sf::Color::White);
-		}
+		m_controlsPopupOpen = false;
+		return true;
 	}
+
+	if (key == sf::Keyboard::Key::Left || key == sf::Keyboard::Key::A)
+	{
+		showPreviousControlsPage();
+		return true;
+	}
+
+	if (key == sf::Keyboard::Key::Right || key == sf::Keyboard::Key::D)
+	{
+		showNextControlsPage();
+		return true;
+	}
+
+	return true;
 }
 
-GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonByIndex(int index)
+void GAME1_BombermanMenu::showPreviousControlsPage()
 {
-	switch (index)
-	{
-	case 0: return &m_playLevelsButton;
-	case 1: return &m_levelEditorButton;
-	case 2: return &m_backButton;
-	default: return nullptr;
-	}
+	m_controlsPopupPage = m_controlsPopupPage == 0 ? 1 : 0;
 }
 
-const GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonByIndex(int index) const
+void GAME1_BombermanMenu::showNextControlsPage()
 {
-	switch (index)
+	m_controlsPopupPage = m_controlsPopupPage == 0 ? 1 : 0;
+}
+
+std::string GAME1_BombermanMenu::getControlsPopupTitle() const
+{
+	return m_controlsPopupPage == 0
+		? "Game Controls"
+		: "Level Editor Controls";
+}
+
+std::string GAME1_BombermanMenu::getControlsPopupBody() const
+{
+	if (m_controlsPopupPage == 0)
 	{
-	case 0: return &m_playLevelsButton;
-	case 1: return &m_levelEditorButton;
-	case 2: return &m_backButton;
-	default: return nullptr;
+		return
+			"WASD / Arrow Keys = Move\n"
+			"Space = Place bomb\n"
+			"E = Punch bomb / break block\n"
+			"R = Restart current level\n"
+			"ESC = Return to menu / close this help window\n\n"
+			"Destroy breakable blocks to find the hidden exit.\n"
+			"Collect power-ups to improve bomb range,\n"
+			"bomb count, and speed.";
 	}
+
+	return
+		"Left Click = Place tile / select toolbar button\n"
+		"Right Click = Erase tile\n"
+		"Middle Mouse = Pick tile / tool\n"
+		"Mouse Wheel = Cycle visible tools\n"
+		"Letter Keys = Select tile by tile letter\n"
+		"Shift + B / T / C = Bomber / Tree / Chomper\n"
+		"Enter = Save level\n"
+		"Backspace = Reset from template\n"
+		"World arrows = Switch world palette\n"
+		"Load arrows = Choose saved map, <Load> opens it\n"
+		"Hotbar < / > = Change tool page";
 }
 
 void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
@@ -259,6 +364,17 @@ void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
 	background.setFillColor(sf::Color(18, 18, 28));
 	window.draw(background);
 
+	sf::RectangleShape frame;
+	frame.setPosition({ 24.f, 24.f });
+	frame.setSize({
+		static_cast<float>(windowSize.x) - 48.f,
+		static_cast<float>(windowSize.y) - 48.f
+		});
+	frame.setFillColor(sf::Color::Transparent);
+	frame.setOutlineColor(sf::Color(255, 230, 120));
+	frame.setOutlineThickness(3.f);
+	window.draw(frame);
+
 	if (m_titleText)
 		window.draw(*m_titleText);
 
@@ -269,7 +385,8 @@ void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
 	{
 		&m_playLevelsButton,
 		&m_levelEditorButton,
-		&m_backButton
+		&m_backButton,
+		&m_controlsButton
 	};
 
 	for (const Button* button : buttons)
@@ -279,6 +396,124 @@ void GAME1_BombermanMenu::draw(sf::RenderWindow& window) const
 		if (button->text)
 			window.draw(*button->text);
 	}
+
+	if (m_controlsPopupOpen)
+	{
+		drawControlsPopup(window, windowSize);
+	}
+}
+
+void GAME1_BombermanMenu::drawTextCentered(sf::RenderTarget& target,
+	const std::string& string,
+	unsigned int size,
+	const sf::FloatRect& rect,
+	sf::Color fill,
+	float outlineThickness) const
+{
+	sf::Text text(m_font);
+	text.setString(string);
+	text.setCharacterSize(size);
+	text.setFillColor(fill);
+	text.setOutlineColor(sf::Color::Black);
+	text.setOutlineThickness(outlineThickness);
+
+	const sf::FloatRect bounds = text.getLocalBounds();
+
+	text.setPosition({
+		rect.position.x + (rect.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+		rect.position.y + (rect.size.y - bounds.size.y) * 0.5f - bounds.position.y - 1.f
+		});
+
+	target.draw(text);
+}
+
+void GAME1_BombermanMenu::drawControlsPopup(sf::RenderTarget& target, sf::Vector2u windowSize) const
+{
+	sf::RectangleShape overlay;
+	overlay.setPosition({ 0.f, 0.f });
+	overlay.setSize({ static_cast<float>(windowSize.x), static_cast<float>(windowSize.y) });
+	overlay.setFillColor(sf::Color(0, 0, 0, 155));
+	target.draw(overlay);
+
+	sf::RectangleShape popup;
+	popup.setPosition(m_popupBounds.position);
+	popup.setSize(m_popupBounds.size);
+	popup.setFillColor(sf::Color(35, 35, 45));
+	popup.setOutlineColor(sf::Color(255, 230, 120));
+	popup.setOutlineThickness(3.f);
+	target.draw(popup);
+
+	sf::RectangleShape innerFrame;
+	innerFrame.setPosition({ m_popupBounds.position.x + 12.f, m_popupBounds.position.y + 12.f });
+	innerFrame.setSize({ m_popupBounds.size.x - 24.f, m_popupBounds.size.y - 24.f });
+	innerFrame.setFillColor(sf::Color::Transparent);
+	innerFrame.setOutlineColor(sf::Color::White);
+	innerFrame.setOutlineThickness(1.5f);
+	target.draw(innerFrame);
+
+	drawTextCentered(
+		target,
+		getControlsPopupTitle(),
+		34,
+		sf::FloatRect(
+			{ m_popupBounds.position.x, m_popupBounds.position.y + 28.f },
+			{ m_popupBounds.size.x, 48.f }),
+		sf::Color::White,
+		2.f);
+
+	const sf::FloatRect bodyRect(
+		{ m_popupBounds.position.x + 80.f, m_popupBounds.position.y + 106.f },
+		{ m_popupBounds.size.x - 160.f, m_popupBounds.size.y - 162.f });
+
+	sf::Text bodyText(m_font);
+	bodyText.setString(getControlsPopupBody());
+	bodyText.setCharacterSize(m_controlsPopupPage == 0 ? 21 : 18);
+	bodyText.setFillColor(sf::Color(230, 230, 230));
+	bodyText.setOutlineColor(sf::Color::Black);
+	bodyText.setOutlineThickness(1.25f);
+	bodyText.setLineSpacing(1.14f);
+
+	const sf::FloatRect bodyBounds = bodyText.getLocalBounds();
+
+	bodyText.setPosition({
+		bodyRect.position.x - bodyBounds.position.x,
+		bodyRect.position.y + (bodyRect.size.y - bodyBounds.size.y) * 0.5f - bodyBounds.position.y
+		});
+
+	target.draw(bodyText);
+
+	sf::RectangleShape previousButton;
+	previousButton.setPosition(m_popupPreviousPageButtonBounds.position);
+	previousButton.setSize(m_popupPreviousPageButtonBounds.size);
+	previousButton.setFillColor(sf::Color(45, 45, 70));
+	previousButton.setOutlineColor(sf::Color::White);
+	previousButton.setOutlineThickness(2.f);
+	target.draw(previousButton);
+	drawTextCentered(target, "<", 34, m_popupPreviousPageButtonBounds, sf::Color::White, 2.f);
+
+	sf::RectangleShape nextButton;
+	nextButton.setPosition(m_popupNextPageButtonBounds.position);
+	nextButton.setSize(m_popupNextPageButtonBounds.size);
+	nextButton.setFillColor(sf::Color(45, 45, 70));
+	nextButton.setOutlineColor(sf::Color::White);
+	nextButton.setOutlineThickness(2.f);
+	target.draw(nextButton);
+	drawTextCentered(target, ">", 34, m_popupNextPageButtonBounds, sf::Color::White, 2.f);
+
+	drawTextCentered(
+		target,
+		"Page " + std::to_string(m_controlsPopupPage + 1) + " / 2",
+		16,
+		sf::FloatRect(
+			{ m_popupBounds.position.x, m_popupBounds.position.y + m_popupBounds.size.y - 46.f },
+			{ m_popupBounds.size.x, 28.f }),
+		sf::Color(255, 230, 120),
+		1.5f);
+}
+
+bool GAME1_BombermanMenu::isControlsPopupOpen() const
+{
+	return m_controlsPopupOpen;
 }
 
 const std::string& GAME1_BombermanMenu::getLastError() const

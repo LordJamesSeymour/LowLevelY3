@@ -1,7 +1,5 @@
 #include "GAME1_BombermanWindow.h"
 
-#include "ArcadeInput.h"
-
 
 #include <algorithm>
 #include <cctype>
@@ -253,7 +251,7 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	if (!loadLevelAndActors(true))
 		return false;
 
-	refreshUiText({ 1024, 600 });
+	refreshUiText({ 1024, 640 });
 
 	return true;
 }
@@ -472,10 +470,15 @@ void GAME1_BombermanWindow::stopWalkingSound()
 
 bool GAME1_BombermanWindow::isWalkingInputHeld() const
 {
-	return ArcadeInput::isMoveLeftHeld() ||
-		ArcadeInput::isMoveRightHeld() ||
-		ArcadeInput::isMoveUpHeld() ||
-		ArcadeInput::isMoveDownHeld();
+	return
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
 }
 
 bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
@@ -832,7 +835,7 @@ void GAME1_BombermanWindow::reset()
 
 void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 {
-	const bool restartHeld = ArcadeInput::isRestartHeld();
+	const bool restartHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R);
 
 	if (restartHeld && !m_restartHeldLastFrame)
 	{
@@ -847,8 +850,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 
 	if (m_playState == PlayState::Playing)
 	{
-		const bool spaceHeld = ArcadeInput::isPrimaryHeld();
-		const bool punchHeld = ArcadeInput::isSecondaryHeld();
+		const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		const bool punchHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		if (spaceHeld && !m_spaceHeldLastFrame)
 		{
@@ -894,8 +897,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	else if (m_playState == PlayState::TeleportingOut ||
 		m_playState == PlayState::TeleportingIn)
 	{
-		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
-		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		stopWalkingSound();
 
@@ -914,8 +917,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	}
 	else
 	{
-		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
-		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
 
 		stopWalkingSound();
 
@@ -2429,15 +2432,13 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 	if (m_objectiveText)
 		window.draw(*m_objectiveText);
 
-	drawPowerUpIcon(window, PowerUpType::FireUp, { 18.f, 76.f }, 26.f);
-	drawPowerUpIcon(window, PowerUpType::BombUp, { 118.f, 76.f }, 26.f);
-	drawPowerUpIcon(window, PowerUpType::SpeedUp, { 218.f, 76.f }, 26.f);
+	const float perkIconX = static_cast<float>(windowSize.x) - 158.f;
+	drawPowerUpIcon(window, PowerUpType::FireUp, { perkIconX, 58.f }, 28.f);
+	drawPowerUpIcon(window, PowerUpType::BombUp, { perkIconX, 98.f }, 28.f);
+	drawPowerUpIcon(window, PowerUpType::SpeedUp, { perkIconX, 138.f }, 28.f);
 
 	if (m_powerUpHudText)
 		window.draw(*m_powerUpHudText);
-
-	if (m_helpText)
-		window.draw(*m_helpText);
 
 	if (m_playState != PlayState::Playing &&
 		m_playState != PlayState::TeleportingOut &&
@@ -2473,13 +2474,14 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	if (m_statsText)
 	{
 		m_statsText->setString(
-			"Level: " + levelName +
-			"   World: " + std::to_string(m_level.getWorldNumber()) +
-			"   Lives: " + std::to_string(std::max(0, m_playerLives)) +
-			"   Bombs: " + std::to_string(m_maxActiveBombs) +
-			"   Range: " + std::to_string(m_bombRange) +
-			"   Speed: " + std::to_string(static_cast<int>(m_player.getMoveSpeed())) +
-			"   Enemies: " + std::to_string(livingEnemies)
+			"PLAYER STATS\n"
+			"Level: " + levelName + "\n" +
+			"World: " + std::to_string(m_level.getWorldNumber()) + "\n" +
+			"Lives: " + std::to_string(std::max(0, m_playerLives)) + "\n" +
+			"Bombs: " + std::to_string(m_maxActiveBombs) + "\n" +
+			"Range: " + std::to_string(m_bombRange) + "\n" +
+			"Speed: " + std::to_string(static_cast<int>(m_player.getMoveSpeed())) + "\n" +
+			"Enemies: " + std::to_string(livingEnemies)
 		);
 
 		m_statsText->setPosition({ 18.f, 14.f });
@@ -2508,30 +2510,34 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 			m_objectiveText->setFillColor(sf::Color(120, 255, 140));
 		}
 
-		m_objectiveText->setPosition({ 18.f, 44.f });
+		const sf::FloatRect bounds = m_objectiveText->getLocalBounds();
+
+		m_objectiveText->setPosition({
+			(static_cast<float>(windowSize.x) - bounds.size.x) * 0.5f - bounds.position.x,
+			static_cast<float>(windowSize.y) - 42.f - bounds.position.y
+			});
 	}
 
 	if (m_powerUpHudText)
 	{
 		m_powerUpHudText->setString(
-			"x" + std::to_string(m_fireUpLevel) +
-			"        x" + std::to_string(m_bombUpLevel) +
-			"        x" + std::to_string(m_speedUpLevel)
+			"PERKS\n"
+			"Fire  x" + std::to_string(m_fireUpLevel) + "\n" +
+			"Bomb  x" + std::to_string(m_bombUpLevel) + "\n" +
+			"Speed x" + std::to_string(m_speedUpLevel)
 		);
 
-		m_powerUpHudText->setPosition({ 50.f, 78.f });
+		const sf::FloatRect bounds = m_powerUpHudText->getLocalBounds();
+
+		m_powerUpHudText->setPosition({
+			static_cast<float>(windowSize.x) - bounds.size.x - 26.f - bounds.position.x,
+			18.f - bounds.position.y
+			});
 	}
 
 	if (m_helpText)
 	{
-		m_helpText->setString("WASD / Arrows: Move    Space: Place Bomb    E: Punch Bomb / Break Block    R: Restart Current Level    ESC: Menu");
-
-		const sf::FloatRect bounds = m_helpText->getLocalBounds();
-
-		m_helpText->setPosition({
-			(static_cast<float>(windowSize.x) - bounds.size.x) * 0.5f - bounds.position.x,
-			static_cast<float>(windowSize.y) - 42.f - bounds.position.y
-			});
+		m_helpText->setString("");
 	}
 
 	if (m_statusText)
