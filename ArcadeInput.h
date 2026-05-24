@@ -49,7 +49,7 @@ public:
 	static bool isCancelHeld();       // Keyboard Escape / controller Select or B
 	static bool isCancelPressed();
 
-	static bool isRestartHeld();      // Keyboard R
+	static bool isRestartHeld();      // Keyboard R / controller Start
 	static bool isRestartPressed();
 
 	// Controller-only menu helpers.

@@ -2659,11 +2659,11 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 	{
 		if (m_playState == PlayState::Victory)
 		{
-			m_statusText->setString("VICTORY!\nAll levels completed\nPress R to restart this level");
+			m_statusText->setString("VICTORY!\nAll levels completed\nPress \"R\" or \"START\" to restart this level");
 		}
 		else if (m_playState == PlayState::GameOver)
 		{
-			m_statusText->setString("GAME OVER\nPress R to restart");
+			m_statusText->setString("GAME OVER\nPress \"R\" or \"START\" to restart");
 		}
 		else
 		{

@@ -144,6 +144,7 @@ void ArcadeInput::update()
 		currentInput.controllerPrimary = currentInput.controllerPrimary || a;
 		currentInput.controllerSecondary = currentInput.controllerSecondary || b;
 		currentInput.controllerConfirm = currentInput.controllerConfirm || start || a;
+		currentInput.restart = currentInput.restart || start;
 		currentInput.controllerBack = currentInput.controllerBack || select;
 		currentInput.controllerCancel = currentInput.controllerCancel || select || b;
 
@@ -161,7 +162,7 @@ void ArcadeInput::update()
 	currentInput.confirm = keyboardConfirm() || currentInput.controllerConfirm;
 	currentInput.back = keyboardBack() || currentInput.controllerBack;
 	currentInput.cancel = keyboardBack() || currentInput.controllerCancel;
-	currentInput.restart = keyboardRestart();
+	currentInput.restart = keyboardRestart() || currentInput.restart;
 }
 
 bool ArcadeInput::isMoveLeftHeld() { return currentInput.left; }
