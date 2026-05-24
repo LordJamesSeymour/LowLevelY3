@@ -1,4 +1,5 @@
 #include "GAME1_BombermanMenu.h"
+#include "ArcadeInput.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -78,6 +79,8 @@ bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& b
 	m_controlsButton.text->setFillColor(sf::Color::White);
 	m_controlsButton.text->setOutlineColor(sf::Color::Black);
 	m_controlsButton.text->setOutlineThickness(2.f);
+
+	resetSelection();
 
 	const fs::path audioDirectory = fs::path(bombermanRootDirectory) / "Resources" / "Audio";
 
@@ -222,6 +225,8 @@ void GAME1_BombermanMenu::layout(const sf::RenderWindow& window)
 			arrowSize
 		}
 	);
+
+	updateSelectionVisuals();
 }
 
 void GAME1_BombermanMenu::centerTextInButton(Button& button)
@@ -238,10 +243,175 @@ void GAME1_BombermanMenu::centerTextInButton(Button& button)
 		});
 }
 
+GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonForSelection(MenuSelection selection)
+{
+	switch (selection)
+	{
+	case MenuSelection::PlayLevels:
+		return &m_playLevelsButton;
+
+	case MenuSelection::LevelEditor:
+		return &m_levelEditorButton;
+
+	case MenuSelection::BackToHub:
+		return &m_backButton;
+
+	case MenuSelection::Controls:
+	default:
+		return &m_controlsButton;
+	}
+}
+
+const GAME1_BombermanMenu::Button* GAME1_BombermanMenu::getButtonForSelection(MenuSelection selection) const
+{
+	switch (selection)
+	{
+	case MenuSelection::PlayLevels:
+		return &m_playLevelsButton;
+
+	case MenuSelection::LevelEditor:
+		return &m_levelEditorButton;
+
+	case MenuSelection::BackToHub:
+		return &m_backButton;
+
+	case MenuSelection::Controls:
+	default:
+		return &m_controlsButton;
+	}
+}
+
+void GAME1_BombermanMenu::setSelectedItem(MenuSelection selection)
+{
+	m_selectedItem = selection;
+	updateSelectionVisuals();
+}
+
+void GAME1_BombermanMenu::resetSelection()
+{
+	setSelectedItem(MenuSelection::PlayLevels);
+}
+
+void GAME1_BombermanMenu::selectPreviousItem()
+{
+	const int current = static_cast<int>(m_selectedItem);
+	const int previous = (current + 3) % 4;
+	setSelectedItem(static_cast<MenuSelection>(previous));
+}
+
+void GAME1_BombermanMenu::selectNextItem()
+{
+	const int current = static_cast<int>(m_selectedItem);
+	const int next = (current + 1) % 4;
+	setSelectedItem(static_cast<MenuSelection>(next));
+}
+
+void GAME1_BombermanMenu::updateSelectionVisuals()
+{
+	Button* buttons[] =
+	{
+		&m_playLevelsButton,
+		&m_levelEditorButton,
+		&m_backButton,
+		&m_controlsButton
+	};
+
+	for (Button* button : buttons)
+	{
+		button->box.setFillColor(sf::Color(35, 35, 45));
+		button->box.setOutlineColor(sf::Color::White);
+		button->box.setOutlineThickness(3.f);
+
+		if (button->text)
+		{
+			button->text->setFillColor(sf::Color::White);
+		}
+	}
+
+	Button* selectedButton = getButtonForSelection(m_selectedItem);
+	if (selectedButton == nullptr)
+		return;
+
+	selectedButton->box.setFillColor(sf::Color(70, 70, 105));
+	selectedButton->box.setOutlineColor(sf::Color(255, 220, 120));
+	selectedButton->box.setOutlineThickness(3.f);
+
+	if (selectedButton->text)
+	{
+		selectedButton->text->setFillColor(sf::Color(255, 220, 120));
+	}
+}
+
+GAME1_BombermanMenuAction GAME1_BombermanMenu::activateSelectedItem()
+{
+	if (m_controlsPopupOpen)
+		return GAME1_BombermanMenuAction::None;
+
+	if (m_selectedItem == MenuSelection::Controls)
+	{
+		m_controlsPopupOpen = true;
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	const Button* selectedButton = getButtonForSelection(m_selectedItem);
+	return selectedButton != nullptr ? selectedButton->action : GAME1_BombermanMenuAction::None;
+}
+
+GAME1_BombermanMenuAction GAME1_BombermanMenu::handleControllerInput()
+{
+	if (m_controlsPopupOpen)
+	{
+		if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+		{
+			m_controlsPopupOpen = false;
+			return GAME1_BombermanMenuAction::None;
+		}
+
+		if (ArcadeInput::isControllerMoveLeftPressed() || ArcadeInput::isControllerMoveUpPressed())
+		{
+			showPreviousControlsPage();
+			return GAME1_BombermanMenuAction::None;
+		}
+
+		if (ArcadeInput::isControllerMoveRightPressed() || ArcadeInput::isControllerMoveDownPressed())
+		{
+			showNextControlsPage();
+			return GAME1_BombermanMenuAction::None;
+		}
+
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	if (ArcadeInput::isControllerMoveUpPressed())
+	{
+		selectPreviousItem();
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	if (ArcadeInput::isControllerMoveDownPressed())
+	{
+		selectNextItem();
+		return GAME1_BombermanMenuAction::None;
+	}
+
+	if (ArcadeInput::isControllerConfirmPressed())
+	{
+		return activateSelectedItem();
+	}
+
+	if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+	{
+		return GAME1_BombermanMenuAction::BackToHub;
+	}
+
+	return GAME1_BombermanMenuAction::None;
+}
+
 GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePosition)
 {
 	if (containsPoint(m_controlsButton.box.getGlobalBounds(), mousePosition))
 	{
+		setSelectedItem(MenuSelection::Controls);
 		m_controlsPopupOpen = !m_controlsPopupOpen;
 		return GAME1_BombermanMenuAction::None;
 	}
@@ -263,17 +433,22 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePos
 		return GAME1_BombermanMenuAction::None;
 	}
 
-	const Button* buttons[] =
+	if (containsPoint(m_playLevelsButton.box.getGlobalBounds(), mousePosition))
 	{
-		&m_playLevelsButton,
-		&m_levelEditorButton,
-		&m_backButton
-	};
+		setSelectedItem(MenuSelection::PlayLevels);
+		return m_playLevelsButton.action;
+	}
 
-	for (const Button* button : buttons)
+	if (containsPoint(m_levelEditorButton.box.getGlobalBounds(), mousePosition))
 	{
-		if (containsPoint(button->box.getGlobalBounds(), mousePosition))
-			return button->action;
+		setSelectedItem(MenuSelection::LevelEditor);
+		return m_levelEditorButton.action;
+	}
+
+	if (containsPoint(m_backButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::BackToHub);
+		return m_backButton.action;
 	}
 
 	return GAME1_BombermanMenuAction::None;
@@ -281,28 +456,42 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePos
 
 bool GAME1_BombermanMenu::handleKeyReleased(sf::Keyboard::Key key)
 {
-	if (!m_controlsPopupOpen)
-		return false;
-
-	if (key == sf::Keyboard::Key::Escape)
+	if (m_controlsPopupOpen)
 	{
-		m_controlsPopupOpen = false;
+		if (key == sf::Keyboard::Key::Escape)
+		{
+			m_controlsPopupOpen = false;
+			return true;
+		}
+
+		if (key == sf::Keyboard::Key::Left || key == sf::Keyboard::Key::A)
+		{
+			showPreviousControlsPage();
+			return true;
+		}
+
+		if (key == sf::Keyboard::Key::Right || key == sf::Keyboard::Key::D)
+		{
+			showNextControlsPage();
+			return true;
+		}
+
 		return true;
 	}
 
-	if (key == sf::Keyboard::Key::Left || key == sf::Keyboard::Key::A)
+	if (key == sf::Keyboard::Key::Up || key == sf::Keyboard::Key::W)
 	{
-		showPreviousControlsPage();
+		selectPreviousItem();
 		return true;
 	}
 
-	if (key == sf::Keyboard::Key::Right || key == sf::Keyboard::Key::D)
+	if (key == sf::Keyboard::Key::Down || key == sf::Keyboard::Key::S)
 	{
-		showNextControlsPage();
+		selectNextItem();
 		return true;
 	}
 
-	return true;
+	return false;
 }
 
 void GAME1_BombermanMenu::showPreviousControlsPage()
@@ -327,9 +516,9 @@ std::string GAME1_BombermanMenu::getControlsPopupBody() const
 	if (m_controlsPopupPage == 0)
 	{
 		return
-			"WASD / Arrow Keys = Move\n"
-			"Space = Place bomb\n"
-			"E = Punch bomb / break block\n"
+			"WASD / Arrow Keys / D-pad = Move\n"
+			"Space / Controller A = Place bomb\n"
+			"E / Controller B = Punch bomb / break block\n"
 			"R = Restart current level\n"
 			"ESC = Return to menu / close this help window\n\n"
 			"Destroy breakable blocks to find the hidden exit.\n"

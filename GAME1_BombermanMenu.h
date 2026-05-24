@@ -25,12 +25,26 @@ public:
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition);
 	bool handleKeyReleased(sf::Keyboard::Key key);
+	GAME1_BombermanMenuAction handleControllerInput();
+
+	void resetSelection();
+	void selectPreviousItem();
+	void selectNextItem();
+	GAME1_BombermanMenuAction activateSelectedItem();
 	void draw(sf::RenderWindow& window) const;
 
 	bool isControlsPopupOpen() const;
 	const std::string& getLastError() const;
 
 private:
+	enum class MenuSelection
+	{
+		PlayLevels = 0,
+		LevelEditor = 1,
+		BackToHub = 2,
+		Controls = 3
+	};
+
 	struct Button
 	{
 		sf::RectangleShape box;
@@ -41,6 +55,10 @@ private:
 private:
 	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
 	void centerTextInButton(Button& button);
+	void updateSelectionVisuals();
+	Button* getButtonForSelection(MenuSelection selection);
+	const Button* getButtonForSelection(MenuSelection selection) const;
+	void setSelectedItem(MenuSelection selection);
 
 	void showPreviousControlsPage();
 	void showNextControlsPage();
@@ -70,6 +88,7 @@ private:
 	Button m_levelEditorButton;
 	Button m_backButton;
 	Button m_controlsButton;
+	MenuSelection m_selectedItem = MenuSelection::PlayLevels;
 
 	bool m_controlsPopupOpen = false;
 	int m_controlsPopupPage = 0;

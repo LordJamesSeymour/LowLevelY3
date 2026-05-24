@@ -18,6 +18,11 @@ class ArcadeInput
 public:
 	static void update();
 
+	// Call this after a menu selection consumes the current button press.
+	// It prevents the same held A/Start press from also triggering gameplay
+	// on the first frame after changing screens.
+	static void consumePressedState();
+
 	// Keyboard OR controller gameplay input.
 	static bool isMoveLeftHeld();
 	static bool isMoveRightHeld();

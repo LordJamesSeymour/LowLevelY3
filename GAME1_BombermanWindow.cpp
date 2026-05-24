@@ -1,5 +1,4 @@
 #include "GAME1_BombermanWindow.h"
-
 #include "ArcadeInput.h"
 
 
@@ -13,6 +12,16 @@
 
 namespace
 {
+	constexpr float HudLeftX = 12.f;
+	constexpr float HudTitleTopY = 8.f;
+	constexpr float HudListTopY = 44.f;
+	constexpr float HudRightPadding = 18.f;
+	constexpr float PerkIconRightOffset = 126.f;
+	constexpr float PerkIconSize = 18.f;
+	constexpr float PerkIconTextGap = 8.f;
+	constexpr float PerkRowTopY = 42.f;
+	constexpr float PerkRowHeight = 24.f;
+
 	std::string ToLower(std::string value)
 	{
 		std::transform(value.begin(), value.end(), value.begin(),
@@ -119,34 +128,65 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 	}
 
 	m_statusText.emplace(m_font);
-	m_statusText->setCharacterSize(44);
+	m_statusText->setCharacterSize(34);
 	m_statusText->setFillColor(sf::Color::White);
 	m_statusText->setOutlineColor(sf::Color::Black);
-	m_statusText->setOutlineThickness(3.f);
+	m_statusText->setOutlineThickness(2.5f);
 
 	m_helpText.emplace(m_font);
-	m_helpText->setCharacterSize(20);
+	m_helpText->setCharacterSize(16);
 	m_helpText->setFillColor(sf::Color(230, 230, 230));
 	m_helpText->setOutlineColor(sf::Color::Black);
-	m_helpText->setOutlineThickness(1.5f);
+	m_helpText->setOutlineThickness(1.25f);
+
+	m_statsTitleText.emplace(m_font);
+	m_statsTitleText->setString("PLAYER STATS");
+	m_statsTitleText->setCharacterSize(16);
+	m_statsTitleText->setFillColor(sf::Color(255, 230, 120));
+	m_statsTitleText->setOutlineColor(sf::Color::Black);
+	m_statsTitleText->setOutlineThickness(1.5f);
 
 	m_statsText.emplace(m_font);
-	m_statsText->setCharacterSize(22);
+	m_statsText->setCharacterSize(14);
 	m_statsText->setFillColor(sf::Color::White);
 	m_statsText->setOutlineColor(sf::Color::Black);
-	m_statsText->setOutlineThickness(2.f);
+	m_statsText->setOutlineThickness(1.25f);
+	m_statsText->setLineSpacing(1.08f);
 
 	m_objectiveText.emplace(m_font);
-	m_objectiveText->setCharacterSize(22);
+	m_objectiveText->setCharacterSize(16);
 	m_objectiveText->setFillColor(sf::Color(255, 230, 120));
 	m_objectiveText->setOutlineColor(sf::Color::Black);
-	m_objectiveText->setOutlineThickness(2.f);
+	m_objectiveText->setOutlineThickness(1.5f);
+
+	m_powerUpTitleText.emplace(m_font);
+	m_powerUpTitleText->setString("PERKS");
+	m_powerUpTitleText->setCharacterSize(16);
+	m_powerUpTitleText->setFillColor(sf::Color(255, 230, 120));
+	m_powerUpTitleText->setOutlineColor(sf::Color::Black);
+	m_powerUpTitleText->setOutlineThickness(1.5f);
 
 	m_powerUpHudText.emplace(m_font);
-	m_powerUpHudText->setCharacterSize(20);
+	m_powerUpHudText->setCharacterSize(14);
 	m_powerUpHudText->setFillColor(sf::Color::White);
 	m_powerUpHudText->setOutlineColor(sf::Color::Black);
-	m_powerUpHudText->setOutlineThickness(2.f);
+	m_powerUpHudText->setOutlineThickness(1.25f);
+	m_powerUpHudText->setLineSpacing(1.15f);
+
+	m_fireUpHudText.emplace(m_font);
+	m_bombUpHudText.emplace(m_font);
+	m_speedUpHudText.emplace(m_font);
+
+	for (std::optional<sf::Text>* perkText : { &m_fireUpHudText, &m_bombUpHudText, &m_speedUpHudText })
+	{
+		if (!perkText->has_value())
+			continue;
+
+		perkText->value().setCharacterSize(14);
+		perkText->value().setFillColor(sf::Color::White);
+		perkText->value().setOutlineColor(sf::Color::Black);
+		perkText->value().setOutlineThickness(1.25f);
+	}
 
 	const fs::path audioDirectory = fs::path(m_resourcesDirectory) / "Audio";
 
@@ -473,10 +513,10 @@ void GAME1_BombermanWindow::stopWalkingSound()
 bool GAME1_BombermanWindow::isWalkingInputHeld() const
 {
 	return
-		ArcadeInput::isMoveUpHeld() ||
-		ArcadeInput::isMoveDownHeld() ||
 		ArcadeInput::isMoveLeftHeld() ||
-		ArcadeInput::isMoveRightHeld();
+		ArcadeInput::isMoveRightHeld() ||
+		ArcadeInput::isMoveUpHeld() ||
+		ArcadeInput::isMoveDownHeld();
 }
 
 bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
@@ -610,9 +650,10 @@ bool GAME1_BombermanWindow::loadLevelAndActors(bool resetPerks)
 	}
 
 	m_playState = PlayState::Playing;
-	m_spaceHeldLastFrame = false;
-	m_punchHeldLastFrame = false;
-	m_restartHeldLastFrame = false;
+	m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
+	m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+	m_restartHeldLastFrame = ArcadeInput::isRestartHeld();
+	m_actionInputLockUntilReleased = ArcadeInput::isPrimaryHeld() || ArcadeInput::isSecondaryHeld() || ArcadeInput::isConfirmHeld();
 
 	m_bombAnimationSequenceIndex = 0;
 	m_bombAnimationTimer = 0.f;
@@ -831,16 +872,38 @@ void GAME1_BombermanWindow::reset()
 	loadLevelAndActors(true);
 }
 
+void GAME1_BombermanWindow::suppressActionInputUntilReleased()
+{
+	m_actionInputLockUntilReleased = true;
+	m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
+	m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+	m_restartHeldLastFrame = ArcadeInput::isRestartHeld();
+}
+
+void GAME1_BombermanWindow::updateActionInputLock()
+{
+	if (!m_actionInputLockUntilReleased)
+		return;
+
+	const bool actionStillHeld =
+		ArcadeInput::isPrimaryHeld() ||
+		ArcadeInput::isSecondaryHeld() ||
+		ArcadeInput::isConfirmHeld();
+
+	if (!actionStillHeld)
+	{
+		m_actionInputLockUntilReleased = false;
+	}
+}
+
 void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 {
-	const bool restartHeld = ArcadeInput::isRestartHeld();
+	updateActionInputLock();
 
-	if (restartHeld && !m_restartHeldLastFrame)
+	if (ArcadeInput::isRestartPressed())
 	{
 		reset();
 	}
-
-	m_restartHeldLastFrame = restartHeld;
 
 	m_level.updateAnimations(deltaTime);
 	processCompletedBrokenBlocks();
@@ -848,15 +911,12 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 
 	if (m_playState == PlayState::Playing)
 	{
-		const bool spaceHeld = ArcadeInput::isPrimaryHeld();
-		const bool punchHeld = ArcadeInput::isSecondaryHeld();
-
-		if (spaceHeld && !m_spaceHeldLastFrame)
+		if (!m_actionInputLockUntilReleased && ArcadeInput::isPrimaryPressed())
 		{
 			placeBomb();
 		}
 
-		if (punchHeld && !m_punchHeldLastFrame)
+		if (!m_actionInputLockUntilReleased && ArcadeInput::isSecondaryPressed())
 		{
 			m_player.startPunch();
 
@@ -868,8 +928,9 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 			}
 		}
 
-		m_spaceHeldLastFrame = spaceHeld;
-		m_punchHeldLastFrame = punchHeld;
+		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
+		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+		m_restartHeldLastFrame = ArcadeInput::isRestartHeld();
 
 		m_player.update(
 			deltaTime,
@@ -897,6 +958,7 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	{
 		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
 		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+		m_restartHeldLastFrame = ArcadeInput::isRestartHeld();
 
 		stopWalkingSound();
 
@@ -917,6 +979,7 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	{
 		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
 		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
+		m_restartHeldLastFrame = ArcadeInput::isRestartHeld();
 
 		stopWalkingSound();
 
@@ -2424,19 +2487,32 @@ void GAME1_BombermanWindow::draw(sf::RenderWindow& window) const
 
 	window.setView(screenView);
 
+	if (m_statsTitleText)
+		window.draw(*m_statsTitleText);
+
 	if (m_statsText)
 		window.draw(*m_statsText);
 
 	if (m_objectiveText)
 		window.draw(*m_objectiveText);
 
-	const float perkIconX = static_cast<float>(windowSize.x) - 158.f;
-	drawPowerUpIcon(window, PowerUpType::FireUp, { perkIconX, 58.f }, 28.f);
-	drawPowerUpIcon(window, PowerUpType::BombUp, { perkIconX, 98.f }, 28.f);
-	drawPowerUpIcon(window, PowerUpType::SpeedUp, { perkIconX, 138.f }, 28.f);
+	const float perkIconX = static_cast<float>(windowSize.x) - PerkIconRightOffset;
+	const float perkIconTopOffset = (PerkRowHeight - PerkIconSize) * 0.5f;
+	drawPowerUpIcon(window, PowerUpType::FireUp, { perkIconX, PerkRowTopY + perkIconTopOffset }, PerkIconSize);
+	drawPowerUpIcon(window, PowerUpType::BombUp, { perkIconX, PerkRowTopY + PerkRowHeight + perkIconTopOffset }, PerkIconSize);
+	drawPowerUpIcon(window, PowerUpType::SpeedUp, { perkIconX, PerkRowTopY + PerkRowHeight * 2.f + perkIconTopOffset }, PerkIconSize);
 
-	if (m_powerUpHudText)
-		window.draw(*m_powerUpHudText);
+	if (m_powerUpTitleText)
+		window.draw(*m_powerUpTitleText);
+
+	if (m_fireUpHudText)
+		window.draw(*m_fireUpHudText);
+
+	if (m_bombUpHudText)
+		window.draw(*m_bombUpHudText);
+
+	if (m_speedUpHudText)
+		window.draw(*m_speedUpHudText);
 
 	if (m_playState != PlayState::Playing &&
 		m_playState != PlayState::TeleportingOut &&
@@ -2469,10 +2545,19 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 	const std::string levelName = std::filesystem::path(m_currentMapPath).stem().string();
 
+	if (m_statsTitleText)
+	{
+		m_statsTitleText->setString("PLAYER STATS");
+		const sf::FloatRect titleBounds = m_statsTitleText->getLocalBounds();
+		m_statsTitleText->setPosition({
+			HudLeftX - titleBounds.position.x,
+			HudTitleTopY - titleBounds.position.y
+			});
+	}
+
 	if (m_statsText)
 	{
 		m_statsText->setString(
-			"PLAYER STATS\n"
 			"Level: " + levelName + "\n" +
 			"World: " + std::to_string(m_level.getWorldNumber()) + "\n" +
 			"Lives: " + std::to_string(std::max(0, m_playerLives)) + "\n" +
@@ -2482,29 +2567,33 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 			"Enemies: " + std::to_string(livingEnemies)
 		);
 
-		m_statsText->setPosition({ 18.f, 14.f });
+		const sf::FloatRect statsBounds = m_statsText->getLocalBounds();
+		m_statsText->setPosition({
+			HudLeftX - statsBounds.position.x,
+			HudListTopY - statsBounds.position.y
+			});
 	}
 
 	if (m_objectiveText)
 	{
 		if (m_playState == PlayState::TeleportingOut)
 		{
-			m_objectiveText->setString("Objective complete: Teleporting...");
+			m_objectiveText->setString("EXIT FOUND - TELEPORTING");
 			m_objectiveText->setFillColor(sf::Color(120, 255, 255));
 		}
 		else if (m_playState == PlayState::TeleportingIn)
 		{
-			m_objectiveText->setString("Entering next level...");
+			m_objectiveText->setString("ENTERING NEXT LEVEL");
 			m_objectiveText->setFillColor(sf::Color(120, 255, 255));
 		}
 		else if (!m_level.hasExit())
 		{
-			m_objectiveText->setString("Objective: Destroy blocks to find the hidden exit");
+			m_objectiveText->setString("DESTROY BLOCKS TO FIND EXIT");
 			m_objectiveText->setFillColor(sf::Color(255, 230, 120));
 		}
 		else
 		{
-			m_objectiveText->setString("Objective: Exit found! Step on it to escape");
+			m_objectiveText->setString("EXIT FOUND - STEP ON IT");
 			m_objectiveText->setFillColor(sf::Color(120, 255, 140));
 		}
 
@@ -2512,25 +2601,53 @@ void GAME1_BombermanWindow::refreshUiText(sf::Vector2u windowSize)
 
 		m_objectiveText->setPosition({
 			(static_cast<float>(windowSize.x) - bounds.size.x) * 0.5f - bounds.position.x,
-			static_cast<float>(windowSize.y) - 42.f - bounds.position.y
+			static_cast<float>(windowSize.y) - 28.f - bounds.position.y
+			});
+	}
+
+	if (m_powerUpTitleText)
+	{
+		m_powerUpTitleText->setString("PERKS");
+		const sf::FloatRect titleBounds = m_powerUpTitleText->getLocalBounds();
+		m_powerUpTitleText->setPosition({
+			static_cast<float>(windowSize.x) - titleBounds.size.x - HudRightPadding - titleBounds.position.x,
+			HudTitleTopY - titleBounds.position.y
 			});
 	}
 
 	if (m_powerUpHudText)
 	{
-		m_powerUpHudText->setString(
-			"PERKS\n"
-			"Fire  x" + std::to_string(m_fireUpLevel) + "\n" +
-			"Bomb  x" + std::to_string(m_bombUpLevel) + "\n" +
-			"Speed x" + std::to_string(m_speedUpLevel)
-		);
+		m_powerUpHudText->setString("");
+	}
 
-		const sf::FloatRect bounds = m_powerUpHudText->getLocalBounds();
+	const float perkIconX = static_cast<float>(windowSize.x) - PerkIconRightOffset;
+	const float perkTextX = perkIconX + PerkIconSize + PerkIconTextGap;
 
-		m_powerUpHudText->setPosition({
-			static_cast<float>(windowSize.x) - bounds.size.x - 26.f - bounds.position.x,
-			18.f - bounds.position.y
-			});
+	auto positionPerkText = [perkTextX](sf::Text& text, float rowTop)
+		{
+			const sf::FloatRect bounds = text.getLocalBounds();
+			text.setPosition({
+				perkTextX - bounds.position.x,
+				rowTop + (PerkRowHeight - bounds.size.y) * 0.5f - bounds.position.y - 1.f
+				});
+		};
+
+	if (m_fireUpHudText)
+	{
+		m_fireUpHudText->setString("Fire x" + std::to_string(m_fireUpLevel));
+		positionPerkText(*m_fireUpHudText, PerkRowTopY);
+	}
+
+	if (m_bombUpHudText)
+	{
+		m_bombUpHudText->setString("Bomb x" + std::to_string(m_bombUpLevel));
+		positionPerkText(*m_bombUpHudText, PerkRowTopY + PerkRowHeight);
+	}
+
+	if (m_speedUpHudText)
+	{
+		m_speedUpHudText->setString("Spd  x" + std::to_string(m_speedUpLevel));
+		positionPerkText(*m_speedUpHudText, PerkRowTopY + PerkRowHeight * 2.f);
 	}
 
 	if (m_helpText)

@@ -509,6 +509,7 @@ int main()
 
 			if (appState == AppState::GAME1_BombermanMenu)
 			{
+				bombermanMenu.resetSelection();
 				bombermanMenu.startMusic();
 			}
 
@@ -541,6 +542,59 @@ int main()
 			{
 				SetAppState(AppState::GAME2_Menu);
 			}
+		};
+
+	auto HandleBombermanMenuAction = [&](GAME1_BombermanMenuAction action)
+		{
+			switch (action)
+			{
+			case GAME1_BombermanMenuAction::PlayLevels:
+				bombermanLevelSelect.refreshLevelList();
+				SetAppState(AppState::GAME1_BombermanLevelSelect);
+				break;
+
+			case GAME1_BombermanMenuAction::LevelEditor:
+				bombermanEditor.reset();
+
+				if (!bombermanEditor.getLastError().empty())
+				{
+					ShowError(bombermanEditor.getLastError());
+				}
+				else
+				{
+					SetAppState(AppState::GAME1_BombermanEditor);
+				}
+
+				break;
+
+			case GAME1_BombermanMenuAction::BackToHub:
+				SetAppState(AppState::Hub);
+				break;
+
+			case GAME1_BombermanMenuAction::None:
+			default:
+				break;
+			}
+		};
+
+	auto TryStartBombermanLevel = [&](const std::string& mapPath) -> bool
+		{
+			if (!bombermanWindow.loadMapFromFile(mapPath))
+			{
+				std::string msg =
+					"Bomberman level failed to load.\n\n" +
+					bombermanWindow.getLastError() +
+					"\n\nCurrent working directory:\n" +
+					std::filesystem::current_path().string();
+
+				ShowError(msg);
+				return false;
+			}
+
+			bombermanWindow.suppressActionInputUntilReleased();
+			ArcadeInput::consumePressedState();
+			SetAppState(AppState::GAME1_Bomberman);
+			return true;
 		};
 
 	auto ReportBombermanEditorResult =
@@ -686,35 +740,7 @@ int main()
 							static_cast<float>(mousePressed->position.y)
 						);
 
-						switch (bombermanMenu.handleClick(mousePosition))
-						{
-						case GAME1_BombermanMenuAction::PlayLevels:
-							bombermanLevelSelect.refreshLevelList();
-							SetAppState(AppState::GAME1_BombermanLevelSelect);
-							break;
-
-						case GAME1_BombermanMenuAction::LevelEditor:
-							bombermanEditor.reset();
-
-							if (!bombermanEditor.getLastError().empty())
-							{
-								ShowError(bombermanEditor.getLastError());
-							}
-							else
-							{
-								SetAppState(AppState::GAME1_BombermanEditor);
-							}
-
-							break;
-
-						case GAME1_BombermanMenuAction::BackToHub:
-							SetAppState(AppState::Hub);
-							break;
-
-						case GAME1_BombermanMenuAction::None:
-						default:
-							break;
-						}
+						HandleBombermanMenuAction(bombermanMenu.handleClick(mousePosition));
 					}
 				}
 			}
@@ -747,19 +773,9 @@ int main()
 							break;
 
 						case GAME1_BombermanLevelSelectAction::SelectedLevel:
-							if (!bombermanWindow.loadMapFromFile(bombermanLevelSelect.getSelectedLevelPath()))
-							{
-								std::string msg =
-									"Bomberman level failed to load.\n\n" +
-									bombermanWindow.getLastError() +
-									"\n\nCurrent working directory:\n" +
-									std::filesystem::current_path().string();
-
-								ShowError(msg);
+							if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
 								return -1;
-							}
 
-							SetAppState(AppState::GAME1_Bomberman);
 							break;
 
 						case GAME1_BombermanLevelSelectAction::PreviousPage:
@@ -1003,236 +1019,85 @@ int main()
 			}
 		}
 
-
-		auto LaunchSelectedBombermanLevel = [&]() -> bool
-			{
-				if (!bombermanWindow.loadMapFromFile(bombermanLevelSelect.getSelectedLevelPath()))
-				{
-					std::string msg =
-						"Bomberman level failed to load.\n\n" +
-						bombermanWindow.getLastError() +
-						"\n\nCurrent working directory:\n" +
-						std::filesystem::current_path().string();
-
-					ShowError(msg);
-					return false;
-				}
-
-				SetAppState(AppState::GAME1_Bomberman);
-				return true;
-			};
-
-		auto HandleControllerInput = [&]() -> bool
-			{
-				if (appState == AppState::Hub)
-				{
-					if (ArcadeInput::hasControllerActivity())
-					{
-						hub.notifyUserActivity();
-					}
-
-					if (ArcadeInput::isControllerMoveLeftPressed())
-					{
-						hub.navigateLeft();
-					}
-					else if (ArcadeInput::isControllerMoveRightPressed())
-					{
-						hub.navigateRight();
-					}
-
-					if (ArcadeInput::isControllerConfirmPressed() && !hub.isTransitioning())
-					{
-						TryLaunchSelectedHubGame();
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_BombermanMenu)
-				{
-					if (bombermanMenu.isControlsPopupOpen())
-					{
-						if (ArcadeInput::isControllerMoveLeftPressed())
-						{
-							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Left);
-						}
-						else if (ArcadeInput::isControllerMoveRightPressed())
-						{
-							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Right);
-						}
-
-						if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-						{
-							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Escape);
-						}
-
-						return true;
-					}
-
-					if (ArcadeInput::isControllerConfirmPressed())
-					{
-						bombermanLevelSelect.refreshLevelList();
-						SetAppState(AppState::GAME1_BombermanLevelSelect);
-					}
-					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::Hub);
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_BombermanLevelSelect)
-				{
-					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::GAME1_BombermanMenu);
-						return true;
-					}
-
-					if (ArcadeInput::isControllerMoveUpPressed())
-					{
-						bombermanLevelSelect.selectPreviousSlot();
-					}
-					else if (ArcadeInput::isControllerMoveDownPressed())
-					{
-						bombermanLevelSelect.selectNextSlot();
-					}
-
-					if (ArcadeInput::isControllerMoveLeftPressed())
-					{
-						bombermanLevelSelect.selectPreviousPage();
-					}
-					else if (ArcadeInput::isControllerMoveRightPressed())
-					{
-						bombermanLevelSelect.selectNextPage();
-					}
-
-					if (ArcadeInput::isControllerConfirmPressed())
-					{
-						const GAME1_BombermanLevelSelectAction action =
-							bombermanLevelSelect.activateSelectedSlot();
-
-						if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
-						{
-							return LaunchSelectedBombermanLevel();
-						}
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_Bomberman)
-				{
-					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::GAME1_BombermanMenu);
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_Menu)
-				{
-					if (ArcadeInput::isControllerConfirmPressed())
-					{
-						game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
-						SetAppState(AppState::GAME1_LevelSelect);
-					}
-					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::Hub);
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_LevelSelect)
-				{
-					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::GAME1_Menu);
-						return true;
-					}
-
-					if (ArcadeInput::isControllerMoveUpPressed())
-					{
-						game1LevelSelect.selectPreviousSlot();
-					}
-					else if (ArcadeInput::isControllerMoveDownPressed())
-					{
-						game1LevelSelect.selectNextSlot();
-					}
-
-					if (ArcadeInput::isControllerMoveLeftPressed())
-					{
-						game1LevelSelect.selectPreviousPage();
-					}
-					else if (ArcadeInput::isControllerMoveRightPressed())
-					{
-						game1LevelSelect.selectNextPage();
-					}
-
-					if (ArcadeInput::isControllerConfirmPressed())
-					{
-						const int slotIndex = game1LevelSelect.activateSelectedSlot();
-
-						if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
-						{
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
-							{
-								return false;
-							}
-
-							SetAppState(AppState::GAME1_Game);
-						}
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME1_Game)
-				{
-					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::GAME1_Menu);
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME2_Menu)
-				{
-					if (ArcadeInput::isControllerConfirmPressed())
-					{
-						game2Game.reset(window.getSize());
-						SetAppState(AppState::GAME2_Game);
-					}
-					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::Hub);
-					}
-
-					return true;
-				}
-
-				if (appState == AppState::GAME2_Game)
-				{
-					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
-					{
-						SetAppState(AppState::GAME2_Menu);
-					}
-
-					return true;
-				}
-
-				return true;
-			};
-
-		if (!HandleControllerInput())
+		if (appState == AppState::Hub)
 		{
-			return -1;
+			if (ArcadeInput::hasControllerActivity())
+			{
+				hub.notifyUserActivity();
+			}
+
+			if (ArcadeInput::isControllerMoveLeftPressed())
+			{
+				hub.navigateLeft();
+			}
+			else if (ArcadeInput::isControllerMoveRightPressed())
+			{
+				hub.navigateRight();
+			}
+			else if (ArcadeInput::isControllerConfirmPressed())
+			{
+				if (!hub.isTransitioning())
+				{
+					TryLaunchSelectedHubGame();
+					ArcadeInput::consumePressedState();
+				}
+			}
 		}
+		else if (appState == AppState::GAME1_BombermanMenu)
+		{
+			const GAME1_BombermanMenuAction controllerAction = bombermanMenu.handleControllerInput();
+
+			if (controllerAction != GAME1_BombermanMenuAction::None)
+			{
+				HandleBombermanMenuAction(controllerAction);
+				ArcadeInput::consumePressedState();
+			}
+		}
+		else if (appState == AppState::GAME1_BombermanLevelSelect)
+		{
+			if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+			{
+				SetAppState(AppState::GAME1_BombermanMenu);
+				ArcadeInput::consumePressedState();
+			}
+			else if (ArcadeInput::isControllerMoveUpPressed())
+			{
+				bombermanLevelSelect.selectPreviousSlot();
+			}
+			else if (ArcadeInput::isControllerMoveDownPressed())
+			{
+				bombermanLevelSelect.selectNextSlot();
+			}
+			else if (ArcadeInput::isControllerMoveLeftPressed())
+			{
+				bombermanLevelSelect.selectPreviousPage();
+			}
+			else if (ArcadeInput::isControllerMoveRightPressed())
+			{
+				bombermanLevelSelect.selectNextPage();
+			}
+			else if (ArcadeInput::isControllerConfirmPressed())
+			{
+				const GAME1_BombermanLevelSelectAction action = bombermanLevelSelect.activateSelectedSlot();
+
+				if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
+				{
+					if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
+						return -1;
+				}
+
+				ArcadeInput::consumePressedState();
+			}
+		}
+		else if (appState == AppState::GAME1_BombermanEditor)
+		{
+			if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+			{
+				SetAppState(AppState::GAME1_BombermanMenu);
+				ArcadeInput::consumePressedState();
+			}
+		}
+
 
 		ApplyWindowView(window);
 

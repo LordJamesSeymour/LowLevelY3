@@ -23,6 +23,7 @@ public:
 	bool loadMapFromFile(const std::string& mapPath);
 
 	void reset();
+	void suppressActionInputUntilReleased();
 
 	void update(float deltaTime, sf::Vector2u windowSize);
 	void layout(const sf::RenderWindow& window);
@@ -86,6 +87,7 @@ private:
 	void updateWalkingSound(float deltaTime);
 	void stopWalkingSound();
 	bool isWalkingInputHeld() const;
+	void updateActionInputLock();
 
 	bool tryLoadPowerUpTexture(PowerUpTexture& target, const std::vector<std::string>& candidatePaths);
 
@@ -273,9 +275,14 @@ private:
 
 	std::optional<sf::Text> m_statusText;
 	std::optional<sf::Text> m_helpText;
+	std::optional<sf::Text> m_statsTitleText;
 	std::optional<sf::Text> m_statsText;
 	std::optional<sf::Text> m_objectiveText;
+	std::optional<sf::Text> m_powerUpTitleText;
 	std::optional<sf::Text> m_powerUpHudText;
+	std::optional<sf::Text> m_fireUpHudText;
+	std::optional<sf::Text> m_bombUpHudText;
+	std::optional<sf::Text> m_speedUpHudText;
 
 	PlayState m_playState = PlayState::Playing;
 
@@ -300,6 +307,8 @@ private:
 	bool m_hiddenExitAssigned = false;
 
 	std::mt19937 m_rng{ std::random_device{}() };
+
+	bool m_actionInputLockUntilReleased = false;
 
 	bool m_spaceHeldLastFrame = false;
 	bool m_punchHeldLastFrame = false;
