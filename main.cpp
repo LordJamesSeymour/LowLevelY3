@@ -513,8 +513,13 @@ int main()
 				bombermanMenu.startMusic();
 			}
 
-			if (appState == AppState::GAME1_Menu ||
-				appState == AppState::GAME1_LevelSelect)
+			if (appState == AppState::GAME1_Menu)
+			{
+				game1Menu.resetSelection();
+				game1Menu.startMusic();
+			}
+
+			if (appState == AppState::GAME1_LevelSelect)
 			{
 				game1Menu.startMusic();
 			}
@@ -572,6 +577,30 @@ int main()
 				break;
 
 			case GAME1_BombermanMenuAction::None:
+			default:
+				break;
+			}
+		};
+
+	auto HandleGame1MenuAction = [&](GAME1_MenuAction action)
+		{
+			switch (action)
+			{
+			case GAME1_MenuAction::Quit:
+				SetAppState(AppState::Hub);
+				break;
+
+			case GAME1_MenuAction::Play:
+				game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
+				SetAppState(AppState::GAME1_LevelSelect);
+				break;
+
+			case GAME1_MenuAction::LevelEditor:
+				game1Editor.resetEmpty();
+				SetAppState(AppState::GAME1_Editor);
+				break;
+
+			case GAME1_MenuAction::None:
 			default:
 				break;
 			}
@@ -841,9 +870,19 @@ int main()
 			{
 				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 				{
-					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					const bool consumedByMenu = game1Menu.handleKeyReleased(keyReleased->code);
+
+					if (!consumedByMenu)
 					{
-						SetAppState(AppState::Hub);
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							SetAppState(AppState::Hub);
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Enter ||
+							keyReleased->code == sf::Keyboard::Key::Space)
+						{
+							HandleGame1MenuAction(game1Menu.activateSelectedItem());
+						}
 					}
 				}
 
@@ -856,26 +895,7 @@ int main()
 							static_cast<float>(mousePressed->position.y)
 						);
 
-						switch (game1Menu.handleClick(mousePosition))
-						{
-						case GAME1_MenuAction::Quit:
-							SetAppState(AppState::Hub);
-							break;
-
-						case GAME1_MenuAction::Play:
-							game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
-							SetAppState(AppState::GAME1_LevelSelect);
-							break;
-
-						case GAME1_MenuAction::LevelEditor:
-							game1Editor.resetEmpty();
-							SetAppState(AppState::GAME1_Editor);
-							break;
-
-						case GAME1_MenuAction::None:
-						default:
-							break;
-						}
+						HandleGame1MenuAction(game1Menu.handleClick(mousePosition));
 					}
 				}
 			}
@@ -1094,6 +1114,73 @@ int main()
 			if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 			{
 				SetAppState(AppState::GAME1_BombermanMenu);
+				ArcadeInput::consumePressedState();
+			}
+		}
+		else if (appState == AppState::GAME1_Menu)
+		{
+			const GAME1_MenuAction controllerAction = game1Menu.handleControllerInput();
+
+			if (controllerAction != GAME1_MenuAction::None)
+			{
+				HandleGame1MenuAction(controllerAction);
+				ArcadeInput::consumePressedState();
+			}
+		}
+		else if (appState == AppState::GAME1_LevelSelect)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+			{
+				SetAppState(AppState::GAME1_Menu);
+				ArcadeInput::consumePressedState();
+			}
+			else if (ArcadeInput::isControllerMoveUpPressed())
+			{
+				game1LevelSelect.selectPreviousSlot();
+			}
+			else if (ArcadeInput::isControllerMoveDownPressed())
+			{
+				game1LevelSelect.selectNextSlot();
+			}
+			else if (ArcadeInput::isControllerMoveLeftPressed())
+			{
+				game1LevelSelect.selectPreviousPage();
+			}
+			else if (ArcadeInput::isControllerMoveRightPressed())
+			{
+				game1LevelSelect.selectNextPage();
+			}
+			else if (ArcadeInput::isControllerConfirmPressed())
+			{
+				const int slotIndex = game1LevelSelect.activateSelectedSlot();
+
+				if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
+				{
+					if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getSelectedLevelPath()))
+						return -1;
+
+					ArcadeInput::consumePressedState();
+					SetAppState(AppState::GAME1_Game);
+				}
+				else
+				{
+					ArcadeInput::consumePressedState();
+				}
+			}
+		}
+		else if (appState == AppState::GAME1_Editor)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+			{
+				SetAppState(AppState::GAME1_Menu);
+				ArcadeInput::consumePressedState();
+			}
+		}
+		else if (appState == AppState::GAME1_Game)
+		{
+			if (ArcadeInput::isControllerBackPressed())
+			{
+				SetAppState(AppState::GAME1_Menu);
 				ArcadeInput::consumePressedState();
 			}
 		}

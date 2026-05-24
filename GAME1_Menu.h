@@ -1,42 +1,54 @@
 #pragma once
 
+#include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
-
 #include <optional>
 #include <string>
+#include <vector>
 
 enum class GAME1_MenuAction
 {
 	None,
-	Quit,
 	Play,
-	LevelEditor
+	LevelEditor,
+	Quit
 };
 
 class GAME1_Menu
 {
 public:
-	// Kept the old 4-argument signature so main.cpp does not need changing.
-	// The old PNG paths are no longer used because this menu is now text/button based.
 	bool load(const std::string& closeButtonTexturePath,
 		const std::string& logoTexturePath,
 		const std::string& playButtonTexturePath,
-		const std::string& levelEditorTexturePath);
-
-	void layout(const sf::RenderWindow& window);
-	GAME1_MenuAction handleClick(sf::Vector2f mousePosition);
-
-	void selectPreviousButton();
-	void selectNextButton();
-	GAME1_MenuAction activateSelectedButton() const;
+		const std::string& levelEditorButtonTexturePath);
 
 	void startMusic();
 	void stopMusic();
+
+	void layout(const sf::RenderWindow& window);
+	GAME1_MenuAction handleClick(sf::Vector2f mousePosition);
+	bool handleKeyReleased(sf::Keyboard::Key key);
+	GAME1_MenuAction handleControllerInput();
+
+	void resetSelection();
+	void selectPreviousItem();
+	void selectNextItem();
+	GAME1_MenuAction activateSelectedItem();
+
 	void draw(sf::RenderWindow& window) const;
 
+	bool isControlsPopupOpen() const;
 	const std::string& getLastError() const;
 
 private:
+	enum class MenuSelection
+	{
+		Play = 0,
+		LevelEditor = 1,
+		BackToArcade = 2,
+		Controls = 3
+	};
+
 	struct Button
 	{
 		sf::RectangleShape box;
@@ -46,13 +58,32 @@ private:
 
 private:
 	static bool containsPoint(const sf::FloatRect& bounds, sf::Vector2f point);
+
 	void centerTextInButton(Button& button);
-	void refreshSelectionVisuals();
-	Button* getButtonByIndex(int index);
-	const Button* getButtonByIndex(int index) const;
+	void updateSelectionVisuals();
+	void setSelectedItem(MenuSelection selection);
+	Button* getButtonForSelection(MenuSelection selection);
+	const Button* getButtonForSelection(MenuSelection selection) const;
+
+	void showPreviousControlsPage();
+	void showNextControlsPage();
+	std::string getControlsPopupTitle() const;
+	std::string getControlsPopupBody() const;
+
+	void drawTextCentered(sf::RenderTarget& target,
+		const std::string& string,
+		unsigned int size,
+		const sf::FloatRect& rect,
+		sf::Color fill,
+		float outlineThickness = 2.f) const;
+
+	void drawControlsPopup(sf::RenderTarget& target, sf::Vector2u windowSize) const;
+	bool tryOpenMusicFile(const std::vector<std::string>& candidatePaths);
 
 private:
 	sf::Font m_font;
+	sf::Music m_music;
+	bool m_hasMusic = false;
 
 	std::optional<sf::Text> m_titleText;
 	std::optional<sf::Text> m_subtitleText;
@@ -60,8 +91,14 @@ private:
 	Button m_playButton;
 	Button m_levelEditorButton;
 	Button m_backButton;
+	Button m_controlsButton;
+	MenuSelection m_selectedItem = MenuSelection::Play;
 
-	int m_selectedButtonIndex = 0;
+	bool m_controlsPopupOpen = false;
+	int m_controlsPopupPage = 0;
+	sf::FloatRect m_popupBounds;
+	sf::FloatRect m_popupPreviousPageButtonBounds;
+	sf::FloatRect m_popupNextPageButtonBounds;
 
 	std::string m_lastError;
 };
