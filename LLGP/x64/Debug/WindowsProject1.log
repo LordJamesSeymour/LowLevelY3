@@ -1,8 +1,9 @@
-﻿  GAME1_BombermanLevelSelect.cpp
-  GAME1_LevelSelect.cpp
+﻿  ArcadeInput.cpp
+  BombermanPlayer.cpp
+  GAME1_BombermanWindow.cpp
+  GAME1_Player.cpp
   main.cpp
   Generating Code...
-  LINK : C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\LLGP.exe not found or not built by the last incremental link; performing full link
 sfml-graphics-s-d.lib(Transformable.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Transformable.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Shape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(CircleShape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(CircleShape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info

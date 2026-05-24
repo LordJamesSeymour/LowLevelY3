@@ -1,5 +1,7 @@
 #include "GAME1_BombermanWindow.h"
 
+#include "ArcadeInput.h"
+
 
 #include <algorithm>
 #include <cctype>
@@ -471,14 +473,10 @@ void GAME1_BombermanWindow::stopWalkingSound()
 bool GAME1_BombermanWindow::isWalkingInputHeld() const
 {
 	return
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
-		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+		ArcadeInput::isMoveUpHeld() ||
+		ArcadeInput::isMoveDownHeld() ||
+		ArcadeInput::isMoveLeftHeld() ||
+		ArcadeInput::isMoveRightHeld();
 }
 
 bool GAME1_BombermanWindow::tryLoadPowerUpTexture(PowerUpTexture& target,
@@ -835,7 +833,7 @@ void GAME1_BombermanWindow::reset()
 
 void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 {
-	const bool restartHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R);
+	const bool restartHeld = ArcadeInput::isRestartHeld();
 
 	if (restartHeld && !m_restartHeldLastFrame)
 	{
@@ -850,8 +848,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 
 	if (m_playState == PlayState::Playing)
 	{
-		const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
-		const bool punchHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
+		const bool spaceHeld = ArcadeInput::isPrimaryHeld();
+		const bool punchHeld = ArcadeInput::isSecondaryHeld();
 
 		if (spaceHeld && !m_spaceHeldLastFrame)
 		{
@@ -897,8 +895,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	else if (m_playState == PlayState::TeleportingOut ||
 		m_playState == PlayState::TeleportingIn)
 	{
-		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
-		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
+		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
+		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
 
 		stopWalkingSound();
 
@@ -917,8 +915,8 @@ void GAME1_BombermanWindow::update(float deltaTime, sf::Vector2u windowSize)
 	}
 	else
 	{
-		m_spaceHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
-		m_punchHeldLastFrame = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E);
+		m_spaceHeldLastFrame = ArcadeInput::isPrimaryHeld();
+		m_punchHeldLastFrame = ArcadeInput::isSecondaryHeld();
 
 		stopWalkingSound();
 

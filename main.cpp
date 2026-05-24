@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include "ArcadeHub.h"
+#include "ArcadeInput.h"
 
 #include "GAME1_BombermanWindow.h"
 #include "GAME1_BombermanMenu.h"
@@ -568,6 +569,8 @@ int main()
 		const float deltaTime = clock.restart().asSeconds();
 		totalAppTime += deltaTime;
 
+		ArcadeInput::update();
+
 		bombermanEditor.layout(window);
 		bombermanLevelSelect.layout(window);
 		bombermanMenu.layout(window);
@@ -998,6 +1001,237 @@ int main()
 					}
 				}
 			}
+		}
+
+
+		auto LaunchSelectedBombermanLevel = [&]() -> bool
+			{
+				if (!bombermanWindow.loadMapFromFile(bombermanLevelSelect.getSelectedLevelPath()))
+				{
+					std::string msg =
+						"Bomberman level failed to load.\n\n" +
+						bombermanWindow.getLastError() +
+						"\n\nCurrent working directory:\n" +
+						std::filesystem::current_path().string();
+
+					ShowError(msg);
+					return false;
+				}
+
+				SetAppState(AppState::GAME1_Bomberman);
+				return true;
+			};
+
+		auto HandleControllerInput = [&]() -> bool
+			{
+				if (appState == AppState::Hub)
+				{
+					if (ArcadeInput::hasControllerActivity())
+					{
+						hub.notifyUserActivity();
+					}
+
+					if (ArcadeInput::isControllerMoveLeftPressed())
+					{
+						hub.navigateLeft();
+					}
+					else if (ArcadeInput::isControllerMoveRightPressed())
+					{
+						hub.navigateRight();
+					}
+
+					if (ArcadeInput::isControllerConfirmPressed() && !hub.isTransitioning())
+					{
+						TryLaunchSelectedHubGame();
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_BombermanMenu)
+				{
+					if (bombermanMenu.isControlsPopupOpen())
+					{
+						if (ArcadeInput::isControllerMoveLeftPressed())
+						{
+							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Left);
+						}
+						else if (ArcadeInput::isControllerMoveRightPressed())
+						{
+							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Right);
+						}
+
+						if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+						{
+							bombermanMenu.handleKeyReleased(sf::Keyboard::Key::Escape);
+						}
+
+						return true;
+					}
+
+					if (ArcadeInput::isControllerConfirmPressed())
+					{
+						bombermanLevelSelect.refreshLevelList();
+						SetAppState(AppState::GAME1_BombermanLevelSelect);
+					}
+					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::Hub);
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_BombermanLevelSelect)
+				{
+					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::GAME1_BombermanMenu);
+						return true;
+					}
+
+					if (ArcadeInput::isControllerMoveUpPressed())
+					{
+						bombermanLevelSelect.selectPreviousSlot();
+					}
+					else if (ArcadeInput::isControllerMoveDownPressed())
+					{
+						bombermanLevelSelect.selectNextSlot();
+					}
+
+					if (ArcadeInput::isControllerMoveLeftPressed())
+					{
+						bombermanLevelSelect.selectPreviousPage();
+					}
+					else if (ArcadeInput::isControllerMoveRightPressed())
+					{
+						bombermanLevelSelect.selectNextPage();
+					}
+
+					if (ArcadeInput::isControllerConfirmPressed())
+					{
+						const GAME1_BombermanLevelSelectAction action =
+							bombermanLevelSelect.activateSelectedSlot();
+
+						if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
+						{
+							return LaunchSelectedBombermanLevel();
+						}
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_Bomberman)
+				{
+					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::GAME1_BombermanMenu);
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_Menu)
+				{
+					if (ArcadeInput::isControllerConfirmPressed())
+					{
+						game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
+						SetAppState(AppState::GAME1_LevelSelect);
+					}
+					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::Hub);
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_LevelSelect)
+				{
+					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::GAME1_Menu);
+						return true;
+					}
+
+					if (ArcadeInput::isControllerMoveUpPressed())
+					{
+						game1LevelSelect.selectPreviousSlot();
+					}
+					else if (ArcadeInput::isControllerMoveDownPressed())
+					{
+						game1LevelSelect.selectNextSlot();
+					}
+
+					if (ArcadeInput::isControllerMoveLeftPressed())
+					{
+						game1LevelSelect.selectPreviousPage();
+					}
+					else if (ArcadeInput::isControllerMoveRightPressed())
+					{
+						game1LevelSelect.selectNextPage();
+					}
+
+					if (ArcadeInput::isControllerConfirmPressed())
+					{
+						const int slotIndex = game1LevelSelect.activateSelectedSlot();
+
+						if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
+						{
+							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
+							{
+								return false;
+							}
+
+							SetAppState(AppState::GAME1_Game);
+						}
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME1_Game)
+				{
+					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::GAME1_Menu);
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME2_Menu)
+				{
+					if (ArcadeInput::isControllerConfirmPressed())
+					{
+						game2Game.reset(window.getSize());
+						SetAppState(AppState::GAME2_Game);
+					}
+					else if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::Hub);
+					}
+
+					return true;
+				}
+
+				if (appState == AppState::GAME2_Game)
+				{
+					if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
+					{
+						SetAppState(AppState::GAME2_Menu);
+					}
+
+					return true;
+				}
+
+				return true;
+			};
+
+		if (!HandleControllerInput())
+		{
+			return -1;
 		}
 
 		ApplyWindowView(window);

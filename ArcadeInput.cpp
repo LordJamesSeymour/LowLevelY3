@@ -34,6 +34,7 @@ namespace
 		bool controllerConfirm = false;
 		bool controllerBack = false;
 		bool controllerCancel = false;
+		bool controllerRestart = false;
 		bool controllerActivity = false;
 	};
 
@@ -141,6 +142,7 @@ void ArcadeInput::update()
 		currentInput.controllerConfirm = currentInput.controllerConfirm || start || a;
 		currentInput.controllerBack = currentInput.controllerBack || select;
 		currentInput.controllerCancel = currentInput.controllerCancel || select || b;
+		currentInput.controllerRestart = currentInput.controllerRestart || start;
 
 		currentInput.controllerActivity = currentInput.controllerActivity ||
 			left || right || up || down || a || b || select || start;
@@ -156,7 +158,7 @@ void ArcadeInput::update()
 	currentInput.confirm = keyboardConfirm() || currentInput.controllerConfirm;
 	currentInput.back = keyboardBack() || currentInput.controllerBack;
 	currentInput.cancel = keyboardBack() || currentInput.controllerCancel;
-	currentInput.restart = keyboardRestart();
+	currentInput.restart = keyboardRestart() || currentInput.controllerRestart;
 }
 
 bool ArcadeInput::isMoveLeftHeld() { return currentInput.left; }
