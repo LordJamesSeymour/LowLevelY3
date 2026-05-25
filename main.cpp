@@ -754,9 +754,17 @@ int main()
 				{
 					const bool menuConsumedKey = bombermanMenu.handleKeyReleased(keyReleased->code);
 
-					if (!menuConsumedKey && keyReleased->code == sf::Keyboard::Key::Escape)
+					if (!menuConsumedKey)
 					{
-						SetAppState(AppState::Hub);
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							SetAppState(AppState::Hub);
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Enter ||
+							keyReleased->code == sf::Keyboard::Key::Space)
+						{
+							HandleBombermanMenuAction(bombermanMenu.activateSelectedItem());
+						}
 					}
 				}
 
@@ -780,6 +788,38 @@ int main()
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
 						SetAppState(AppState::GAME1_BombermanMenu);
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Up ||
+						keyReleased->code == sf::Keyboard::Key::W)
+					{
+						bombermanLevelSelect.selectPreviousSlot();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Down ||
+						keyReleased->code == sf::Keyboard::Key::S)
+					{
+						bombermanLevelSelect.selectNextSlot();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Left ||
+						keyReleased->code == sf::Keyboard::Key::A)
+					{
+						bombermanLevelSelect.selectPreviousPage();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Right ||
+						keyReleased->code == sf::Keyboard::Key::D)
+					{
+						bombermanLevelSelect.selectNextPage();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Enter ||
+						keyReleased->code == sf::Keyboard::Key::Space)
+					{
+						const GAME1_BombermanLevelSelectAction action =
+							bombermanLevelSelect.activateSelectedSlot();
+
+						if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
+						{
+							if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
+								return -1;
+						}
 					}
 				}
 
@@ -906,6 +946,39 @@ int main()
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
 						SetAppState(AppState::GAME1_Menu);
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Up ||
+						keyReleased->code == sf::Keyboard::Key::W)
+					{
+						game1LevelSelect.selectPreviousSlot();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Down ||
+						keyReleased->code == sf::Keyboard::Key::S)
+					{
+						game1LevelSelect.selectNextSlot();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Left ||
+						keyReleased->code == sf::Keyboard::Key::A)
+					{
+						game1LevelSelect.selectPreviousPage();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Right ||
+						keyReleased->code == sf::Keyboard::Key::D)
+					{
+						game1LevelSelect.selectNextPage();
+					}
+					else if (keyReleased->code == sf::Keyboard::Key::Enter ||
+						keyReleased->code == sf::Keyboard::Key::Space)
+					{
+						const int slotIndex = game1LevelSelect.activateSelectedSlot();
+
+						if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
+						{
+							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getSelectedLevelPath()))
+								return -1;
+
+							SetAppState(AppState::GAME1_Game);
+						}
 					}
 				}
 
