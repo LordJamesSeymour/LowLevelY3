@@ -421,8 +421,9 @@ void GAME1_LevelEditor::resetEmpty()
 	if (m_worldNumber < 1)
 		m_worldNumber = 1;
 
-	m_rows.assign(Rows, std::string(TotalCols, 'O'));
+	m_rows.assign(TotalRows, std::string(TotalCols, 'O'));
 	m_viewStartCol = 0;
+	m_viewStartRow = std::max(0, TotalRows - VisibleRows);
 	m_hotbarPage = 0;
 
 	buildTools();
@@ -708,6 +709,7 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 {
 	rebuildVisibleToolbar();
 	clampViewStartColumn();
+	clampViewStartRow();
 
 	m_lastWindowSize = window.getSize();
 
@@ -717,6 +719,7 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	const int rows = static_cast<int>(m_rows.size());
 	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : TotalCols;
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
 
 	const float horizontalMargin = 90.f;
 	const float topReserved = 126.f;
@@ -728,7 +731,7 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	if (rows > 0 && visibleCols > 0)
 	{
 		const float fitX = maxGridWidth / static_cast<float>(visibleCols);
-		const float fitY = maxGridHeight / static_cast<float>(rows);
+		const float fitY = maxGridHeight / static_cast<float>(visibleRows);
 
 		m_tileSize = std::floor(std::min({
 			static_cast<float>(GameplayTileSize),
@@ -745,7 +748,7 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	}
 
 	const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
-	const float gridHeight = static_cast<float>(rows) * m_tileSize;
+	const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
 
 	m_gridOrigin = {
 		(windowWidth - gridWidth) * 0.5f,
@@ -929,6 +932,18 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 		return;
 	}
 
+	if (isInsideTopHandle(mousePixelPosition))
+	{
+		scrollUp();
+		return;
+	}
+
+	if (isInsideBottomHandle(mousePixelPosition))
+	{
+		scrollDown();
+		return;
+	}
+
 	paintAtPixel(mousePixelPosition);
 }
 
@@ -955,6 +970,18 @@ void GAME1_LevelEditor::handleKeyReleased(sf::Keyboard::Key key)
 	if (key == sf::Keyboard::Key::Right)
 	{
 		scrollRight();
+		return;
+	}
+
+	if (key == sf::Keyboard::Key::Up)
+	{
+		scrollUp();
+		return;
+	}
+
+	if (key == sf::Keyboard::Key::Down)
+	{
+		scrollDown();
 		return;
 	}
 
@@ -1088,6 +1115,18 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 	if (isInsideRightHandle(mousePixelPosition))
 	{
 		scrollRight();
+		return;
+	}
+
+	if (isInsideTopHandle(mousePixelPosition))
+	{
+		scrollUp();
+		return;
+	}
+
+	if (isInsideBottomHandle(mousePixelPosition))
+	{
+		scrollDown();
 		return;
 	}
 
@@ -1279,6 +1318,7 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 	m_rows = std::move(loadedRows);
 	m_viewStartCol = 0;
+	m_viewStartRow = std::max(0, static_cast<int>(m_rows.size()) - VisibleRows);
 	m_hotbarPage = 0;
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
 
@@ -1620,6 +1660,29 @@ void GAME1_LevelEditor::clampViewStartColumn()
 	m_viewStartCol = std::clamp(m_viewStartCol, 0, maxStartCol);
 }
 
+void GAME1_LevelEditor::scrollUp()
+{
+	if (m_viewStartRow > 0)
+		--m_viewStartRow;
+}
+
+void GAME1_LevelEditor::scrollDown()
+{
+	const int totalRows = static_cast<int>(m_rows.size());
+	const int maxStartRow = std::max(0, totalRows - VisibleRows);
+
+	if (m_viewStartRow < maxStartRow)
+		++m_viewStartRow;
+}
+
+void GAME1_LevelEditor::clampViewStartRow()
+{
+	const int totalRows = static_cast<int>(m_rows.size());
+	const int maxStartRow = std::max(0, totalRows - VisibleRows);
+
+	m_viewStartRow = std::clamp(m_viewStartRow, 0, maxStartRow);
+}
+
 bool GAME1_LevelEditor::isInsideLeftHandle(sf::Vector2i mousePixelPosition) const
 {
 	const sf::Vector2f point(
@@ -1627,7 +1690,8 @@ bool GAME1_LevelEditor::isInsideLeftHandle(sf::Vector2i mousePixelPosition) cons
 		static_cast<float>(mousePixelPosition.y));
 
 	const int rows = static_cast<int>(m_rows.size());
-	const float gridHeight = static_cast<float>(rows) * m_tileSize;
+	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
+	const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
 
 	const sf::FloatRect bounds(
 		m_gridOrigin,
@@ -1645,8 +1709,9 @@ bool GAME1_LevelEditor::isInsideRightHandle(sf::Vector2i mousePixelPosition) con
 	const int rows = static_cast<int>(m_rows.size());
 	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
 
-	const float gridHeight = static_cast<float>(rows) * m_tileSize;
+	const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
 	const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
 
 	const sf::FloatRect bounds(
@@ -1656,12 +1721,53 @@ bool GAME1_LevelEditor::isInsideRightHandle(sf::Vector2i mousePixelPosition) con
 	return containsPoint(bounds, point);
 }
 
+bool GAME1_LevelEditor::isInsideTopHandle(sf::Vector2i mousePixelPosition) const
+{
+	const sf::Vector2f point(
+		static_cast<float>(mousePixelPosition.x),
+		static_cast<float>(mousePixelPosition.y));
+
+	const int rows = static_cast<int>(m_rows.size());
+	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
+	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+
+	const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
+
+	const sf::FloatRect bounds(
+		m_gridOrigin,
+		{ gridWidth, m_scrollHandleWidth });
+
+	return containsPoint(bounds, point);
+}
+
+bool GAME1_LevelEditor::isInsideBottomHandle(sf::Vector2i mousePixelPosition) const
+{
+	const sf::Vector2f point(
+		static_cast<float>(mousePixelPosition.x),
+		static_cast<float>(mousePixelPosition.y));
+
+	const int rows = static_cast<int>(m_rows.size());
+	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
+	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
+
+	const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
+	const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
+
+	const sf::FloatRect bounds(
+		{ m_gridOrigin.x, m_gridOrigin.y + gridHeight - m_scrollHandleWidth },
+		{ gridWidth, m_scrollHandleWidth });
+
+	return containsPoint(bounds, point);
+}
+
 std::optional<sf::Vector2i> GAME1_LevelEditor::getTileAtPixel(sf::Vector2i mousePixelPosition) const
 {
 	if (m_rows.empty())
 		return std::nullopt;
 
-	if (isInsideLeftHandle(mousePixelPosition) || isInsideRightHandle(mousePixelPosition))
+	if (isInsideLeftHandle(mousePixelPosition) || isInsideRightHandle(mousePixelPosition) ||
+		isInsideTopHandle(mousePixelPosition) || isInsideBottomHandle(mousePixelPosition))
 		return std::nullopt;
 
 	const float localX = static_cast<float>(mousePixelPosition.x) - m_gridOrigin.x;
@@ -1671,25 +1777,32 @@ std::optional<sf::Vector2i> GAME1_LevelEditor::getTileAtPixel(sf::Vector2i mouse
 		return std::nullopt;
 
 	const int visibleCol = static_cast<int>(std::floor(localX / m_tileSize));
-	const int row = static_cast<int>(std::floor(localY / m_tileSize));
+	const int visibleRow = static_cast<int>(std::floor(localY / m_tileSize));
 
 	const int totalCols = static_cast<int>(m_rows[0].size());
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
 
+	const int totalRows = static_cast<int>(m_rows.size());
+	const int visibleRows = std::min(VisibleRows, std::max(1, totalRows));
+
 	if (visibleCol < 0 ||
 		visibleCol >= visibleCols ||
-		row < 0 ||
-		row >= static_cast<int>(m_rows.size()))
+		visibleRow < 0 ||
+		visibleRow >= visibleRows)
 	{
 		return std::nullopt;
 	}
 
 	const int worldCol = m_viewStartCol + visibleCol;
+	const int worldRow = m_viewStartRow + visibleRow;
 
 	if (worldCol < 0 || worldCol >= totalCols)
 		return std::nullopt;
 
-	return sf::Vector2i{ worldCol, row };
+	if (worldRow < 0 || worldRow >= totalRows)
+		return std::nullopt;
+
+	return sf::Vector2i{ worldCol, worldRow };
 }
 
 std::optional<int> GAME1_LevelEditor::getToolbarIndexAtPixel(sf::Vector2i mousePixelPosition) const
@@ -1869,9 +1982,15 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	const int rows = static_cast<int>(m_rows.size());
 	const int totalCols = rows > 0 ? static_cast<int>(m_rows[0].size()) : 0;
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
 
-	for (int row = 0; row < rows; ++row)
+	for (int visibleRow = 0; visibleRow < visibleRows; ++visibleRow)
 	{
+		const int worldRow = m_viewStartRow + visibleRow;
+
+		if (worldRow < 0 || worldRow >= rows)
+			continue;
+
 		for (int visibleCol = 0; visibleCol < visibleCols; ++visibleCol)
 		{
 			const int worldCol = m_viewStartCol + visibleCol;
@@ -1882,7 +2001,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			const sf::FloatRect tileRect(
 				{
 					m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
-					m_gridOrigin.y + static_cast<float>(row) * m_tileSize
+					m_gridOrigin.y + static_cast<float>(visibleRow) * m_tileSize
 				},
 				{
 					m_tileSize,
@@ -1891,7 +2010,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 				drawTilePreview(window, 'O', tileRect);
 
-				const char tile = m_rows[row][worldCol];
+				const char tile = m_rows[worldRow][worldCol];
 
 				if (tile != 'O')
 					drawTilePreview(window, tile, tileRect);
@@ -1909,7 +2028,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	if (rows > 0 && visibleCols > 0)
 	{
 		const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
-		const float gridHeight = static_cast<float>(rows) * m_tileSize;
+		const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
 
 		sf::RectangleShape border;
 		border.setPosition(m_gridOrigin);
@@ -1935,6 +2054,22 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		rightHandle.setOutlineThickness(1.f);
 		window.draw(rightHandle);
 
+		sf::RectangleShape topHandle;
+		topHandle.setPosition(m_gridOrigin);
+		topHandle.setSize({ gridWidth, m_scrollHandleWidth });
+		topHandle.setFillColor(sf::Color(20, 20, 20, 130));
+		topHandle.setOutlineColor(sf::Color::White);
+		topHandle.setOutlineThickness(1.f);
+		window.draw(topHandle);
+
+		sf::RectangleShape bottomHandle;
+		bottomHandle.setPosition({ m_gridOrigin.x, m_gridOrigin.y + gridHeight - m_scrollHandleWidth });
+		bottomHandle.setSize({ gridWidth, m_scrollHandleWidth });
+		bottomHandle.setFillColor(sf::Color(20, 20, 20, 130));
+		bottomHandle.setOutlineColor(sf::Color::White);
+		bottomHandle.setOutlineThickness(1.f);
+		window.draw(bottomHandle);
+
 		drawTextCentered(
 			window,
 			"<",
@@ -1951,6 +2086,22 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			sf::Color::White,
 			1.f);
 
+		drawTextCentered(
+			window,
+			"/\\",
+			18,
+			sf::FloatRect(m_gridOrigin, { gridWidth, m_scrollHandleWidth }),
+			sf::Color::White,
+			1.f);
+
+		drawTextCentered(
+			window,
+			"\\/",
+			18,
+			sf::FloatRect({ m_gridOrigin.x, m_gridOrigin.y + gridHeight - m_scrollHandleWidth }, { gridWidth, m_scrollHandleWidth }),
+			sf::Color::White,
+			1.f);
+
 		const int visibleStart = m_viewStartCol + 1;
 		const int visibleEnd = std::min(m_viewStartCol + visibleCols, totalCols);
 
@@ -1961,16 +2112,30 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			sf::FloatRect({ m_gridOrigin.x, m_gridOrigin.y - 24.f }, { gridWidth, 22.f }),
 			sf::Color(220, 220, 220),
 			1.f);
+
+		const int visibleRowStart = m_viewStartRow + 1;
+		const int visibleRowEnd = std::min(m_viewStartRow + visibleRows, rows);
+
+		drawTextCentered(
+			window,
+			"Rows " + std::to_string(visibleRowStart) + "-" + std::to_string(visibleRowEnd) + " / " + std::to_string(rows),
+			13,
+			sf::FloatRect(
+				{ 8.f, m_gridOrigin.y + (gridHeight - 22.f) * 0.5f },
+				{ std::max(48.f, m_gridOrigin.x - 16.f), 22.f }),
+			sf::Color(220, 220, 220),
+			1.f);
 	}
 
 	if (const std::optional<sf::Vector2i> hoveredTile = getTileAtPixel(mousePixelPosition))
 	{
 		const int visibleCol = hoveredTile->x - m_viewStartCol;
+		const int visibleRow = hoveredTile->y - m_viewStartRow;
 
 		sf::RectangleShape hoverRect;
 		hoverRect.setPosition({
 			m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
-			m_gridOrigin.y + static_cast<float>(hoveredTile->y) * m_tileSize
+			m_gridOrigin.y + static_cast<float>(visibleRow) * m_tileSize
 			});
 		hoverRect.setSize({ m_tileSize, m_tileSize });
 		hoverRect.setFillColor(sf::Color::Transparent);
@@ -2047,7 +2212,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 	drawTextCentered(
 		window,
-		"Left Click: place/select | Right Click: erase | Middle Click: color pick | Scroll Up/Down: next/previous hotbar tile | F5: save | F9: load | Delete: reset",
+		"Left Click: place/select | Right Click: erase | Middle Click: color pick | Arrow Keys: pan view | Scroll: change hotbar tile | F5: save | F9: load | Delete: reset",
 		14,
 		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
 		sf::Color(230, 230, 230),

@@ -17,13 +17,15 @@
 // - direct tile-letter hotkeys
 // - middle-mouse tile picker
 // - right-click erase
-// - keeps the old horizontal screen scrolling for wide platformer maps
+// - horizontal screen scrolling for wide platformer maps
+// - vertical screen scrolling for tall maps (build upward from the bottom)
 //
 // Save is handled by the SAVE button or F5. P is not a save key.
 class GAME1_LevelEditor
 {
 public:
-	static constexpr int Rows = 10;
+	static constexpr int VisibleRows = 10;
+	static constexpr int TotalRows = 20;
 	static constexpr int VisibleCols = 16;
 	static constexpr int TotalCols = 48;
 	static constexpr int GameplayTileSize = 64;
@@ -117,8 +119,14 @@ private:
 	void scrollRight();
 	void clampViewStartColumn();
 
+	void scrollUp();
+	void scrollDown();
+	void clampViewStartRow();
+
 	bool isInsideLeftHandle(sf::Vector2i mousePixelPosition) const;
 	bool isInsideRightHandle(sf::Vector2i mousePixelPosition) const;
+	bool isInsideTopHandle(sf::Vector2i mousePixelPosition) const;
+	bool isInsideBottomHandle(sf::Vector2i mousePixelPosition) const;
 	std::optional<sf::Vector2i> getTileAtPixel(sf::Vector2i mousePixelPosition) const;
 	std::optional<int> getToolbarIndexAtPixel(sf::Vector2i mousePixelPosition) const;
 
@@ -180,6 +188,7 @@ private:
 	int m_worldNumber = 1;
 	int m_hotbarPage = 0;
 	int m_viewStartCol = 0;
+	int m_viewStartRow = 0;
 
 	sf::Vector2u m_lastWindowSize{ 1024, 640 };
 

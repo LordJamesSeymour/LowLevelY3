@@ -131,3 +131,13 @@ When I ask for a checkpoint, write the checkpoint into:
 When I ask for a bug history note, write it into:
 
 `04_Debugging_History/C++ SFML Arcade/`
+
+## Response Style
+
+- Keep responses short.
+- Prefer code changes over explanations.
+- After completing a task, respond with only:
+  - changed files
+  - completion status
+  - test status
+- Do not provide long explanations unless I explicitly ask.
