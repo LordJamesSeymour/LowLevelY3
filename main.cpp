@@ -782,7 +782,11 @@ int main()
 				{
 					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 					{
-						if (keyReleased->code == sf::Keyboard::Key::Left)
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							hubOptions.open();
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Left)
 						{
 							hub.navigateLeft();
 						}
@@ -1258,7 +1262,12 @@ int main()
 					hub.notifyUserActivity();
 				}
 
-				if (ArcadeInput::isControllerMoveLeftPressed())
+				if (ArcadeInput::isControllerBackPressed())
+				{
+					hubOptions.open();
+					ArcadeInput::consumePressedState();
+				}
+				else if (ArcadeInput::isControllerMoveLeftPressed())
 				{
 					hub.navigateLeft();
 				}
