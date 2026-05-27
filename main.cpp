@@ -9,7 +9,9 @@
 #include <windows.h>
 
 #include "ArcadeHub.h"
+#include "ArcadeHubOptions.h"
 #include "ArcadeInput.h"
+#include "ArcadeSettings.h"
 
 #include "GAME1_BombermanWindow.h"
 #include "GAME1_BombermanMenu.h"
@@ -32,6 +34,7 @@ namespace
 	const std::filesystem::path kGlobalFontPath = "assets/menu.ttf";
 	const std::filesystem::path kHubShaderPath = "assets/Shaders/ArcadeHubCRT.frag";
 	const std::filesystem::path kLockedImagePath = "assets/LockedImage.png";
+	const std::filesystem::path kSettingsIconPath = "assets/settings.png";
 
 	const std::filesystem::path kBombermanRootDirectory = "assets/Game#0/Bomberman";
 	const std::filesystem::path kBombermanMapsDirectory = "assets/Game#0/Bomberman/Maps";
@@ -263,6 +266,8 @@ int main()
 
 	ApplyWindowView(window);
 
+	ArcadeSettings::initialize();
+
 	sf::Texture crtFrameTexture;
 	if (!crtFrameTexture.resize(window.getSize()))
 	{
@@ -273,13 +278,13 @@ int main()
 	crtFrameTexture.setSmooth(false);
 
 	sf::Shader crtShader;
-	bool crtShaderEnabled = false;
+	bool crtShaderLoaded = false;
 
 	if (sf::Shader::isAvailable())
 	{
 		if (crtShader.loadFromFile(kHubShaderPath.string(), sf::Shader::Type::Fragment))
 		{
-			crtShaderEnabled = true;
+			crtShaderLoaded = true;
 		}
 	}
 
@@ -321,6 +326,19 @@ int main()
 		std::string msg =
 			"Arcade hub failed to load.\n\n" +
 			hub.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
+	ArcadeHubOptions hubOptions;
+	if (!hubOptions.load(kGlobalFontPath.string(), kSettingsIconPath.string()))
+	{
+		std::string msg =
+			"Hub options failed to load.\n\n" +
+			hubOptions.getLastError() +
 			"\n\nCurrent working directory:\n" +
 			std::filesystem::current_path().string();
 
@@ -479,6 +497,15 @@ int main()
 		ShowError(msg);
 		return -1;
 	}
+
+	ArcadeSettings::registerAudioRefreshCallback(
+		[&bombermanMenu, &game1Menu, &bombermanWindow]()
+		{
+			bombermanMenu.refreshAudioVolumes();
+			game1Menu.refreshAudioVolumes();
+			bombermanWindow.refreshAudioVolumes();
+			GAME1_SurfersQuestAudio::refreshVolumes();
+		});
 
 	AppState appState = AppState::Hub;
 
@@ -686,7 +713,7 @@ int main()
 
 				if (!ResizeTexture(crtFrameTexture, window.getSize()))
 				{
-					crtShaderEnabled = false;
+					crtShaderLoaded = false;
 				}
 				else
 				{
@@ -701,61 +728,111 @@ int main()
 
 			if (appState == AppState::Hub)
 			{
-				if (event->is<sf::Event::KeyPressed>() ||
-					event->is<sf::Event::KeyReleased>() ||
-					event->is<sf::Event::MouseButtonPressed>() ||
-					event->is<sf::Event::MouseButtonReleased>() ||
-					event->is<sf::Event::MouseMoved>() ||
-					event->is<sf::Event::MouseWheelScrolled>())
+				const bool popupOpen = hubOptions.isOpen();
+
+				if (!popupOpen &&
+					(event->is<sf::Event::KeyPressed>() ||
+					 event->is<sf::Event::KeyReleased>() ||
+					 event->is<sf::Event::MouseButtonPressed>() ||
+					 event->is<sf::Event::MouseButtonReleased>() ||
+					 event->is<sf::Event::MouseMoved>() ||
+					 event->is<sf::Event::MouseWheelScrolled>()))
 				{
 					hub.notifyUserActivity();
 				}
 
-				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				if (popupOpen)
 				{
-					if (keyReleased->code == sf::Keyboard::Key::Left)
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 					{
-						hub.navigateLeft();
+						hubOptions.handleKeyReleased(keyReleased->code);
 					}
-					else if (keyReleased->code == sf::Keyboard::Key::Right)
+
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
 					{
-						hub.navigateRight();
-					}
-					else if (keyReleased->code == sf::Keyboard::Key::Enter)
-					{
-						if (!hub.isTransitioning())
+						if (mousePressed->button == sf::Mouse::Button::Left)
 						{
-							TryLaunchSelectedHubGame();
+							hubOptions.handleMousePressed({
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+								});
 						}
 					}
-				}
 
-				if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
-				{
-					if (mousePressed->button == sf::Mouse::Button::Left)
+					if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
 					{
-						const sf::Vector2f mousePosition(
-							static_cast<float>(mousePressed->position.x),
-							static_cast<float>(mousePressed->position.y)
-						);
-
-						switch (hub.handleClick(mousePosition))
+						if (mouseReleased->button == sf::Mouse::Button::Left)
 						{
-						case ArcadeHubAction::PreviousGame:
+							hubOptions.handleMouseReleased({
+								static_cast<float>(mouseReleased->position.x),
+								static_cast<float>(mouseReleased->position.y)
+								});
+						}
+					}
+
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						hubOptions.handleMouseMoved({
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y)
+							});
+					}
+				}
+				else
+				{
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+					{
+						if (keyReleased->code == sf::Keyboard::Key::Left)
+						{
 							hub.navigateLeft();
-							break;
-
-						case ArcadeHubAction::NextGame:
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Right)
+						{
 							hub.navigateRight();
-							break;
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Enter)
+						{
+							if (!hub.isTransitioning())
+							{
+								TryLaunchSelectedHubGame();
+							}
+						}
+					}
 
-						case ArcadeHubAction::LaunchGame:
-							TryLaunchSelectedHubGame();
-							break;
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							const sf::Vector2f mousePosition(
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+							);
 
-						case ArcadeHubAction::None:
-						default:
-							break;
+							if (hubOptions.handleMousePressed(mousePosition))
+							{
+								// Click consumed by gear button.
+							}
+							else
+							{
+								switch (hub.handleClick(mousePosition))
+								{
+								case ArcadeHubAction::PreviousGame:
+									hub.navigateLeft();
+									break;
+
+								case ArcadeHubAction::NextGame:
+									hub.navigateRight();
+									break;
+
+								case ArcadeHubAction::LaunchGame:
+									TryLaunchSelectedHubGame();
+									break;
+
+								case ArcadeHubAction::None:
+								default:
+									break;
+								}
+							}
 						}
 					}
 				}
@@ -1170,25 +1247,32 @@ int main()
 
 		if (appState == AppState::Hub)
 		{
-			if (ArcadeInput::hasControllerActivity())
+			if (hubOptions.isOpen())
 			{
-				hub.notifyUserActivity();
+				hubOptions.handleControllerInput();
 			}
-
-			if (ArcadeInput::isControllerMoveLeftPressed())
+			else
 			{
-				hub.navigateLeft();
-			}
-			else if (ArcadeInput::isControllerMoveRightPressed())
-			{
-				hub.navigateRight();
-			}
-			else if (ArcadeInput::isControllerConfirmPressed())
-			{
-				if (!hub.isTransitioning())
+				if (ArcadeInput::hasControllerActivity())
 				{
-					TryLaunchSelectedHubGame();
-					ArcadeInput::consumePressedState();
+					hub.notifyUserActivity();
+				}
+
+				if (ArcadeInput::isControllerMoveLeftPressed())
+				{
+					hub.navigateLeft();
+				}
+				else if (ArcadeInput::isControllerMoveRightPressed())
+				{
+					hub.navigateRight();
+				}
+				else if (ArcadeInput::isControllerConfirmPressed())
+				{
+					if (!hub.isTransitioning())
+					{
+						TryLaunchSelectedHubGame();
+						ArcadeInput::consumePressedState();
+					}
 				}
 			}
 		}
@@ -1321,7 +1405,12 @@ int main()
 			{
 				ApplyWindowView(window);
 
-				if (crtShaderEnabled && ResizeTexture(crtFrameTexture, window.getSize()))
+				const bool crtActive =
+					crtShaderLoaded &&
+					ArcadeSettings::isCrtEnabled() &&
+					ResizeTexture(crtFrameTexture, window.getSize());
+
+				if (crtActive)
 				{
 					crtFrameTexture.update(window);
 
@@ -1351,9 +1440,11 @@ int main()
 			hub.updateAnimation(deltaTime);
 			hub.updateVisualTheme(totalAppTime);
 			hub.layout(window);
+			hubOptions.layout(window);
 
 			window.clear(sf::Color::Black);
 			hub.draw(window);
+			hubOptions.draw(window);
 			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_BombermanMenu)

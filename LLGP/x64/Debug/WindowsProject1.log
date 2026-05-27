@@ -1,25 +1,9 @@
-﻿  ArcadeHub.cpp
-  ArcadeInput.cpp
-  BombermanEnemy.cpp
-  BombermanLevel.cpp
-  BombermanPlayer.cpp
-  GAME1_BombermanLevelEditor.cpp
-  GAME1_BombermanLevelSelect.cpp
+﻿  ArcadeHubOptions.cpp
+  ArcadeSettings.cpp
   GAME1_BombermanMenu.cpp
   GAME1_BombermanWindow.cpp
   GAME1_Enemy.cpp
-  GAME1_Level.cpp
-  GAME1_LevelEditor.cpp
-  GAME1_LevelSelect.cpp
-  GAME2_BackgroundLayer.cpp
-  GAME2_Bullet.cpp
-  GAME2_Enemy.cpp
-  GAME2_Game.cpp
-  GAME2_Menu.cpp
-  GAME2_Player.cpp
   main.cpp
-  Generating Code...
-  Compiling...
   GAME1_Menu.cpp
   GAME1_Player.cpp
   Generating Code...

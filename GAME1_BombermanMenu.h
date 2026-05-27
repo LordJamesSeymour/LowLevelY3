@@ -21,6 +21,7 @@ public:
 
 	void startMusic();
 	void stopMusic();
+	void refreshAudioVolumes();
 
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition);

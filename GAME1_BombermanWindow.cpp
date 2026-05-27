@@ -1,5 +1,6 @@
 #include "GAME1_BombermanWindow.h"
 #include "ArcadeInput.h"
+#include "ArcadeSettings.h"
 
 
 #include <algorithm>
@@ -214,17 +215,17 @@ bool GAME1_BombermanWindow::load(const std::string& fontPath, const std::string&
 		m_walkingSound->setPitch(1.f);
 
 		m_walkingSecondSound.emplace(m_walkingBuffer);
-		m_walkingSecondSound->setVolume(100.f);
+		m_walkingSecondSound->setVolume(ArcadeSettings::scaleSfx(100.f));
 		m_walkingSecondSound->setPitch(1.f);
 		m_walkingSecondSound->setLooping(false);
 
 		m_walkingThirdSound.emplace(m_walkingBuffer);
-		m_walkingThirdSound->setVolume(100.f);
+		m_walkingThirdSound->setVolume(ArcadeSettings::scaleSfx(100.f));
 		m_walkingThirdSound->setPitch(1.f);
 		m_walkingThirdSound->setLooping(false);
 
 		m_walkingFourthSound.emplace(m_walkingBuffer);
-		m_walkingFourthSound->setVolume(100.f);
+		m_walkingFourthSound->setVolume(ArcadeSettings::scaleSfx(100.f));
 		m_walkingFourthSound->setPitch(1.f);
 		m_walkingFourthSound->setLooping(false);
 	}
@@ -371,10 +372,31 @@ bool GAME1_BombermanWindow::loadSound(sf::SoundBuffer& buffer,
 	}
 
 	sound.emplace(buffer);
-	sound->setVolume(100.f);
+	sound->setVolume(ArcadeSettings::scaleSfx(100.f));
 	sound->setPitch(1.f);
 
 	return true;
+}
+
+void GAME1_BombermanWindow::refreshAudioVolumes()
+{
+	const float scaled = ArcadeSettings::scaleSfx(100.f);
+
+	auto applyTo = [scaled](std::optional<sf::Sound>& sound)
+		{
+			if (sound.has_value())
+				sound->setVolume(scaled);
+		};
+
+	applyTo(m_bombExplodesSound);
+	applyTo(m_bombermanDiesSound);
+	applyTo(m_itemGetSound);
+	applyTo(m_placeBombSound);
+	applyTo(m_punchBombSound);
+	applyTo(m_walkingSound);
+	applyTo(m_walkingSecondSound);
+	applyTo(m_walkingThirdSound);
+	applyTo(m_walkingFourthSound);
 }
 
 void GAME1_BombermanWindow::playSound(std::optional<sf::Sound>& sound)

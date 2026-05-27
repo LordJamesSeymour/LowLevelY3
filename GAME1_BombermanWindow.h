@@ -29,6 +29,8 @@ public:
 	void layout(const sf::RenderWindow& window);
 	void draw(sf::RenderWindow& window) const;
 
+	void refreshAudioVolumes();
+
 	const std::string& getLastError() const;
 
 private:

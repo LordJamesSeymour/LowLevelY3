@@ -2,6 +2,7 @@
 
 #include <SFML/Audio.hpp>
 
+#include "ArcadeSettings.h"
 #include "GAME1_Level.h"
 
 #include <algorithm>
@@ -41,19 +42,19 @@ public:
 		if (s_hasMenuMusic)
 		{
 			s_menuMusic.setLooping(true);
-			s_menuMusic.setVolume(65.f);
+			s_menuMusic.setVolume(ArcadeSettings::scaleMusic(kBaseMenuMusicVolume));
 		}
 
 		if (s_hasGameplayMusic)
 		{
 			s_gameplayMusic.setLooping(true);
-			s_gameplayMusic.setVolume(55.f);
+			s_gameplayMusic.setVolume(ArcadeSettings::scaleMusic(kBaseGameplayMusicVolume));
 		}
 
 		if (s_hasDeathMusic)
 		{
 			s_deathMusic.setLooping(true);
-			s_deathMusic.setVolume(65.f);
+			s_deathMusic.setVolume(ArcadeSettings::scaleMusic(kBaseDeathMusicVolume));
 		}
 
 		const fs::path audioDirectory = resourcesPath / "Audio";
@@ -166,6 +167,18 @@ public:
 	static void playWallgrab()
 	{
 		playFromPool(s_wallgrabBuffers, s_wallgrabSound, 78.f);
+	}
+
+	static void refreshVolumes()
+	{
+		if (s_hasMenuMusic)
+			s_menuMusic.setVolume(ArcadeSettings::scaleMusic(kBaseMenuMusicVolume));
+
+		if (s_hasGameplayMusic)
+			s_gameplayMusic.setVolume(ArcadeSettings::scaleMusic(kBaseGameplayMusicVolume));
+
+		if (s_hasDeathMusic)
+			s_deathMusic.setVolume(ArcadeSettings::scaleMusic(kBaseDeathMusicVolume));
 	}
 
 private:
@@ -321,7 +334,7 @@ private:
 			return;
 
 		sound.emplace(buffer);
-		sound->setVolume(volume);
+		sound->setVolume(ArcadeSettings::scaleSfx(volume));
 		sound->setPitch(1.f);
 		sound->play();
 	}
@@ -337,7 +350,7 @@ private:
 		const sf::SoundBuffer& buffer = buffers[distribution(s_rng)];
 
 		sound.emplace(buffer);
-		sound->setVolume(volume);
+		sound->setVolume(ArcadeSettings::scaleSfx(volume));
 		sound->setPitch(1.f);
 		sound->play();
 	}
@@ -369,6 +382,10 @@ private:
 	}
 
 private:
+	static constexpr float kBaseMenuMusicVolume = 65.f;
+	static constexpr float kBaseGameplayMusicVolume = 55.f;
+	static constexpr float kBaseDeathMusicVolume = 65.f;
+
 	inline static sf::Music s_menuMusic;
 	inline static sf::Music s_gameplayMusic;
 	inline static sf::Music s_deathMusic;

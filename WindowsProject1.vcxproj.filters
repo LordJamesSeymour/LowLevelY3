@@ -36,6 +36,12 @@
     <ClInclude Include="ArcadeHub.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ArcadeHubOptions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ArcadeSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GAME1_BombermanWindow.h">
       <Filter>Header Files\Bomberman</Filter>
     </ClInclude>
@@ -105,6 +111,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ArcadeHub.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ArcadeHubOptions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ArcadeSettings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GAME1_BombermanWindow.cpp">

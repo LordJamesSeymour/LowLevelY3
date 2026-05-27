@@ -1,8 +1,14 @@
 #include "GAME1_Menu.h"
 #include "ArcadeInput.h"
+#include "ArcadeSettings.h"
 
 #include <algorithm>
 #include <filesystem>
+
+namespace
+{
+	constexpr float kSurfersQuestMenuBaseMusicVolume = 65.f;
+}
 
 bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 	const std::string& logoTexturePath,
@@ -130,7 +136,7 @@ bool GAME1_Menu::tryOpenMusicFile(const std::vector<std::string>& candidatePaths
 		if (m_music.openFromFile(path))
 		{
 			m_music.setLooping(true);
-			m_music.setVolume(65.f);
+			m_music.setVolume(ArcadeSettings::scaleMusic(kSurfersQuestMenuBaseMusicVolume));
 			m_hasMusic = true;
 			return true;
 		}
@@ -159,6 +165,14 @@ void GAME1_Menu::stopMusic()
 	if (m_music.getStatus() == sf::SoundSource::Status::Playing)
 	{
 		m_music.stop();
+	}
+}
+
+void GAME1_Menu::refreshAudioVolumes()
+{
+	if (m_hasMusic)
+	{
+		m_music.setVolume(ArcadeSettings::scaleMusic(kSurfersQuestMenuBaseMusicVolume));
 	}
 }
 

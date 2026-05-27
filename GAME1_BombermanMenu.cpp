@@ -1,8 +1,14 @@
 #include "GAME1_BombermanMenu.h"
 #include "ArcadeInput.h"
+#include "ArcadeSettings.h"
 
 #include <algorithm>
 #include <filesystem>
+
+namespace
+{
+	constexpr float kBombermanMenuBaseMusicVolume = 65.f;
+}
 
 bool GAME1_BombermanMenu::load(const std::string& fontPath, const std::string& bombermanRootDirectory)
 {
@@ -106,7 +112,7 @@ bool GAME1_BombermanMenu::tryOpenMusicFile(const std::vector<std::string>& candi
 		if (m_music.openFromFile(path))
 		{
 			m_music.setLooping(true);
-			m_music.setVolume(65.f);
+			m_music.setVolume(ArcadeSettings::scaleMusic(kBombermanMenuBaseMusicVolume));
 			m_hasMusic = true;
 			return true;
 		}
@@ -135,6 +141,14 @@ void GAME1_BombermanMenu::stopMusic()
 	if (m_music.getStatus() == sf::SoundSource::Status::Playing)
 	{
 		m_music.stop();
+	}
+}
+
+void GAME1_BombermanMenu::refreshAudioVolumes()
+{
+	if (m_hasMusic)
+	{
+		m_music.setVolume(ArcadeSettings::scaleMusic(kBombermanMenuBaseMusicVolume));
 	}
 }
 
