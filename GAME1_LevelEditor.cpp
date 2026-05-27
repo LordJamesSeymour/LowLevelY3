@@ -162,7 +162,8 @@ namespace
 			code == '^' ||
 			code == '[' ||
 			code == '=' ||
-			code == ']';
+			code == ']' ||
+			code == 'K';
 	}
 
 	bool ContainsAnyKeyword(const std::filesystem::path& path,
@@ -377,6 +378,7 @@ bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 
 	refreshSavedLevelList();
 	resetEmpty();
+	loadWorldBackgroundTexture();
 	return true;
 }
 
@@ -559,6 +561,20 @@ void GAME1_LevelEditor::buildTools()
 		"One-way platform right - jump through from below",
 		platformRightPaths,
 		sf::Color(185, 150, 90));
+
+	std::vector<fs::path> checkpointIconPaths;
+	const fs::path checkpointIconPath =
+		getResourcesDirectory() / "Checkpoint" / "FlagOut" / "sprite_09.png";
+
+	if (fs::exists(checkpointIconPath))
+		checkpointIconPaths.push_back(checkpointIconPath);
+
+	addSpecialTool(
+		'K',
+		"K",
+		"Checkpoint - updates player respawn point (no backtracking)",
+		checkpointIconPaths,
+		sf::Color(230, 90, 90));
 
 	const fs::path worldTilesDirectory = getCurrentWorldTilesDirectory();
 
@@ -1282,6 +1298,7 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 	m_worldNumber = std::max(1, loadedWorldNumber);
 	buildTools();
+	loadWorldBackgroundTexture();
 
 	std::vector<std::string> loadedRows;
 	loadedRows.reserve(rawLines.size());
@@ -1469,6 +1486,7 @@ void GAME1_LevelEditor::selectPreviousWorld()
 	buildTools();
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
 	rebuildVisibleToolbar();
+	loadWorldBackgroundTexture();
 }
 
 void GAME1_LevelEditor::selectNextWorld()
@@ -1488,6 +1506,24 @@ void GAME1_LevelEditor::selectNextWorld()
 	buildTools();
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
 	rebuildVisibleToolbar();
+	loadWorldBackgroundTexture();
+}
+
+void GAME1_LevelEditor::loadWorldBackgroundTexture()
+{
+	namespace fs = std::filesystem;
+
+	m_hasBackgroundTexture = false;
+
+	const fs::path backgroundFile =
+		getResourcesDirectory() / "Background" /
+		("World" + std::to_string(m_worldNumber)) / "bg.png";
+
+	if (!fs::exists(backgroundFile) || !fs::is_regular_file(backgroundFile))
+		return;
+
+	if (m_backgroundTexture.loadFromFile(backgroundFile.string()))
+		m_hasBackgroundTexture = true;
 }
 
 int GAME1_LevelEditor::getHighestAvailableWorldNumber() const
@@ -1984,6 +2020,25 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
 	const int visibleRows = std::min(VisibleRows, std::max(1, rows));
 
+	if (m_hasBackgroundTexture && visibleCols > 0 && visibleRows > 0)
+	{
+		const float gridWidth = static_cast<float>(visibleCols) * m_tileSize;
+		const float gridHeight = static_cast<float>(visibleRows) * m_tileSize;
+
+		sf::Sprite backgroundSprite(m_backgroundTexture);
+		const sf::FloatRect localBounds = backgroundSprite.getLocalBounds();
+
+		if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+		{
+			backgroundSprite.setScale({
+				gridWidth / localBounds.size.x,
+				gridHeight / localBounds.size.y
+				});
+			backgroundSprite.setPosition(m_gridOrigin);
+			window.draw(backgroundSprite);
+		}
+	}
+
 	for (int visibleRow = 0; visibleRow < visibleRows; ++visibleRow)
 	{
 		const int worldRow = m_viewStartRow + visibleRow;
@@ -2008,7 +2063,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 					m_tileSize
 				});
 
-				drawTilePreview(window, 'O', tileRect);
+				if (!m_hasBackgroundTexture)
+					drawTilePreview(window, 'O', tileRect);
 
 				const char tile = m_rows[worldRow][worldCol];
 

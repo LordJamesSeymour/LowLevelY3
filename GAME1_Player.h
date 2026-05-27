@@ -20,6 +20,9 @@ public:
 
 	sf::FloatRect getBounds() const;
 
+	void setSpawnPosition(sf::Vector2f spawnPosition);
+	sf::Vector2f getSpawnPosition() const;
+
 	bool isRespawning() const;
 	int getRespawnCountdown() const;
 

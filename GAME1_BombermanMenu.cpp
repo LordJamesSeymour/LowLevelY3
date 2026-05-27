@@ -454,6 +454,29 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePos
 	return GAME1_BombermanMenuAction::None;
 }
 
+void GAME1_BombermanMenu::handleMouseMoved(sf::Vector2f mousePosition)
+{
+	if (m_controlsPopupOpen)
+		return;
+
+	if (containsPoint(m_playLevelsButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::PlayLevels);
+	}
+	else if (containsPoint(m_levelEditorButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::LevelEditor);
+	}
+	else if (containsPoint(m_backButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::BackToHub);
+	}
+	else if (containsPoint(m_controlsButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::Controls);
+	}
+}
+
 bool GAME1_BombermanMenu::handleKeyReleased(sf::Keyboard::Key key)
 {
 	if (m_controlsPopupOpen)

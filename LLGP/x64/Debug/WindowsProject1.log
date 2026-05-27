@@ -1,10 +1,27 @@
-﻿  ArcadeInput.cpp
+﻿  ArcadeHub.cpp
+  ArcadeInput.cpp
+  BombermanEnemy.cpp
+  BombermanLevel.cpp
   BombermanPlayer.cpp
+  GAME1_BombermanLevelEditor.cpp
+  GAME1_BombermanLevelSelect.cpp
   GAME1_BombermanMenu.cpp
   GAME1_BombermanWindow.cpp
+  GAME1_Enemy.cpp
+  GAME1_Level.cpp
+  GAME1_LevelEditor.cpp
+  GAME1_LevelSelect.cpp
+  GAME2_BackgroundLayer.cpp
+  GAME2_Bullet.cpp
+  GAME2_Enemy.cpp
+  GAME2_Game.cpp
+  GAME2_Menu.cpp
+  GAME2_Player.cpp
+  main.cpp
+  Generating Code...
+  Compiling...
   GAME1_Menu.cpp
   GAME1_Player.cpp
-  main.cpp
   Generating Code...
 sfml-graphics-s-d.lib(Transformable.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Transformable.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Shape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info

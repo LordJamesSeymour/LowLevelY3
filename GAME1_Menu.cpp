@@ -464,6 +464,29 @@ GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 	return GAME1_MenuAction::None;
 }
 
+void GAME1_Menu::handleMouseMoved(sf::Vector2f mousePosition)
+{
+	if (m_controlsPopupOpen)
+		return;
+
+	if (containsPoint(m_playButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::Play);
+	}
+	else if (containsPoint(m_levelEditorButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::LevelEditor);
+	}
+	else if (containsPoint(m_backButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::BackToArcade);
+	}
+	else if (containsPoint(m_controlsButton.box.getGlobalBounds(), mousePosition))
+	{
+		setSelectedItem(MenuSelection::Controls);
+	}
+}
+
 bool GAME1_Menu::handleKeyReleased(sf::Keyboard::Key key)
 {
 	if (m_controlsPopupOpen)

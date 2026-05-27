@@ -44,6 +44,7 @@ public:
 	static constexpr char OneWayPlatformMiddleTile = '=';
 	static constexpr char OneWayPlatformRightTile = ']';
 	static constexpr char BasicEnemySpawnTile = 'e';
+	static constexpr char CheckpointTile = 'K';
 
 	// New preferred loader: pass the SurfersQuest Resources directory.
 	// Example: assets/Game#1/SurfersQuest/Resources
@@ -57,6 +58,16 @@ public:
 		const std::string& ignoredLegacyTexturePath);
 
 	void draw(sf::RenderWindow& window) const;
+	void drawBackground(sf::RenderWindow& window) const;
+
+	void updateCheckpoints(float deltaTime);
+
+	int getCheckpointCount() const;
+	sf::FloatRect getCheckpointBounds(int index) const;
+	sf::Vector2f getCheckpointSpawnPosition(int index) const;
+	int getCheckpointOrderIndex(int index) const;
+	bool isCheckpointTriggered(int index) const;
+	void triggerCheckpoint(int index);
 
 	// Full solid tiles are the normal world/floor tiles.
 	// Spike traps and one-way platforms are queried separately.
@@ -85,6 +96,9 @@ private:
 
 	bool loadWorldFloorTextures(const std::filesystem::path& worldTilesDirectory);
 	void loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory);
+	void loadCheckpointTextures(const std::filesystem::path& resourcesDirectory);
+	void loadWorldBackgroundTexture(const std::filesystem::path& resourcesDirectory);
+	const sf::Texture* getCheckpointCurrentTexture(std::size_t checkpointIndex) const;
 
 	bool isInside(int col, int row) const;
 	bool isFloorTile(char tile) const;
@@ -103,6 +117,33 @@ private:
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;
 	std::unordered_map<char, sf::Texture> m_specialTileTextures;
+
+	enum class CheckpointPhase
+	{
+		NoFlag,
+		Activating,
+		Looping
+	};
+
+	struct CheckpointInstance
+	{
+		sf::Vector2f tilePosition{ 0.f, 0.f };
+		int orderIndex = 0;
+		CheckpointPhase phase = CheckpointPhase::NoFlag;
+		std::size_t frameIndex = 0;
+		float frameTimer = 0.f;
+	};
+
+	sf::Texture m_backgroundTexture;
+	bool m_hasBackgroundTexture = false;
+
+	sf::Texture m_checkpointNoFlagTexture;
+	bool m_hasCheckpointNoFlagTexture = false;
+	std::vector<sf::Texture> m_checkpointActivationFrames;
+	std::vector<sf::Texture> m_checkpointLoopFrames;
+	float m_checkpointFrameDuration = 0.06f;
+
+	std::vector<CheckpointInstance> m_checkpoints;
 
 	std::string m_lastError;
 };

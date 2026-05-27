@@ -168,7 +168,7 @@ namespace
 		return std::stoi(stem.substr(5));
 	}
 
-	std::vector<std::string> GetFirstFiveLevelPaths()
+	std::vector<std::string> GetAllGame1LevelPaths()
 	{
 		namespace fs = std::filesystem;
 
@@ -192,12 +192,11 @@ namespace
 			});
 
 		std::vector<std::string> result;
+		result.reserve(paths.size());
 
-		const std::size_t count = paths.size() < 5 ? paths.size() : 5;
-
-		for (std::size_t i = 0; i < count; ++i)
+		for (const fs::path& path : paths)
 		{
-			result.push_back(paths[i].string());
+			result.push_back(path.string());
 		}
 
 		return result;
@@ -446,6 +445,13 @@ int main()
 	GAME1_Player game1Player;
 	std::vector<GAME1_Enemy> game1Enemies;
 
+	// Vertical camera state for Surfers Quest: persistent across frames,
+	// snapped on level load, smoothly follows player with margin-pinning.
+	float game1CameraCenterY = 0.f;
+	bool game1CameraNeedsSnap = true;
+
+	int game1LastCheckpointOrder = -1;
+
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
 		(kGame2ResourcesDirectory / "logo.png").string(),
@@ -528,6 +534,12 @@ int main()
 			{
 				game1Menu.stopMusic();
 			}
+
+			if (appState == AppState::GAME1_Game)
+			{
+				game1CameraNeedsSnap = true;
+				game1LastCheckpointOrder = -1;
+			}
 		};
 
 	auto TryLaunchSelectedHubGame = [&]()
@@ -591,7 +603,7 @@ int main()
 				break;
 
 			case GAME1_MenuAction::Play:
-				game1LevelSelect.setLevels(GetFirstFiveLevelPaths());
+				game1LevelSelect.setLevels(GetAllGame1LevelPaths());
 				SetAppState(AppState::GAME1_LevelSelect);
 				break;
 
@@ -780,6 +792,16 @@ int main()
 						HandleBombermanMenuAction(bombermanMenu.handleClick(mousePosition));
 					}
 				}
+
+				if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+				{
+					const sf::Vector2f mousePosition(
+						static_cast<float>(mouseMoved->position.x),
+						static_cast<float>(mouseMoved->position.y)
+					);
+
+					bombermanMenu.handleMouseMoved(mousePosition);
+				}
 			}
 			else if (appState == AppState::GAME1_BombermanLevelSelect)
 			{
@@ -854,6 +876,16 @@ int main()
 							break;
 						}
 					}
+				}
+
+				if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+				{
+					const sf::Vector2f mousePosition(
+						static_cast<float>(mouseMoved->position.x),
+						static_cast<float>(mouseMoved->position.y)
+					);
+
+					bombermanLevelSelect.handleMouseMoved(mousePosition);
 				}
 			}
 			else if (appState == AppState::GAME1_BombermanEditor)
@@ -938,6 +970,16 @@ int main()
 						HandleGame1MenuAction(game1Menu.handleClick(mousePosition));
 					}
 				}
+
+				if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+				{
+					const sf::Vector2f mousePosition(
+						static_cast<float>(mouseMoved->position.x),
+						static_cast<float>(mouseMoved->position.y)
+					);
+
+					game1Menu.handleMouseMoved(mousePosition);
+				}
 			}
 			else if (appState == AppState::GAME1_LevelSelect)
 			{
@@ -993,7 +1035,11 @@ int main()
 
 						const int slotIndex = game1LevelSelect.handleClick(mousePosition);
 
-						if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
+						if (slotIndex == GAME1_LevelSelect::BackClickedSentinel)
+						{
+							SetAppState(AppState::GAME1_Menu);
+						}
+						else if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
 						{
 							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
@@ -1001,6 +1047,16 @@ int main()
 							SetAppState(AppState::GAME1_Game);
 						}
 					}
+				}
+
+				if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+				{
+					const sf::Vector2f mousePosition(
+						static_cast<float>(mouseMoved->position.x),
+						static_cast<float>(mouseMoved->position.y)
+					);
+
+					game1LevelSelect.handleMouseMoved(mousePosition);
 				}
 			}
 			else if (appState == AppState::GAME1_Game)
@@ -1337,6 +1393,39 @@ int main()
 		{
 			game1Player.update(deltaTime, game1Level);
 
+			{
+				const sf::FloatRect playerBounds = game1Player.getBounds();
+
+				for (int i = 0; i < game1Level.getCheckpointCount(); ++i)
+				{
+					if (game1Level.isCheckpointTriggered(i))
+						continue;
+
+					const sf::FloatRect checkpointBounds = game1Level.getCheckpointBounds(i);
+
+					const bool overlaps =
+						playerBounds.position.x < checkpointBounds.position.x + checkpointBounds.size.x &&
+						playerBounds.position.x + playerBounds.size.x > checkpointBounds.position.x &&
+						playerBounds.position.y < checkpointBounds.position.y + checkpointBounds.size.y &&
+						playerBounds.position.y + playerBounds.size.y > checkpointBounds.position.y;
+
+					if (!overlaps)
+						continue;
+
+					const int order = game1Level.getCheckpointOrderIndex(i);
+
+					if (order <= game1LastCheckpointOrder)
+						continue;
+
+					game1Level.triggerCheckpoint(i);
+					game1LastCheckpointOrder = order;
+					game1Player.setSpawnPosition(game1Level.getCheckpointSpawnPosition(i));
+					GAME1_SurfersQuestAudio::playCheckpoint();
+				}
+			}
+
+			game1Level.updateCheckpoints(deltaTime);
+
 			for (GAME1_Enemy& enemy : game1Enemies)
 			{
 				enemy.update(deltaTime, game1Level, game1Player);
@@ -1359,10 +1448,15 @@ int main()
 
 			sf::View worldView = window.getDefaultView();
 
+			const sf::Vector2f viewSize = worldView.getSize();
+			const float halfViewWidth = viewSize.x * 0.5f;
+			const float halfViewHeight = viewSize.y * 0.5f;
+
 			const sf::FloatRect playerBounds = game1Player.getBounds();
 			const float playerCenterX = playerBounds.position.x + playerBounds.size.x * 0.5f;
+			const float playerCenterY = playerBounds.position.y + playerBounds.size.y * 0.5f;
 
-			const float halfViewWidth = worldView.getSize().x * 0.5f;
+			// ---- Horizontal follow (unchanged) ----
 			const float minViewCenterX = halfViewWidth;
 			const float maxViewCenterX = std::max(
 				halfViewWidth,
@@ -1375,14 +1469,76 @@ int main()
 				maxViewCenterX
 			);
 
+			// ---- Vertical follow: margin-pinning camera with asymmetric smoothing ----
+			const float tileSize = static_cast<float>(GAME1_Level::TileSize);
+
+			// Screen-space scroll margins: top 3 rows (ease up slowly when crossed),
+			// bottom 2 rows (ease down quickly when crossed).
+			const float topMargin = 3.f * tileSize;
+			const float bottomMargin = 2.f * tileSize;
+
+			// Bottom clamp: camera Y can't show below the level. There's no top
+			// clamp — the camera is allowed to pan above the level (into sky) so
+			// vertical follow works on short maps when the player jumps onto a
+			// high platform.
+			const float maxViewCenterY = std::max(
+				halfViewHeight,
+				game1Level.getPixelHeight() - halfViewHeight
+			);
+
+			// On level load, snap to frame the player without showing below the
+			// level OR above it. For maps that fit the screen this snaps to
+			// halfViewHeight (identical to the original start framing).
+			if (game1CameraNeedsSnap)
+			{
+				const float restScreenY = 0.5f * (topMargin + (viewSize.y - bottomMargin));
+				game1CameraCenterY = std::clamp(
+					playerCenterY + halfViewHeight - restScreenY,
+					halfViewHeight,
+					maxViewCenterY
+				);
+				game1CameraNeedsSnap = false;
+			}
+
+			// Margin-pinning target: when the player crosses a margin, the target
+			// is the camera Y that places the player exactly on the margin edge.
+			// At the boundary the target equals the current camera Y, so the
+			// transition is continuous and the camera doesn't jitter.
+			const float playerScreenY = playerCenterY - game1CameraCenterY + halfViewHeight;
+
+			float targetViewCenterY = game1CameraCenterY; // Dead zone: hold.
+			if (playerScreenY < topMargin)
+			{
+				targetViewCenterY = playerCenterY + halfViewHeight - topMargin;
+			}
+			else if (playerScreenY > viewSize.y - bottomMargin)
+			{
+				targetViewCenterY = playerCenterY + halfViewHeight - (viewSize.y - bottomMargin);
+			}
+
+			// Clamp target on the bottom only (sky above the level is allowed).
+			targetViewCenterY = std::min(targetViewCenterY, maxViewCenterY);
+
+			// Asymmetric, frame-rate-independent smoothing:
+			// moving up (toward Y=0) = slow ease, moving down = fast ease.
+			const float upEaseRate = 3.0f;      // Time constant ~ 0.33s
+			const float downEaseRate = 12.0f;   // Time constant ~ 0.083s
+			const bool cameraMovingUp = targetViewCenterY < game1CameraCenterY;
+			const float easeRate = cameraMovingUp ? upEaseRate : downEaseRate;
+			const float easeFactor = 1.f - std::exp(-easeRate * deltaTime);
+
+			game1CameraCenterY += (targetViewCenterY - game1CameraCenterY) * easeFactor;
+			game1CameraCenterY = std::min(game1CameraCenterY, maxViewCenterY);
+
 			worldView.setCenter({
 				targetViewCenterX,
-				worldView.getSize().y * 0.5f
-				});
+				game1CameraCenterY
+			});
+
+			window.clear(sf::Color::Black);
+			game1Level.drawBackground(window);
 
 			window.setView(worldView);
-
-			window.clear(sf::Color(120, 190, 255));
 			game1Level.draw(window);
 
 			for (const GAME1_Enemy& enemy : game1Enemies)

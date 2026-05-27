@@ -19,6 +19,7 @@ class GAME1_LevelSelect
 {
 public:
 	static constexpr int SlotCount = 5;
+	static constexpr int BackClickedSentinel = -2;
 
 public:
 	bool load(const std::string& fontPath);
@@ -26,6 +27,7 @@ public:
 
 	void layout(const sf::RenderWindow& window);
 	int handleClick(sf::Vector2f mousePosition);
+	void handleMouseMoved(sf::Vector2f mousePosition);
 
 	void selectPreviousSlot();
 	void selectNextSlot();

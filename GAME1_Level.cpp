@@ -178,7 +178,8 @@ namespace
 			code == GAME1_Level::SpikeTrapTile ||
 			code == GAME1_Level::OneWayPlatformLeftTile ||
 			code == GAME1_Level::OneWayPlatformMiddleTile ||
-			code == GAME1_Level::OneWayPlatformRightTile;
+			code == GAME1_Level::OneWayPlatformRightTile ||
+			code == GAME1_Level::CheckpointTile;
 	}
 
 	std::vector<std::pair<char, std::filesystem::path>> BuildWorldTileDefinitions(
@@ -338,6 +339,11 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_floorTextures.clear();
 	m_specialTileTextures.clear();
 	m_enemySpawns.clear();
+	m_checkpoints.clear();
+	m_checkpointActivationFrames.clear();
+	m_checkpointLoopFrames.clear();
+	m_hasCheckpointNoFlagTexture = false;
+	m_hasBackgroundTexture = false;
 	m_worldNumber = 1;
 	m_playerSpawnPosition = { 100.f, 100.f };
 	m_resourcesDirectory = resourcesDirectory;
@@ -404,6 +410,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 		return false;
 
 	loadSpecialTileTextures(resourcesPath);
+	loadCheckpointTextures(resourcesPath);
+	loadWorldBackgroundTexture(resourcesPath);
 
 	for (std::size_t row = 0; row < rawRows.size(); ++row)
 	{
@@ -445,6 +453,19 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				continue;
 			}
 
+			if (tile == CheckpointTile)
+			{
+				CheckpointInstance instance;
+				instance.tilePosition = {
+					static_cast<float>(col * TileSize),
+					static_cast<float>(row * TileSize)
+				};
+				m_checkpoints.push_back(instance);
+
+				rawRows[row][col] = 'O';
+				continue;
+			}
+
 			if (tile == 'O' || isFloorTile(tile) || isSupportedSpecialTileCode(tile))
 				continue;
 
@@ -459,6 +480,18 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	}
 
 	m_rows = std::move(rawRows);
+
+	std::sort(m_checkpoints.begin(), m_checkpoints.end(),
+		[](const CheckpointInstance& a, const CheckpointInstance& b)
+		{
+			if (a.tilePosition.x != b.tilePosition.x)
+				return a.tilePosition.x < b.tilePosition.x;
+			return a.tilePosition.y < b.tilePosition.y;
+		});
+
+	for (std::size_t i = 0; i < m_checkpoints.size(); ++i)
+		m_checkpoints[i].orderIndex = static_cast<int>(i);
+
 	return true;
 }
 
@@ -555,6 +588,244 @@ void GAME1_Level::loadSpecialTileTextures(const std::filesystem::path& resources
 	}
 }
 
+void GAME1_Level::loadCheckpointTextures(const std::filesystem::path& resourcesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	m_hasCheckpointNoFlagTexture = false;
+	m_checkpointActivationFrames.clear();
+	m_checkpointLoopFrames.clear();
+
+	const fs::path checkpointDirectory = resourcesDirectory / "Checkpoint";
+
+	if (!fs::exists(checkpointDirectory) || !fs::is_directory(checkpointDirectory))
+		return;
+
+	const fs::path noFlagDirectory = checkpointDirectory / "NoFlag";
+
+	if (fs::exists(noFlagDirectory) && fs::is_directory(noFlagDirectory))
+	{
+		std::vector<fs::path> noFlagPaths;
+
+		for (const auto& entry : fs::directory_iterator(noFlagDirectory))
+		{
+			if (entry.is_regular_file() && IsPngFile(entry.path()))
+				noFlagPaths.push_back(entry.path());
+		}
+
+		std::sort(noFlagPaths.begin(), noFlagPaths.end(), NaturalFrameSort);
+
+		if (!noFlagPaths.empty())
+		{
+			if (m_checkpointNoFlagTexture.loadFromFile(noFlagPaths.front().string()))
+				m_hasCheckpointNoFlagTexture = true;
+		}
+	}
+
+	auto loadFrames = [](const fs::path& directory, std::vector<sf::Texture>& outFrames)
+		{
+			if (!fs::exists(directory) || !fs::is_directory(directory))
+				return;
+
+			std::vector<fs::path> paths;
+
+			for (const auto& entry : fs::directory_iterator(directory))
+			{
+				if (entry.is_regular_file() && IsPngFile(entry.path()))
+					paths.push_back(entry.path());
+			}
+
+			std::sort(paths.begin(), paths.end(), NaturalFrameSort);
+
+			for (const fs::path& path : paths)
+			{
+				sf::Texture texture;
+				if (texture.loadFromFile(path.string()))
+					outFrames.push_back(std::move(texture));
+			}
+		};
+
+	loadFrames(checkpointDirectory / "Idle", m_checkpointActivationFrames);
+	loadFrames(checkpointDirectory / "FlagOut", m_checkpointLoopFrames);
+}
+
+void GAME1_Level::loadWorldBackgroundTexture(const std::filesystem::path& resourcesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	m_hasBackgroundTexture = false;
+
+	const fs::path worldBackgroundDirectory =
+		resourcesDirectory / "Background" / ("World" + std::to_string(m_worldNumber));
+
+	const fs::path backgroundFile = worldBackgroundDirectory / "bg.png";
+
+	if (!fs::exists(backgroundFile) || !fs::is_regular_file(backgroundFile))
+		return;
+
+	if (m_backgroundTexture.loadFromFile(backgroundFile.string()))
+		m_hasBackgroundTexture = true;
+}
+
+void GAME1_Level::drawBackground(sf::RenderWindow& window) const
+{
+	if (!m_hasBackgroundTexture)
+		return;
+
+	const sf::View previousView = window.getView();
+
+	const sf::Vector2u windowSize = window.getSize();
+	if (windowSize.x == 0 || windowSize.y == 0)
+		return;
+
+	const sf::FloatRect visibleArea(
+		{ 0.f, 0.f },
+		{ static_cast<float>(windowSize.x), static_cast<float>(windowSize.y) });
+
+	window.setView(sf::View(visibleArea));
+
+	sf::Sprite backgroundSprite(m_backgroundTexture);
+
+	const sf::FloatRect localBounds = backgroundSprite.getLocalBounds();
+	if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+	{
+		backgroundSprite.setScale({
+			static_cast<float>(windowSize.x) / localBounds.size.x,
+			static_cast<float>(windowSize.y) / localBounds.size.y
+			});
+		backgroundSprite.setPosition({ 0.f, 0.f });
+		window.draw(backgroundSprite);
+	}
+
+	window.setView(previousView);
+}
+
+void GAME1_Level::updateCheckpoints(float deltaTime)
+{
+	for (CheckpointInstance& checkpoint : m_checkpoints)
+	{
+		if (checkpoint.phase == CheckpointPhase::NoFlag)
+			continue;
+
+		checkpoint.frameTimer += deltaTime;
+
+		while (checkpoint.frameTimer >= m_checkpointFrameDuration)
+		{
+			checkpoint.frameTimer -= m_checkpointFrameDuration;
+			checkpoint.frameIndex += 1;
+
+			if (checkpoint.phase == CheckpointPhase::Activating)
+			{
+				if (m_checkpointActivationFrames.empty() ||
+					checkpoint.frameIndex >= m_checkpointActivationFrames.size())
+				{
+					checkpoint.phase = CheckpointPhase::Looping;
+					checkpoint.frameIndex = 0;
+				}
+			}
+			else if (checkpoint.phase == CheckpointPhase::Looping)
+			{
+				if (m_checkpointLoopFrames.empty())
+				{
+					checkpoint.frameIndex = 0;
+				}
+				else
+				{
+					checkpoint.frameIndex %= m_checkpointLoopFrames.size();
+				}
+			}
+		}
+	}
+}
+
+int GAME1_Level::getCheckpointCount() const
+{
+	return static_cast<int>(m_checkpoints.size());
+}
+
+sf::FloatRect GAME1_Level::getCheckpointBounds(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_checkpoints.size()))
+		return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
+
+	const sf::Vector2f anchor = m_checkpoints[index].tilePosition;
+	const float doubleTileSize = static_cast<float>(TileSize) * 2.f;
+
+	return sf::FloatRect(
+		{ anchor.x, anchor.y - static_cast<float>(TileSize) },
+		{ doubleTileSize, doubleTileSize });
+}
+
+sf::Vector2f GAME1_Level::getCheckpointSpawnPosition(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_checkpoints.size()))
+		return { 0.f, 0.f };
+
+	return m_checkpoints[index].tilePosition;
+}
+
+int GAME1_Level::getCheckpointOrderIndex(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_checkpoints.size()))
+		return -1;
+
+	return m_checkpoints[index].orderIndex;
+}
+
+bool GAME1_Level::isCheckpointTriggered(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_checkpoints.size()))
+		return false;
+
+	return m_checkpoints[index].phase != CheckpointPhase::NoFlag;
+}
+
+void GAME1_Level::triggerCheckpoint(int index)
+{
+	if (index < 0 || index >= static_cast<int>(m_checkpoints.size()))
+		return;
+
+	CheckpointInstance& checkpoint = m_checkpoints[index];
+
+	if (checkpoint.phase != CheckpointPhase::NoFlag)
+		return;
+
+	checkpoint.phase = CheckpointPhase::Activating;
+	checkpoint.frameIndex = 0;
+	checkpoint.frameTimer = 0.f;
+}
+
+const sf::Texture* GAME1_Level::getCheckpointCurrentTexture(std::size_t checkpointIndex) const
+{
+	if (checkpointIndex >= m_checkpoints.size())
+		return nullptr;
+
+	const CheckpointInstance& checkpoint = m_checkpoints[checkpointIndex];
+
+	if (checkpoint.phase == CheckpointPhase::NoFlag)
+	{
+		return m_hasCheckpointNoFlagTexture ? &m_checkpointNoFlagTexture : nullptr;
+	}
+
+	if (checkpoint.phase == CheckpointPhase::Activating)
+	{
+		if (m_checkpointActivationFrames.empty())
+			return nullptr;
+
+		const std::size_t safeIndex = std::min(
+			checkpoint.frameIndex,
+			m_checkpointActivationFrames.size() - 1);
+
+		return &m_checkpointActivationFrames[safeIndex];
+	}
+
+	if (m_checkpointLoopFrames.empty())
+		return nullptr;
+
+	const std::size_t safeIndex = checkpoint.frameIndex % m_checkpointLoopFrames.size();
+	return &m_checkpointLoopFrames[safeIndex];
+}
+
 void GAME1_Level::draw(sf::RenderWindow& window) const
 {
 	for (int row = 0; row < static_cast<int>(m_rows.size()); ++row)
@@ -585,6 +856,34 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 
 			window.draw(sprite);
 		}
+	}
+
+	for (std::size_t i = 0; i < m_checkpoints.size(); ++i)
+	{
+		const sf::Texture* texture = getCheckpointCurrentTexture(i);
+
+		if (texture == nullptr)
+			continue;
+
+		sf::Sprite sprite(*texture);
+
+		const sf::FloatRect localBounds = sprite.getLocalBounds();
+		if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+			continue;
+
+		const float doubleTileSize = static_cast<float>(TileSize) * 2.f;
+
+		sprite.setScale({
+			doubleTileSize / localBounds.size.x,
+			doubleTileSize / localBounds.size.y
+			});
+
+		sprite.setPosition({
+			m_checkpoints[i].tilePosition.x,
+			m_checkpoints[i].tilePosition.y - static_cast<float>(TileSize)
+			});
+
+		window.draw(sprite);
 	}
 }
 

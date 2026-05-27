@@ -384,6 +384,25 @@ GAME1_BombermanLevelSelectAction GAME1_BombermanLevelSelect::handleClick(sf::Vec
 	return GAME1_BombermanLevelSelectAction::None;
 }
 
+void GAME1_BombermanLevelSelect::handleMouseMoved(sf::Vector2f mousePosition)
+{
+	for (int i = 0; i < SlotCount; ++i)
+	{
+		if (!m_slotActive[i])
+			continue;
+
+		if (containsPoint(m_slotBoxes[i].getGlobalBounds(), mousePosition))
+		{
+			if (m_selectedVisibleSlot != i)
+			{
+				m_selectedVisibleSlot = i;
+				updateSelectionVisuals();
+			}
+			return;
+		}
+	}
+}
+
 void GAME1_BombermanLevelSelect::draw(sf::RenderWindow& window) const
 {
 	const sf::Vector2u windowSize = window.getSize();

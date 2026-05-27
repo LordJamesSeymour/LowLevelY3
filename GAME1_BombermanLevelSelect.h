@@ -27,6 +27,7 @@ public:
 
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanLevelSelectAction handleClick(sf::Vector2f mousePosition);
+	void handleMouseMoved(sf::Vector2f mousePosition);
 
 	void selectPreviousSlot();
 	void selectNextSlot();

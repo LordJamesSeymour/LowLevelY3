@@ -102,6 +102,7 @@ private:
 	void selectPreviousWorld();
 	void selectNextWorld();
 	int getHighestAvailableWorldNumber() const;
+	void loadWorldBackgroundTexture();
 
 	void selectPreviousHotbarPage();
 	void selectNextHotbarPage();
@@ -189,6 +190,9 @@ private:
 	int m_hotbarPage = 0;
 	int m_viewStartCol = 0;
 	int m_viewStartRow = 0;
+
+	sf::Texture m_backgroundTexture;
+	bool m_hasBackgroundTexture = false;
 
 	sf::Vector2u m_lastWindowSize{ 1024, 640 };
 

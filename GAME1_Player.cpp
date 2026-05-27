@@ -1327,6 +1327,16 @@ sf::FloatRect GAME1_Player::getBounds() const
 	);
 }
 
+void GAME1_Player::setSpawnPosition(sf::Vector2f spawnPosition)
+{
+	m_spawnPosition = spawnPosition;
+}
+
+sf::Vector2f GAME1_Player::getSpawnPosition() const
+{
+	return m_spawnPosition;
+}
+
 bool GAME1_Player::isRespawning() const
 {
 	return m_respawning;

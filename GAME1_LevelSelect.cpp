@@ -254,10 +254,8 @@ void GAME1_LevelSelect::layout(const sf::RenderWindow& window)
 
 int GAME1_LevelSelect::handleClick(sf::Vector2f mousePosition)
 {
-	// The old main.cpp only understands returned slot indices.
-	// Back currently stays as -1; Escape still returns to the SurfersQuest menu.
 	if (containsPoint(m_backButton.getGlobalBounds(), mousePosition))
-		return -1;
+		return BackClickedSentinel;
 
 	if (containsPoint(m_previousButton.getGlobalBounds(), mousePosition))
 	{
@@ -286,6 +284,25 @@ int GAME1_LevelSelect::handleClick(sf::Vector2f mousePosition)
 	}
 
 	return -1;
+}
+
+void GAME1_LevelSelect::handleMouseMoved(sf::Vector2f mousePosition)
+{
+	for (int i = 0; i < SlotCount; ++i)
+	{
+		if (!m_slotActive[i])
+			continue;
+
+		if (containsPoint(m_slotBoxes[i].getGlobalBounds(), mousePosition))
+		{
+			if (m_selectedSlot != i)
+			{
+				m_selectedSlot = i;
+				refreshSelectionVisuals();
+			}
+			return;
+		}
+	}
 }
 
 void GAME1_LevelSelect::selectPreviousSlot()

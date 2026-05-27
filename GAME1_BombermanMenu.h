@@ -24,6 +24,7 @@ public:
 
 	void layout(const sf::RenderWindow& window);
 	GAME1_BombermanMenuAction handleClick(sf::Vector2f mousePosition);
+	void handleMouseMoved(sf::Vector2f mousePosition);
 	bool handleKeyReleased(sf::Keyboard::Key key);
 	GAME1_BombermanMenuAction handleControllerInput();
 

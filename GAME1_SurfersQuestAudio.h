@@ -65,6 +65,7 @@ public:
 		loadBuffer(s_playerDoubleJumpBuffer, s_hasPlayerDoubleJumpBuffer, (playerAudioDirectory / "PlayerDoubleJump.wav").string());
 		loadBuffer(s_playerPhaseBuffer, s_hasPlayerPhaseBuffer, (playerAudioDirectory / "PlayerPhase.wav").string());
 		loadBuffer(s_enemyDeathBuffer, s_hasEnemyDeathBuffer, (audioDirectory / "Enemy" / "EnemyDeath.wav").string());
+		loadBuffer(s_checkpointBuffer, s_hasCheckpointBuffer, (audioDirectory / "Misc" / "CheckPoint.wav").string());
 
 		loadSoundPoolFromDirectory(s_floorStepBuffers, playerAudioDirectory / "Steps" / "Floor");
 		loadSoundPoolFromDirectory(s_grassStepBuffers, playerAudioDirectory / "Steps" / "Grass");
@@ -136,6 +137,11 @@ public:
 	static void playEnemyDeath()
 	{
 		playBuffer(s_enemyDeathBuffer, s_hasEnemyDeathBuffer, s_enemyDeathSound, 100.f);
+	}
+
+	static void playCheckpoint()
+	{
+		playBuffer(s_checkpointBuffer, s_hasCheckpointBuffer, s_checkpointSound, 100.f);
 	}
 
 	static void playFootstep(GAME1_SurfaceTag surfaceTag)
@@ -346,6 +352,7 @@ private:
 		s_enemyDeathSound.reset();
 		s_footstepSound.reset();
 		s_wallgrabSound.reset();
+		s_checkpointSound.reset();
 
 		s_floorStepBuffers.clear();
 		s_grassStepBuffers.clear();
@@ -358,6 +365,7 @@ private:
 		s_hasPlayerDoubleJumpBuffer = false;
 		s_hasPlayerPhaseBuffer = false;
 		s_hasEnemyDeathBuffer = false;
+		s_hasCheckpointBuffer = false;
 	}
 
 private:
@@ -375,6 +383,7 @@ private:
 	inline static sf::SoundBuffer s_playerDoubleJumpBuffer;
 	inline static sf::SoundBuffer s_playerPhaseBuffer;
 	inline static sf::SoundBuffer s_enemyDeathBuffer;
+	inline static sf::SoundBuffer s_checkpointBuffer;
 
 	inline static bool s_hasPlayerDamageBuffer = false;
 	inline static bool s_hasPlayerDeathBuffer = false;
@@ -382,6 +391,7 @@ private:
 	inline static bool s_hasPlayerDoubleJumpBuffer = false;
 	inline static bool s_hasPlayerPhaseBuffer = false;
 	inline static bool s_hasEnemyDeathBuffer = false;
+	inline static bool s_hasCheckpointBuffer = false;
 
 	inline static std::vector<sf::SoundBuffer> s_floorStepBuffers;
 	inline static std::vector<sf::SoundBuffer> s_grassStepBuffers;
@@ -396,6 +406,7 @@ private:
 	inline static std::optional<sf::Sound> s_enemyDeathSound;
 	inline static std::optional<sf::Sound> s_footstepSound;
 	inline static std::optional<sf::Sound> s_wallgrabSound;
+	inline static std::optional<sf::Sound> s_checkpointSound;
 
 	inline static bool s_loaded = false;
 	inline static std::string s_resourcesDirectory;
