@@ -22,6 +22,11 @@ public:
 		sf::Vector2f spawnPosition);
 
 	void update(float deltaTime, const GAME1_Level& level, const GAME1_Player& player);
+	// Co-op overload: when player2 is non-null the enemy picks the more
+	// interesting target (closest visible, otherwise closest active player).
+	// Behaves identically to the single-player overload when player2 is null.
+	void update(float deltaTime, const GAME1_Level& level,
+		const GAME1_Player& player1, const GAME1_Player* player2);
 	void draw(sf::RenderTarget& target) const;
 
 	bool handlePlayerCollision(GAME1_Player& player);

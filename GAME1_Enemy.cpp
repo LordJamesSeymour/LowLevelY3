@@ -205,6 +205,12 @@ bool GAME1_Enemy::loadAnimationFramesFromDirectory(AnimationSet& animation,
 
 void GAME1_Enemy::update(float deltaTime, const GAME1_Level& level, const GAME1_Player& player)
 {
+	update(deltaTime, level, player, nullptr);
+}
+
+void GAME1_Enemy::update(float deltaTime, const GAME1_Level& level,
+	const GAME1_Player& player1, const GAME1_Player* player2)
+{
 	if (!m_active)
 		return;
 
@@ -218,15 +224,75 @@ void GAME1_Enemy::update(float deltaTime, const GAME1_Level& level, const GAME1_
 	m_position.y += m_velocity.y * deltaTime;
 	snapToGround(level);
 
-	const bool playerVisible = canSeePlayer(level, player);
+	// Pick the chase target: prefer a visible active player; otherwise the
+	// closest player that's still on the field.  Falls back to player1 when
+	// no second player exists.
+	auto isChaseCandidate = [](const GAME1_Player& player)
+		{
+			return !player.isGameOver() && !player.isRespawning();
+		};
 
-	if (playerVisible && m_state != BehaviourState::Chase)
+	const GAME1_Player* target = &player1;
+	bool targetVisible = isChaseCandidate(player1) && canSeePlayer(level, player1);
+
+	if (player2 != nullptr)
+	{
+		const bool p1Candidate = isChaseCandidate(player1);
+		const bool p2Candidate = isChaseCandidate(*player2);
+
+		const bool p1Visible = p1Candidate && canSeePlayer(level, player1);
+		const bool p2Visible = p2Candidate && canSeePlayer(level, *player2);
+
+		if (p1Visible && p2Visible)
+		{
+			const sf::FloatRect enemyBounds = getBounds();
+			const float enemyCenterX = enemyBounds.position.x + enemyBounds.size.x * 0.5f;
+			const float p1Dist = std::abs(player1.getBounds().position.x +
+				player1.getBounds().size.x * 0.5f - enemyCenterX);
+			const float p2Dist = std::abs(player2->getBounds().position.x +
+				player2->getBounds().size.x * 0.5f - enemyCenterX);
+
+			target = (p2Dist < p1Dist) ? player2 : &player1;
+			targetVisible = true;
+		}
+		else if (p2Visible)
+		{
+			target = player2;
+			targetVisible = true;
+		}
+		else if (p1Visible)
+		{
+			target = &player1;
+			targetVisible = true;
+		}
+		else if (p1Candidate && p2Candidate)
+		{
+			// Neither visible: keep chasing whichever is closer if we were
+			// already chasing, otherwise we'll fall back to patrol/idle below.
+			const sf::FloatRect enemyBounds = getBounds();
+			const float enemyCenterX = enemyBounds.position.x + enemyBounds.size.x * 0.5f;
+			const float p1Dist = std::abs(player1.getBounds().position.x +
+				player1.getBounds().size.x * 0.5f - enemyCenterX);
+			const float p2Dist = std::abs(player2->getBounds().position.x +
+				player2->getBounds().size.x * 0.5f - enemyCenterX);
+
+			target = (p2Dist < p1Dist) ? player2 : &player1;
+			targetVisible = false;
+		}
+		else if (p2Candidate)
+		{
+			target = player2;
+			targetVisible = false;
+		}
+	}
+
+	if (targetVisible && m_state != BehaviourState::Chase)
 	{
 		m_state = BehaviourState::Chase;
 		m_animationTimer = 0.f;
 		m_currentFrameIndex = 0;
 	}
-	else if (!playerVisible && m_state == BehaviourState::Chase)
+	else if (!targetVisible && m_state == BehaviourState::Chase)
 	{
 		chooseNextBehaviour();
 	}
@@ -236,7 +302,7 @@ void GAME1_Enemy::update(float deltaTime, const GAME1_Level& level, const GAME1_
 	else if (m_state == BehaviourState::Patrol)
 		updatePatrol(deltaTime, level);
 	else if (m_state == BehaviourState::Chase)
-		updateChase(deltaTime, level, player);
+		updateChase(deltaTime, level, *target);
 
 	updateAnimation(deltaTime);
 }

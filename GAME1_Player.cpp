@@ -14,6 +14,9 @@
 
 namespace
 {
+	constexpr unsigned int kCoopPlayer1JoystickIndex = 0;
+	constexpr unsigned int kCoopPlayer2JoystickIndex = 1;
+
 	std::string ToLower(std::string value)
 	{
 		std::transform(value.begin(), value.end(), value.begin(),
@@ -261,6 +264,8 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 	m_respawning = false;
 	m_respawnTimer = 0.f;
 
+	m_pendingRespawnPosition.reset();
+
 	return true;
 }
 
@@ -327,29 +332,35 @@ bool GAME1_Player::loadAnimationFramesFromDirectory(AnimationSet& animation,
 
 void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 {
-	if (ArcadeInput::isBackHeld())
+	// In single-player the player owns global concerns (music/back/restart).
+	// In co-op those are owned by main.cpp so they apply to the team.
+	if (!m_coopMode && ArcadeInput::isBackHeld())
 	{
 		stopMusic();
 	}
 
 	if (m_gameOver)
 	{
-		GAME1_SurfersQuestAudio::playDeath();
-
-		if (ArcadeInput::isConfirmHeld())
+		if (!m_coopMode)
 		{
-			resetGame();
-		}
-		else
-		{
-			setAnimationState(AnimationState::Idle);
-			updateAnimation(deltaTime);
+			GAME1_SurfersQuestAudio::playDeath();
+
+			if (ArcadeInput::isConfirmHeld())
+			{
+				resetGame();
+				return;
+			}
 		}
 
+		setAnimationState(AnimationState::Idle);
+		updateAnimation(deltaTime);
 		return;
 	}
 
-	GAME1_SurfersQuestAudio::playGameplay();
+	if (!m_coopMode)
+	{
+		GAME1_SurfersQuestAudio::playGameplay();
+	}
 
 	if (m_respawning)
 	{
@@ -395,8 +406,8 @@ void GAME1_Player::handleInput(float deltaTime)
 {
 	m_horizontalInputHeld = false;
 
-	const bool leftHeld = ArcadeInput::isMoveLeftHeld();
-	const bool rightHeld = ArcadeInput::isMoveRightHeld();
+	const bool leftHeld = inputMoveLeftHeld();
+	const bool rightHeld = inputMoveRightHeld();
 
 	const bool dropThroughHeld = isDropThroughHeld();
 	const bool phasePressedThisFrame = dropThroughHeld && !m_phaseHeldLastFrame;
@@ -484,7 +495,7 @@ void GAME1_Player::handleInput(float deltaTime)
 
 	m_jumpBufferTimer = std::max(0.f, m_jumpBufferTimer - deltaTime);
 
-	const bool jumpHeld = ArcadeInput::isPrimaryHeld();
+	const bool jumpHeld = inputJumpHeld();
 	const bool jumpPressedThisFrame = jumpHeld && !m_jumpHeldLastFrame;
 	const bool jumpReleasedThisFrame = !jumpHeld && m_jumpHeldLastFrame;
 
@@ -1249,7 +1260,7 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		}
 	}
 
-	if (m_hasUiFont)
+	if (m_hasUiFont && m_drawHud)
 	{
 		const sf::View view = target.getView();
 		const sf::Vector2f viewSize = view.getSize();
@@ -1327,6 +1338,11 @@ sf::FloatRect GAME1_Player::getBounds() const
 	);
 }
 
+sf::Vector2f GAME1_Player::getPosition() const
+{
+	return m_position;
+}
+
 void GAME1_Player::setSpawnPosition(sf::Vector2f spawnPosition)
 {
 	m_spawnPosition = spawnPosition;
@@ -1335,6 +1351,12 @@ void GAME1_Player::setSpawnPosition(sf::Vector2f spawnPosition)
 sf::Vector2f GAME1_Player::getSpawnPosition() const
 {
 	return m_spawnPosition;
+}
+
+void GAME1_Player::setPosition(sf::Vector2f position)
+{
+	m_position = position;
+	m_previousPosition = position;
 }
 
 bool GAME1_Player::isRespawning() const
@@ -1409,6 +1431,46 @@ bool GAME1_Player::isGameOver() const
 	return m_gameOver;
 }
 
+bool GAME1_Player::isActive() const
+{
+	return !m_gameOver && !m_respawning;
+}
+
+void GAME1_Player::setInputProfile(GAME1_PlayerInputProfile profile)
+{
+	m_inputProfile = profile;
+}
+
+GAME1_PlayerInputProfile GAME1_Player::getInputProfile() const
+{
+	return m_inputProfile;
+}
+
+void GAME1_Player::setCoopMode(bool coopActive)
+{
+	m_coopMode = coopActive;
+}
+
+void GAME1_Player::setDrawHud(bool drawHud)
+{
+	m_drawHud = drawHud;
+}
+
+void GAME1_Player::setNextRespawnPosition(sf::Vector2f position)
+{
+	m_pendingRespawnPosition = position;
+}
+
+void GAME1_Player::forceDeath()
+{
+	if (m_gameOver || m_respawning)
+		return;
+
+	m_health = 0;
+	playDamageOrDeathSoundForDamage(m_spikeDamage);
+	loseLifeAndRespawn();
+}
+
 void GAME1_Player::resetGame()
 {
 	m_gameOver = false;
@@ -1432,7 +1494,7 @@ void GAME1_Player::resetGame()
 	m_velocity = { 0.f, 0.f };
 
 	m_onGround = false;
-	m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
+	m_jumpHeldLastFrame = inputJumpHeld();
 	m_phaseHeldLastFrame = isDropThroughHeld();
 	resetMovementSoundTimers();
 
@@ -1443,8 +1505,14 @@ void GAME1_Player::resetGame()
 	m_variableJumpActive = false;
 	m_releasedJumpGravityActive = false;
 
+	m_pendingRespawnPosition.reset();
+
 	setAnimationState(AnimationState::Idle);
-	GAME1_SurfersQuestAudio::playGameplay();
+
+	if (!m_coopMode)
+	{
+		GAME1_SurfersQuestAudio::playGameplay();
+	}
 }
 
 void GAME1_Player::stopMusic()
@@ -1491,7 +1559,11 @@ void GAME1_Player::beginGameOver()
 	resetMovementSoundTimers();
 
 	setAnimationState(AnimationState::Idle);
-	GAME1_SurfersQuestAudio::playDeath();
+
+	if (!m_coopMode)
+	{
+		GAME1_SurfersQuestAudio::playDeath();
+	}
 }
 
 void GAME1_Player::startRespawn()
@@ -1514,11 +1586,15 @@ void GAME1_Player::startRespawn()
 	m_groundedOnOneWayPlatform = false;
 
 	m_velocity = { 0.f, 0.f };
-	m_position = m_spawnPosition;
-	m_previousPosition = m_spawnPosition;
+
+	const sf::Vector2f placement =
+		m_pendingRespawnPosition.value_or(m_spawnPosition);
+
+	m_position = placement;
+	m_previousPosition = placement;
 
 	m_onGround = false;
-	m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
+	m_jumpHeldLastFrame = inputJumpHeld();
 	m_phaseHeldLastFrame = isDropThroughHeld();
 	resetMovementSoundTimers();
 
@@ -1555,12 +1631,14 @@ void GAME1_Player::updateRespawn(float deltaTime)
 		m_wallJumpControlLockTimer = 0.f;
 		m_groundedOnOneWayPlatform = false;
 
-		m_position = m_spawnPosition;
-		m_previousPosition = m_spawnPosition;
+		const sf::Vector2f placement = resolveRespawnPosition();
+
+		m_position = placement;
+		m_previousPosition = placement;
 		m_velocity = { 0.f, 0.f };
 
 		m_onGround = false;
-		m_jumpHeldLastFrame = ArcadeInput::isPrimaryHeld();
+		m_jumpHeldLastFrame = inputJumpHeld();
 		m_phaseHeldLastFrame = isDropThroughHeld();
 		resetMovementSoundTimers();
 
@@ -1573,6 +1651,18 @@ void GAME1_Player::updateRespawn(float deltaTime)
 
 		setAnimationState(AnimationState::Idle);
 	}
+}
+
+sf::Vector2f GAME1_Player::resolveRespawnPosition()
+{
+	if (m_pendingRespawnPosition.has_value())
+	{
+		const sf::Vector2f result = *m_pendingRespawnPosition;
+		m_pendingRespawnPosition.reset();
+		return result;
+	}
+
+	return m_spawnPosition;
 }
 
 bool GAME1_Player::isWithinApexGravityWindow() const
@@ -1588,7 +1678,67 @@ bool GAME1_Player::isWithinApexGravityWindow() const
 
 bool GAME1_Player::isDropThroughHeld() const
 {
-	return ArcadeInput::isSecondaryHeld();
+	return inputDropThroughHeld();
+}
+
+bool GAME1_Player::inputMoveLeftHeld() const
+{
+	switch (m_inputProfile)
+	{
+	case GAME1_PlayerInputProfile::Player1Coop:
+		return ArcadeInput::isKeyboardMoveLeftHeld() ||
+			ArcadeInput::isJoystickMoveLeftHeld(kCoopPlayer1JoystickIndex);
+	case GAME1_PlayerInputProfile::Player2Coop:
+		return ArcadeInput::isJoystickMoveLeftHeld(kCoopPlayer2JoystickIndex);
+	case GAME1_PlayerInputProfile::SinglePlayer:
+	default:
+		return ArcadeInput::isMoveLeftHeld();
+	}
+}
+
+bool GAME1_Player::inputMoveRightHeld() const
+{
+	switch (m_inputProfile)
+	{
+	case GAME1_PlayerInputProfile::Player1Coop:
+		return ArcadeInput::isKeyboardMoveRightHeld() ||
+			ArcadeInput::isJoystickMoveRightHeld(kCoopPlayer1JoystickIndex);
+	case GAME1_PlayerInputProfile::Player2Coop:
+		return ArcadeInput::isJoystickMoveRightHeld(kCoopPlayer2JoystickIndex);
+	case GAME1_PlayerInputProfile::SinglePlayer:
+	default:
+		return ArcadeInput::isMoveRightHeld();
+	}
+}
+
+bool GAME1_Player::inputJumpHeld() const
+{
+	switch (m_inputProfile)
+	{
+	case GAME1_PlayerInputProfile::Player1Coop:
+		return ArcadeInput::isKeyboardPrimaryHeld() ||
+			ArcadeInput::isJoystickPrimaryHeld(kCoopPlayer1JoystickIndex);
+	case GAME1_PlayerInputProfile::Player2Coop:
+		return ArcadeInput::isJoystickPrimaryHeld(kCoopPlayer2JoystickIndex);
+	case GAME1_PlayerInputProfile::SinglePlayer:
+	default:
+		return ArcadeInput::isPrimaryHeld();
+	}
+}
+
+bool GAME1_Player::inputDropThroughHeld() const
+{
+	switch (m_inputProfile)
+	{
+	case GAME1_PlayerInputProfile::Player1Coop:
+		return ArcadeInput::isKeyboardSecondaryHeld() ||
+			ArcadeInput::isJoystickSecondaryHeld(kCoopPlayer1JoystickIndex);
+	case GAME1_PlayerInputProfile::Player2Coop:
+		return ArcadeInput::isJoystickSecondaryHeld(kCoopPlayer2JoystickIndex);
+	case GAME1_PlayerInputProfile::SinglePlayer:
+	default:
+		return ArcadeInput::isSecondaryHeld();
+	}
 }
 
 bool GAME1_Player::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)

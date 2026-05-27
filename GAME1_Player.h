@@ -2,10 +2,23 @@
 
 #include <SFML/Graphics.hpp>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
 class GAME1_Level;
+
+// Surfers Quest local co-op input source for a player instance.
+// Default = SinglePlayer (keyboard + every connected joystick), which
+// preserves the original single-player behaviour exactly.  When Player 2
+// joins in co-op, Player 1 should be switched to Player1Coop (keyboard +
+// joystick 0) and Player 2 uses Player2Coop (joystick 1 only).
+enum class GAME1_PlayerInputProfile
+{
+	SinglePlayer,
+	Player1Coop,
+	Player2Coop
+};
 
 class GAME1_Player
 {
@@ -19,9 +32,12 @@ public:
 	void stopMusic();
 
 	sf::FloatRect getBounds() const;
+	sf::Vector2f getPosition() const;
 
 	void setSpawnPosition(sf::Vector2f spawnPosition);
 	sf::Vector2f getSpawnPosition() const;
+
+	void setPosition(sf::Vector2f position);
 
 	bool isRespawning() const;
 	int getRespawnCountdown() const;
@@ -35,6 +51,34 @@ public:
 	int getLives() const;
 	int getMaxLives() const;
 	bool isGameOver() const;
+
+	// Returns true when the player is still part of the active gameplay (not
+	// permanently out, and not mid-respawn).  Useful for camera/enemy logic in
+	// co-op.
+	bool isActive() const;
+
+	// Co-op support.
+	void setInputProfile(GAME1_PlayerInputProfile profile);
+	GAME1_PlayerInputProfile getInputProfile() const;
+
+	// When co-op mode is active, the player no longer manages global concerns
+	// like music start/stop or the game-over restart prompt — those are owned
+	// by main.cpp so they apply to the team as a whole.
+	void setCoopMode(bool coopActive);
+
+	// When false, the player no longer draws the on-screen Health/Lives HUD
+	// (or the OUT OF LIVES popup).  main.cpp draws a combined HUD instead.
+	void setDrawHud(bool drawHud);
+
+	// Used by main.cpp to respawn the trailing player near the leading player
+	// after an off-screen kill.  Consumed by the next respawn (both at
+	// startRespawn and at the end of the respawn timer), then cleared.
+	void setNextRespawnPosition(sf::Vector2f position);
+
+	// Forces a death (loses one life, then respawns or triggers game-over for
+	// this player only).  Combine with setNextRespawnPosition when the death
+	// is caused by lagging off-screen behind the camera.
+	void forceDeath();
 
 	const std::string& getLastError() const;
 
@@ -103,6 +147,15 @@ private:
 
 	bool isWithinApexGravityWindow() const;
 	bool isDropThroughHeld() const;
+
+	// Input-source aware queries (driven by m_inputProfile).
+	bool inputMoveLeftHeld() const;
+	bool inputMoveRightHeld() const;
+	bool inputJumpHeld() const;
+	bool inputDropThroughHeld() const;
+
+	// Consumes m_pendingRespawnPosition if set, otherwise returns m_spawnPosition.
+	sf::Vector2f resolveRespawnPosition();
 
 	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
 	static float moveTowards(float current, float target, float maxDelta);
@@ -202,6 +255,12 @@ private:
 
 	sf::Font m_uiFont;
 	bool m_hasUiFont = false;
+
+	GAME1_PlayerInputProfile m_inputProfile = GAME1_PlayerInputProfile::SinglePlayer;
+	bool m_coopMode = false;
+	bool m_drawHud = true;
+
+	std::optional<sf::Vector2f> m_pendingRespawnPosition;
 
 	std::string m_lastError;
 };

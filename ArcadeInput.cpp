@@ -11,6 +11,19 @@ namespace
 	constexpr unsigned int ButtonSelect = 8;
 	constexpr unsigned int ButtonStart = 9;
 
+	struct JoystickSnapshot
+	{
+		bool connected = false;
+		bool left = false;
+		bool right = false;
+		bool up = false;
+		bool down = false;
+		bool a = false;
+		bool b = false;
+		bool select = false;
+		bool start = false;
+	};
+
 	struct InputSnapshot
 	{
 		bool left = false;
@@ -35,6 +48,8 @@ namespace
 		bool controllerBack = false;
 		bool controllerCancel = false;
 		bool controllerActivity = false;
+
+		std::array<JoystickSnapshot, sf::Joystick::Count> joysticks{};
 	};
 
 	InputSnapshot currentInput;
@@ -104,6 +119,26 @@ namespace
 	{
 		return now && !before;
 	}
+
+	const JoystickSnapshot& currentJoystick(unsigned int joystickIndex)
+	{
+		static const JoystickSnapshot empty{};
+
+		if (joystickIndex >= sf::Joystick::Count)
+			return empty;
+
+		return currentInput.joysticks[joystickIndex];
+	}
+
+	const JoystickSnapshot& previousJoystick(unsigned int joystickIndex)
+	{
+		static const JoystickSnapshot empty{};
+
+		if (joystickIndex >= sf::Joystick::Count)
+			return empty;
+
+		return previousInput.joysticks[joystickIndex];
+	}
 }
 
 void ArcadeInput::consumePressedState()
@@ -120,36 +155,44 @@ void ArcadeInput::update()
 
 	for (unsigned int joystick = 0; joystick < sf::Joystick::Count; ++joystick)
 	{
+		JoystickSnapshot& snapshot = currentInput.joysticks[joystick];
+
 		if (!sf::Joystick::isConnected(joystick))
+		{
+			snapshot = {};
 			continue;
+		}
+
+		snapshot.connected = true;
 
 		const float x = sf::Joystick::getAxisPosition(joystick, sf::Joystick::Axis::X);
 		const float y = sf::Joystick::getAxisPosition(joystick, sf::Joystick::Axis::Y);
 
-		const bool left = x < -AxisDeadZone;
-		const bool right = x > AxisDeadZone;
-		const bool up = y < -AxisDeadZone;
-		const bool down = y > AxisDeadZone;
+		snapshot.left = x < -AxisDeadZone;
+		snapshot.right = x > AxisDeadZone;
+		snapshot.up = y < -AxisDeadZone;
+		snapshot.down = y > AxisDeadZone;
 
-		const bool a = buttonPressed(joystick, ButtonA);
-		const bool b = buttonPressed(joystick, ButtonB);
-		const bool select = buttonPressed(joystick, ButtonSelect);
-		const bool start = buttonPressed(joystick, ButtonStart);
+		snapshot.a = buttonPressed(joystick, ButtonA);
+		snapshot.b = buttonPressed(joystick, ButtonB);
+		snapshot.select = buttonPressed(joystick, ButtonSelect);
+		snapshot.start = buttonPressed(joystick, ButtonStart);
 
-		currentInput.controllerLeft = currentInput.controllerLeft || left;
-		currentInput.controllerRight = currentInput.controllerRight || right;
-		currentInput.controllerUp = currentInput.controllerUp || up;
-		currentInput.controllerDown = currentInput.controllerDown || down;
+		currentInput.controllerLeft = currentInput.controllerLeft || snapshot.left;
+		currentInput.controllerRight = currentInput.controllerRight || snapshot.right;
+		currentInput.controllerUp = currentInput.controllerUp || snapshot.up;
+		currentInput.controllerDown = currentInput.controllerDown || snapshot.down;
 
-		currentInput.controllerPrimary = currentInput.controllerPrimary || a;
-		currentInput.controllerSecondary = currentInput.controllerSecondary || b;
-		currentInput.controllerConfirm = currentInput.controllerConfirm || start || a;
-		currentInput.restart = currentInput.restart || start;
-		currentInput.controllerBack = currentInput.controllerBack || select;
-		currentInput.controllerCancel = currentInput.controllerCancel || select || b;
+		currentInput.controllerPrimary = currentInput.controllerPrimary || snapshot.a;
+		currentInput.controllerSecondary = currentInput.controllerSecondary || snapshot.b;
+		currentInput.controllerConfirm = currentInput.controllerConfirm || snapshot.start || snapshot.a;
+		currentInput.restart = currentInput.restart || snapshot.start;
+		currentInput.controllerBack = currentInput.controllerBack || snapshot.select;
+		currentInput.controllerCancel = currentInput.controllerCancel || snapshot.select || snapshot.b;
 
 		currentInput.controllerActivity = currentInput.controllerActivity ||
-			left || right || up || down || a || b || select || start;
+			snapshot.left || snapshot.right || snapshot.up || snapshot.down ||
+			snapshot.a || snapshot.b || snapshot.select || snapshot.start;
 	}
 
 	currentInput.left = keyboardLeft() || currentInput.controllerLeft;
@@ -203,3 +246,45 @@ bool ArcadeInput::isControllerCancelPressed() { return pressed(currentInput.cont
 bool ArcadeInput::isControllerPrimaryPressed() { return pressed(currentInput.controllerPrimary, previousInput.controllerPrimary); }
 bool ArcadeInput::isControllerSecondaryPressed() { return pressed(currentInput.controllerSecondary, previousInput.controllerSecondary); }
 bool ArcadeInput::hasControllerActivity() { return currentInput.controllerActivity; }
+
+bool ArcadeInput::isKeyboardMoveLeftHeld() { return keyboardLeft(); }
+bool ArcadeInput::isKeyboardMoveRightHeld() { return keyboardRight(); }
+bool ArcadeInput::isKeyboardMoveUpHeld() { return keyboardUp(); }
+bool ArcadeInput::isKeyboardMoveDownHeld() { return keyboardDown(); }
+bool ArcadeInput::isKeyboardPrimaryHeld() { return keyboardPrimary(); }
+bool ArcadeInput::isKeyboardSecondaryHeld() { return keyboardSecondary(); }
+bool ArcadeInput::isKeyboardConfirmHeld() { return keyboardConfirm(); }
+
+bool ArcadeInput::isJoystickConnected(unsigned int joystickIndex)
+{
+	return currentJoystick(joystickIndex).connected;
+}
+
+bool ArcadeInput::isJoystickMoveLeftHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).left; }
+bool ArcadeInput::isJoystickMoveRightHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).right; }
+bool ArcadeInput::isJoystickMoveUpHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).up; }
+bool ArcadeInput::isJoystickMoveDownHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).down; }
+
+bool ArcadeInput::isJoystickPrimaryHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).a; }
+bool ArcadeInput::isJoystickPrimaryPressed(unsigned int joystickIndex)
+{
+	return pressed(currentJoystick(joystickIndex).a, previousJoystick(joystickIndex).a);
+}
+
+bool ArcadeInput::isJoystickSecondaryHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).b; }
+bool ArcadeInput::isJoystickSecondaryPressed(unsigned int joystickIndex)
+{
+	return pressed(currentJoystick(joystickIndex).b, previousJoystick(joystickIndex).b);
+}
+
+bool ArcadeInput::isJoystickStartHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).start; }
+bool ArcadeInput::isJoystickStartPressed(unsigned int joystickIndex)
+{
+	return pressed(currentJoystick(joystickIndex).start, previousJoystick(joystickIndex).start);
+}
+
+bool ArcadeInput::isJoystickSelectHeld(unsigned int joystickIndex) { return currentJoystick(joystickIndex).select; }
+bool ArcadeInput::isJoystickSelectPressed(unsigned int joystickIndex)
+{
+	return pressed(currentJoystick(joystickIndex).select, previousJoystick(joystickIndex).select);
+}

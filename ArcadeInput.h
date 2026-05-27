@@ -23,7 +23,9 @@ public:
 	// on the first frame after changing screens.
 	static void consumePressedState();
 
-	// Keyboard OR controller gameplay input.
+	// Keyboard OR controller gameplay input (aggregate over every connected
+	// joystick).  This is the original single-player API used by menus and
+	// games other than Surfers Quest co-op.
 	static bool isMoveLeftHeld();
 	static bool isMoveRightHeld();
 	static bool isMoveUpHeld();
@@ -65,4 +67,34 @@ public:
 	static bool isControllerPrimaryPressed();
 	static bool isControllerSecondaryPressed();
 	static bool hasControllerActivity();
+
+	// Keyboard-only queries.  Used so per-player co-op input profiles can
+	// combine "keyboard + a specific joystick" without picking up other
+	// joysticks at the same time.
+	static bool isKeyboardMoveLeftHeld();
+	static bool isKeyboardMoveRightHeld();
+	static bool isKeyboardMoveUpHeld();
+	static bool isKeyboardMoveDownHeld();
+	static bool isKeyboardPrimaryHeld();
+	static bool isKeyboardSecondaryHeld();
+	static bool isKeyboardConfirmHeld();
+
+	// Per-joystick queries (joystickIndex is the SFML joystick index, 0..7).
+	// Returns false for an out-of-range or disconnected joystick.
+	static bool isJoystickConnected(unsigned int joystickIndex);
+
+	static bool isJoystickMoveLeftHeld(unsigned int joystickIndex);
+	static bool isJoystickMoveRightHeld(unsigned int joystickIndex);
+	static bool isJoystickMoveUpHeld(unsigned int joystickIndex);
+	static bool isJoystickMoveDownHeld(unsigned int joystickIndex);
+
+	static bool isJoystickPrimaryHeld(unsigned int joystickIndex);
+	static bool isJoystickPrimaryPressed(unsigned int joystickIndex);
+	static bool isJoystickSecondaryHeld(unsigned int joystickIndex);
+	static bool isJoystickSecondaryPressed(unsigned int joystickIndex);
+
+	static bool isJoystickStartHeld(unsigned int joystickIndex);
+	static bool isJoystickStartPressed(unsigned int joystickIndex);
+	static bool isJoystickSelectHeld(unsigned int joystickIndex);
+	static bool isJoystickSelectPressed(unsigned int joystickIndex);
 };

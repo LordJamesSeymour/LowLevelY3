@@ -47,6 +47,12 @@ namespace
 	const std::filesystem::path kGame1SplashStillImagePath = "assets/Game#1/SplashScreen/SidescrollerSplashScreen.png";
 	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/SplashScreen/GIFs";
 
+	// Surfers Quest local co-op tuning.
+	constexpr unsigned int kGame1Player2JoystickIndex = 1;
+	constexpr float kGame1CoopJoinSpawnOffsetX = 60.f;
+	constexpr float kGame1CoopOffScreenKillDistance = 220.f;
+	constexpr float kGame1CoopRespawnOffsetX = 50.f;
+
 	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
 	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
 
@@ -461,6 +467,7 @@ int main()
 
 	GAME1_Level game1Level;
 	GAME1_Player game1Player;
+	GAME1_Player game1Player2;
 	std::vector<GAME1_Enemy> game1Enemies;
 
 	// Vertical camera state for Surfers Quest: persistent across frames,
@@ -469,6 +476,10 @@ int main()
 	bool game1CameraNeedsSnap = true;
 
 	int game1LastCheckpointOrder = -1;
+
+	// Surfers Quest local co-op state.
+	bool game1Player2Joined = false;
+	bool game1TeamGameOver = false;
 
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
@@ -566,6 +577,13 @@ int main()
 			{
 				game1CameraNeedsSnap = true;
 				game1LastCheckpointOrder = -1;
+
+				game1Player2Joined = false;
+				game1TeamGameOver = false;
+
+				game1Player.setInputProfile(GAME1_PlayerInputProfile::SinglePlayer);
+				game1Player.setCoopMode(false);
+				game1Player.setDrawHud(true);
 			}
 		};
 
@@ -643,6 +661,75 @@ int main()
 			default:
 				break;
 			}
+		};
+
+	auto TryJoinGame1Player2 = [&]() -> bool
+		{
+			if (appState != AppState::GAME1_Game)
+				return false;
+
+			if (game1Player2Joined)
+				return false;
+
+			if (game1TeamGameOver)
+				return false;
+
+			if (game1Player.isGameOver())
+				return false;
+
+			const std::string player2IdleDirectory =
+				(kGame1ResourcesDirectory / "Player2" / "PlayerIdle").string();
+
+			sf::Vector2f spawnPosition = game1Player.getPosition();
+			spawnPosition.x -= kGame1CoopJoinSpawnOffsetX;
+
+			if (!game1Player2.load(player2IdleDirectory, spawnPosition))
+			{
+				const std::string msg =
+					"Surfers Quest Player 2 failed to load.\n\n" +
+					game1Player2.getLastError() +
+					"\n\nCurrent working directory:\n" +
+					std::filesystem::current_path().string();
+
+				ShowError(msg);
+				return false;
+			}
+
+			game1Player2.setSpawnPosition(game1Player.getSpawnPosition());
+
+			game1Player.setInputProfile(GAME1_PlayerInputProfile::Player1Coop);
+			game1Player.setCoopMode(true);
+			game1Player.setDrawHud(false);
+
+			game1Player2.setInputProfile(GAME1_PlayerInputProfile::Player2Coop);
+			game1Player2.setCoopMode(true);
+			game1Player2.setDrawHud(false);
+
+			game1Player2Joined = true;
+			return true;
+		};
+
+	auto RestartGame1Team = [&]()
+		{
+			game1Player.resetGame();
+			game1Player.setSpawnPosition(game1Level.getPlayerSpawnPosition());
+			game1Player.setPosition(game1Level.getPlayerSpawnPosition());
+
+			if (game1Player2Joined)
+			{
+				sf::Vector2f p2Spawn = game1Level.getPlayerSpawnPosition();
+				p2Spawn.x -= kGame1CoopJoinSpawnOffsetX;
+
+				game1Player2.resetGame();
+				game1Player2.setSpawnPosition(game1Level.getPlayerSpawnPosition());
+				game1Player2.setPosition(p2Spawn);
+			}
+
+			game1TeamGameOver = false;
+			game1LastCheckpointOrder = -1;
+			game1CameraNeedsSnap = true;
+
+			GAME1_SurfersQuestAudio::playGameplay();
 		};
 
 	auto TryStartBombermanLevel = [&](const std::string& mapPath) -> bool
@@ -1148,6 +1235,17 @@ int main()
 					{
 						SetAppState(AppState::GAME1_Menu);
 					}
+					else if (keyReleased->code == sf::Keyboard::Key::Enter)
+					{
+						if (game1TeamGameOver)
+						{
+							RestartGame1Team();
+						}
+						else if (!game1Player2Joined)
+						{
+							TryJoinGame1Player2();
+						}
+					}
 				}
 			}
 			else if (appState == AppState::GAME1_Editor)
@@ -1405,6 +1503,16 @@ int main()
 				SetAppState(AppState::GAME1_Menu);
 				ArcadeInput::consumePressedState();
 			}
+			else if (game1TeamGameOver &&
+				ArcadeInput::isJoystickStartPressed(0))
+			{
+				RestartGame1Team();
+			}
+			else if (!game1Player2Joined &&
+				ArcadeInput::isJoystickStartPressed(kGame1Player2JoystickIndex))
+			{
+				TryJoinGame1Player2();
+			}
 		}
 
 
@@ -1491,49 +1599,75 @@ int main()
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
-			game1Player.update(deltaTime, game1Level);
+			const bool p2Joined = game1Player2Joined;
 
-			{
-				const sf::FloatRect playerBounds = game1Player.getBounds();
-
-				for (int i = 0; i < game1Level.getCheckpointCount(); ++i)
+			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player)
 				{
-					if (game1Level.isCheckpointTriggered(i))
-						continue;
+					const sf::FloatRect playerBounds = player.getBounds();
 
-					const sf::FloatRect checkpointBounds = game1Level.getCheckpointBounds(i);
+					for (int i = 0; i < game1Level.getCheckpointCount(); ++i)
+					{
+						if (game1Level.isCheckpointTriggered(i))
+							continue;
 
-					const bool overlaps =
-						playerBounds.position.x < checkpointBounds.position.x + checkpointBounds.size.x &&
-						playerBounds.position.x + playerBounds.size.x > checkpointBounds.position.x &&
-						playerBounds.position.y < checkpointBounds.position.y + checkpointBounds.size.y &&
-						playerBounds.position.y + playerBounds.size.y > checkpointBounds.position.y;
+						const sf::FloatRect checkpointBounds = game1Level.getCheckpointBounds(i);
 
-					if (!overlaps)
-						continue;
+						const bool overlaps =
+							playerBounds.position.x < checkpointBounds.position.x + checkpointBounds.size.x &&
+							playerBounds.position.x + playerBounds.size.x > checkpointBounds.position.x &&
+							playerBounds.position.y < checkpointBounds.position.y + checkpointBounds.size.y &&
+							playerBounds.position.y + playerBounds.size.y > checkpointBounds.position.y;
 
-					const int order = game1Level.getCheckpointOrderIndex(i);
+						if (!overlaps)
+							continue;
 
-					if (order <= game1LastCheckpointOrder)
-						continue;
+						const int order = game1Level.getCheckpointOrderIndex(i);
 
-					game1Level.triggerCheckpoint(i);
-					game1LastCheckpointOrder = order;
-					game1Player.setSpawnPosition(game1Level.getCheckpointSpawnPosition(i));
-					GAME1_SurfersQuestAudio::playCheckpoint();
-				}
+						if (order <= game1LastCheckpointOrder)
+							continue;
+
+						game1Level.triggerCheckpoint(i);
+						game1LastCheckpointOrder = order;
+
+						const sf::Vector2f cpSpawn =
+							game1Level.getCheckpointSpawnPosition(i);
+
+						game1Player.setSpawnPosition(cpSpawn);
+						if (p2Joined)
+							game1Player2.setSpawnPosition(cpSpawn);
+
+						GAME1_SurfersQuestAudio::playCheckpoint();
+					}
+				};
+
+			if (p2Joined && !game1TeamGameOver)
+			{
+				GAME1_SurfersQuestAudio::playGameplay();
+			}
+
+			game1Player.update(deltaTime, game1Level);
+			TriggerCheckpointsForPlayer(game1Player);
+
+			if (p2Joined && !game1Player2.isGameOver())
+			{
+				game1Player2.update(deltaTime, game1Level);
+				TriggerCheckpointsForPlayer(game1Player2);
 			}
 
 			game1Level.updateCheckpoints(deltaTime);
 
 			for (GAME1_Enemy& enemy : game1Enemies)
 			{
-				enemy.update(deltaTime, game1Level, game1Player);
+				enemy.update(deltaTime, game1Level, game1Player,
+					p2Joined ? &game1Player2 : nullptr);
 			}
 
 			for (GAME1_Enemy& enemy : game1Enemies)
 			{
 				enemy.handlePlayerCollision(game1Player);
+
+				if (p2Joined && !game1Player2.isGameOver())
+					enemy.handlePlayerCollision(game1Player2);
 			}
 
 			game1Enemies.erase(
@@ -1552,9 +1686,37 @@ int main()
 			const float halfViewWidth = viewSize.x * 0.5f;
 			const float halfViewHeight = viewSize.y * 0.5f;
 
-			const sf::FloatRect playerBounds = game1Player.getBounds();
-			const float playerCenterX = playerBounds.position.x + playerBounds.size.x * 0.5f;
-			const float playerCenterY = playerBounds.position.y + playerBounds.size.y * 0.5f;
+			auto PlayerCenterX = [](const GAME1_Player& player)
+				{
+					const sf::FloatRect b = player.getBounds();
+					return b.position.x + b.size.x * 0.5f;
+				};
+
+			auto PlayerCenterY = [](const GAME1_Player& player)
+				{
+					const sf::FloatRect b = player.getBounds();
+					return b.position.y + b.size.y * 0.5f;
+				};
+
+			const bool p1Eligible = !game1Player.isGameOver();
+			const bool p2Eligible = p2Joined && !game1Player2.isGameOver();
+
+			// Camera follows the furthest-ahead living player.
+			const GAME1_Player* leadingPlayer = &game1Player;
+			if (p2Eligible)
+			{
+				if (!p1Eligible)
+				{
+					leadingPlayer = &game1Player2;
+				}
+				else if (PlayerCenterX(game1Player2) > PlayerCenterX(game1Player))
+				{
+					leadingPlayer = &game1Player2;
+				}
+			}
+
+			const float playerCenterX = PlayerCenterX(*leadingPlayer);
+			const float playerCenterY = PlayerCenterY(*leadingPlayer);
 
 			// ---- Horizontal follow (unchanged) ----
 			const float minViewCenterX = halfViewWidth;
@@ -1630,6 +1792,55 @@ int main()
 			game1CameraCenterY += (targetViewCenterY - game1CameraCenterY) * easeFactor;
 			game1CameraCenterY = std::min(game1CameraCenterY, maxViewCenterY);
 
+			// Off-screen kill: the trailing player has fallen too far behind
+			// the camera.  Only the trailing player is penalised, and they
+			// respawn near the leading player.
+			if (p2Joined && p1Eligible && p2Eligible && !game1TeamGameOver)
+			{
+				const float cameraLeftEdge = targetViewCenterX - halfViewWidth;
+				const float killLine = cameraLeftEdge - kGame1CoopOffScreenKillDistance;
+
+				auto MaybeKillTrailing = [&](GAME1_Player& trailing, GAME1_Player& leading)
+					{
+						if (trailing.isGameOver() || trailing.isRespawning())
+							return;
+
+						if (!leading.isActive())
+							return;
+
+						if (PlayerCenterX(trailing) >= killLine)
+							return;
+
+						if (PlayerCenterX(trailing) >= PlayerCenterX(leading))
+							return;
+
+						sf::Vector2f respawnNear = leading.getPosition();
+						respawnNear.x -= kGame1CoopRespawnOffsetX;
+
+						trailing.setNextRespawnPosition(respawnNear);
+						trailing.forceDeath();
+					};
+
+				if (leadingPlayer == &game1Player)
+				{
+					MaybeKillTrailing(game1Player2, game1Player);
+				}
+				else if (leadingPlayer == &game1Player2)
+				{
+					MaybeKillTrailing(game1Player, game1Player2);
+				}
+			}
+
+			// Team game-over detection.
+			if (p2Joined && !game1TeamGameOver)
+			{
+				if (game1Player.isGameOver() && game1Player2.isGameOver())
+				{
+					game1TeamGameOver = true;
+					GAME1_SurfersQuestAudio::playDeath();
+				}
+			}
+
 			worldView.setCenter({
 				targetViewCenterX,
 				game1CameraCenterY
@@ -1646,21 +1857,139 @@ int main()
 				enemy.draw(window);
 			}
 
-			game1Player.draw(window);
+			// In co-op, hide a personally game-over player until the team
+			// itself is game over (then the OUT OF LIVES UI applies to both).
+			if (!p2Joined || !game1Player.isGameOver() || game1TeamGameOver)
+			{
+				game1Player.draw(window);
+			}
+
+			if (p2Joined && (!game1Player2.isGameOver() || game1TeamGameOver))
+			{
+				game1Player2.draw(window);
+			}
 
 			ApplyWindowView(window);
 
-			if (game1Player.isRespawning())
+			if (!p2Joined)
 			{
-				respawnText.setString("Respawning player in: " + std::to_string(game1Player.getRespawnCountdown()));
+				if (game1Player.isRespawning())
+				{
+					respawnText.setCharacterSize(34);
+					respawnText.setString("Respawning player in: " + std::to_string(game1Player.getRespawnCountdown()));
 
-				const sf::FloatRect textBounds = respawnText.getLocalBounds();
-				respawnText.setPosition({
-					(static_cast<float>(window.getSize().x) - textBounds.size.x) * 0.5f - textBounds.position.x,
-					80.f - textBounds.position.y
-					});
+					const sf::FloatRect textBounds = respawnText.getLocalBounds();
+					respawnText.setPosition({
+						(static_cast<float>(window.getSize().x) - textBounds.size.x) * 0.5f - textBounds.position.x,
+						80.f - textBounds.position.y
+						});
 
-				window.draw(respawnText);
+					window.draw(respawnText);
+				}
+			}
+			else
+			{
+				// Dual-player HUD.
+				const float windowWidth = static_cast<float>(window.getSize().x);
+
+				auto DrawPlayerStats = [&](const std::string& title, int health, int maxHealth,
+					int lives, int maxLives, sf::Vector2f topLeft)
+					{
+						sf::Text titleText(game1UiFont);
+						titleText.setString(title);
+						titleText.setCharacterSize(20);
+						titleText.setFillColor(sf::Color::White);
+						titleText.setOutlineColor(sf::Color::Black);
+						titleText.setOutlineThickness(2.f);
+						titleText.setPosition(topLeft);
+						window.draw(titleText);
+
+						sf::Text healthText(game1UiFont);
+						healthText.setString("Health: " + std::to_string(health) + " / " + std::to_string(maxHealth));
+						healthText.setCharacterSize(20);
+						healthText.setFillColor(sf::Color::White);
+						healthText.setOutlineColor(sf::Color::Black);
+						healthText.setOutlineThickness(2.f);
+						healthText.setPosition({ topLeft.x, topLeft.y + 24.f });
+						window.draw(healthText);
+
+						sf::Text livesText(game1UiFont);
+						livesText.setString("Lives: " + std::to_string(lives) + " / " + std::to_string(maxLives));
+						livesText.setCharacterSize(20);
+						livesText.setFillColor(sf::Color::White);
+						livesText.setOutlineColor(sf::Color::Black);
+						livesText.setOutlineThickness(2.f);
+						livesText.setPosition({ topLeft.x, topLeft.y + 48.f });
+						window.draw(livesText);
+					};
+
+				DrawPlayerStats("Player 1",
+					game1Player.getHealth(), game1Player.getMaxHealth(),
+					game1Player.getLives(), game1Player.getMaxLives(),
+					{ 18.f, 14.f });
+
+				DrawPlayerStats("Player 2",
+					game1Player2.getHealth(), game1Player2.getMaxHealth(),
+					game1Player2.getLives(), game1Player2.getMaxLives(),
+					{ windowWidth - 220.f, 14.f });
+
+				if (game1Player.isRespawning() && !game1Player.isGameOver())
+				{
+					respawnText.setCharacterSize(22);
+					respawnText.setString("P1 respawn: " + std::to_string(game1Player.getRespawnCountdown()));
+					respawnText.setPosition({ 18.f, 90.f });
+					window.draw(respawnText);
+				}
+
+				if (game1Player2.isRespawning() && !game1Player2.isGameOver())
+				{
+					respawnText.setCharacterSize(22);
+					respawnText.setString("P2 respawn: " + std::to_string(game1Player2.getRespawnCountdown()));
+					respawnText.setPosition({ windowWidth - 220.f, 90.f });
+					window.draw(respawnText);
+				}
+
+				if (game1TeamGameOver)
+				{
+					const float windowHeight = static_cast<float>(window.getSize().y);
+					const sf::FloatRect popupRect(
+						{ windowWidth * 0.5f - 250.f, windowHeight * 0.5f - 90.f },
+						{ 500.f, 180.f });
+
+					sf::RectangleShape popupBox;
+					popupBox.setPosition(popupRect.position);
+					popupBox.setSize(popupRect.size);
+					popupBox.setFillColor(sf::Color(130, 45, 45, 230));
+					popupBox.setOutlineColor(sf::Color::White);
+					popupBox.setOutlineThickness(3.f);
+					window.draw(popupBox);
+
+					auto DrawCentered = [&](const std::string& s, unsigned int size,
+						sf::Vector2f pos, sf::Color fill)
+						{
+							sf::Text text(game1UiFont);
+							text.setString(s);
+							text.setCharacterSize(size);
+							text.setFillColor(fill);
+							text.setOutlineColor(sf::Color::Black);
+							text.setOutlineThickness(2.f);
+
+							const sf::FloatRect b = text.getLocalBounds();
+							text.setPosition({
+								pos.x - b.size.x * 0.5f - b.position.x,
+								pos.y - b.size.y * 0.5f - b.position.y
+								});
+							window.draw(text);
+						};
+
+					const float centerX = popupRect.position.x + popupRect.size.x * 0.5f;
+					DrawCentered("TEAM OUT OF LIVES", 32, { centerX, popupRect.position.y + 42.f }, sf::Color::White);
+					DrawCentered("ENTER  -  RESTART", 22, { centerX, popupRect.position.y + 100.f }, sf::Color(255, 230, 120));
+					DrawCentered("ESC  -  BACK TO MENU", 22, { centerX, popupRect.position.y + 138.f }, sf::Color(230, 230, 230));
+				}
+
+				// Restore single-player default size for the next respawn render.
+				respawnText.setCharacterSize(34);
 			}
 
 			DisplayFrame();
