@@ -343,6 +343,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_specialTileTextures.clear();
 	m_enemySpawns.clear();
 	m_pickupSpawns.clear();
+	m_trapSpawns.clear();
+	m_traps.clear();
 	m_checkpoints.clear();
 	m_checkpointActivationFrames.clear();
 	m_checkpointLoopFrames.clear();
@@ -362,6 +364,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	std::vector<std::string> rawRows;
 	std::string line;
 	std::size_t expectedWidth = 0;
+	bool objectSectionStarted = false;
 
 	while (std::getline(file, line))
 	{
@@ -374,8 +377,27 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 		if (TryParseWorldMetadata(line, m_worldNumber))
 			continue;
 
+		if (line == "#OBJECTS")
+		{
+			objectSectionStarted = true;
+			continue;
+		}
+
 		if (!line.empty() && line[0] == '#')
 			continue;
+
+		if (objectSectionStarted || line.rfind("OBJECT ", 0) == 0)
+		{
+			GAME1_TrapSpawn trapSpawn;
+			if (!GAME1_TryParseTrapObjectLine(line, trapSpawn))
+			{
+				m_lastError = "Map error: invalid object line: " + line;
+				return false;
+			}
+
+			m_trapSpawns.push_back(trapSpawn);
+			continue;
+		}
 
 		if (expectedWidth == 0)
 		{
@@ -413,6 +435,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	if (!loadWorldFloorTextures(worldTilesDirectory))
 		return false;
 
+	m_trapAssets.load(resourcesPath.string());
 	loadSpecialTileTextures(resourcesPath);
 	loadCheckpointTextures(resourcesPath);
 	loadWorldBackgroundTexture(resourcesPath);
@@ -520,6 +543,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	for (std::size_t i = 0; i < m_checkpoints.size(); ++i)
 		m_checkpoints[i].orderIndex = static_cast<int>(i);
 
+	rebuildTrapRuntime();
 	return true;
 }
 
@@ -792,6 +816,11 @@ void GAME1_Level::updateCheckpoints(float deltaTime)
 	}
 }
 
+void GAME1_Level::resetTraps()
+{
+	rebuildTrapRuntime();
+}
+
 int GAME1_Level::getCheckpointCount() const
 {
 	return static_cast<int>(m_checkpoints.size());
@@ -912,6 +941,8 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 		}
 	}
 
+	drawTraps(window);
+
 	for (std::size_t i = 0; i < m_checkpoints.size(); ++i)
 	{
 		const sf::Texture* texture = getCheckpointCurrentTexture(i);
@@ -1021,6 +1052,94 @@ const std::vector<GAME1_PickupSpawn>& GAME1_Level::getPickupSpawns() const
 	return m_pickupSpawns;
 }
 
+const std::vector<GAME1_TrapSpawn>& GAME1_Level::getTrapSpawns() const
+{
+	return m_trapSpawns;
+}
+
+void GAME1_Level::updateTraps(float deltaTime)
+{
+	for (GAME1_Trap& trap : m_traps)
+		trap.update(deltaTime);
+}
+
+std::optional<GAME1_TrapPlatformContact> GAME1_Level::findPlatformContact(
+	const sf::FloatRect& playerBounds,
+	float previousPlayerBottom) const
+{
+	std::optional<GAME1_TrapPlatformContact> bestContact;
+
+	for (std::size_t i = 0; i < m_traps.size(); ++i)
+	{
+		const std::optional<GAME1_TrapPlatformContact> contact =
+			m_traps[i].getPlatformContact(i, playerBounds, previousPlayerBottom);
+
+		if (!contact.has_value())
+			continue;
+
+		if (!bestContact.has_value() ||
+			contact->bounds.position.y < bestContact->bounds.position.y)
+		{
+			bestContact = contact;
+		}
+	}
+
+	return bestContact;
+}
+
+void GAME1_Level::markTrapPlayerStanding(std::size_t trapIndex)
+{
+	if (trapIndex >= m_traps.size())
+		return;
+
+	m_traps[trapIndex].markPlayerStanding();
+}
+
+sf::Vector2f GAME1_Level::getFanForceForBounds(const sf::FloatRect& playerBounds) const
+{
+	sf::Vector2f force{ 0.f, 0.f };
+
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		const std::optional<sf::FloatRect> forceBounds = trap.getFanForceBounds();
+
+		if (!forceBounds.has_value())
+			continue;
+
+		if (!rectsIntersect(playerBounds, forceBounds.value()))
+			continue;
+
+		const sf::Vector2f direction = trap.getFanDirection();
+		force.x += direction.x;
+		force.y += direction.y;
+	}
+
+	const float length = std::sqrt(force.x * force.x + force.y * force.y);
+	if (length > 0.001f)
+	{
+		force.x /= length;
+		force.y /= length;
+	}
+
+	return force;
+}
+
+std::optional<sf::FloatRect> GAME1_Level::getActiveFireDamageBounds(const sf::FloatRect& playerBounds) const
+{
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		const std::optional<sf::FloatRect> damageBounds = trap.getFireDamageBounds();
+
+		if (!damageBounds.has_value())
+			continue;
+
+		if (rectsIntersect(playerBounds, damageBounds.value()))
+			return damageBounds;
+	}
+
+	return std::nullopt;
+}
+
 int GAME1_Level::getWidthInTiles() const
 {
 	if (m_rows.empty())
@@ -1080,6 +1199,98 @@ bool GAME1_Level::isOneWayPlatformCode(char tile) const
 bool GAME1_Level::isSupportedSpecialTileCode(char tile) const
 {
 	return isSpikeTrapCode(tile) || isOneWayPlatformCode(tile);
+}
+
+void GAME1_Level::rebuildTrapRuntime()
+{
+	m_traps.clear();
+	m_traps.reserve(m_trapSpawns.size());
+
+	for (const GAME1_TrapSpawn& spawn : m_trapSpawns)
+		m_traps.emplace_back(spawn);
+
+	configureMovingPlatformPaths();
+}
+
+void GAME1_Level::configureMovingPlatformPaths()
+{
+	for (GAME1_Trap& trap : m_traps)
+	{
+		if (!trap.isMovingPlatform())
+			continue;
+
+		const sf::Vector2i start = trap.getGridPosition();
+
+		if (!hasChainAt(start))
+		{
+			trap.configureChainPath(start, start, true, false);
+			continue;
+		}
+
+		sf::Vector2i left = start;
+		while (hasChainAt({ left.x - 1, left.y }))
+			--left.x;
+
+		sf::Vector2i right = start;
+		while (hasChainAt({ right.x + 1, right.y }))
+			++right.x;
+
+		if (left.x != right.x)
+		{
+			trap.configureChainPath(left, right, true, true);
+			continue;
+		}
+
+		sf::Vector2i top = start;
+		while (hasChainAt({ top.x, top.y - 1 }))
+			--top.y;
+
+		sf::Vector2i bottom = start;
+		while (hasChainAt({ bottom.x, bottom.y + 1 }))
+			++bottom.y;
+
+		if (top.y != bottom.y)
+		{
+			trap.configureChainPath(top, bottom, false, true);
+			continue;
+		}
+
+		trap.configureChainPath(start, start, true, false);
+	}
+}
+
+bool GAME1_Level::hasChainAt(sf::Vector2i gridPosition) const
+{
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		if (trap.isChain() && trap.getGridPosition() == gridPosition)
+			return true;
+	}
+
+	return false;
+}
+
+void GAME1_Level::drawTraps(sf::RenderWindow& window) const
+{
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		if (trap.isChain())
+			trap.draw(window, m_trapAssets);
+	}
+
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		if (!trap.isChain())
+			trap.draw(window, m_trapAssets);
+	}
+}
+
+bool GAME1_Level::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)
+{
+	return a.position.x < b.position.x + b.size.x &&
+		a.position.x + a.size.x > b.position.x &&
+		a.position.y < b.position.y + b.size.y &&
+		a.position.y + a.size.y > b.position.y;
 }
 
 const sf::Texture* GAME1_Level::getTextureForTile(char tile) const

@@ -373,6 +373,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 
 	handleInput(deltaTime);
 	applyGravity(deltaTime);
+	applyFanForces(deltaTime, level);
 
 	moveHorizontal(deltaTime, level);
 	updateWallGrabState(level);
@@ -381,6 +382,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 	updateWallGrabState(level);
 
 	checkSpikeTrapCollisions(level);
+	checkFireTrapCollisions(level);
 
 	updateAnimationState();
 	updateAnimation(deltaTime);
@@ -764,6 +766,47 @@ bool GAME1_Player::detectWallContact(GAME1_Level& level, bool& touchingLeft, boo
 	return touchingLeft || touchingRight;
 }
 
+void GAME1_Player::applyFanForces(float deltaTime, GAME1_Level& level)
+{
+	const sf::Vector2f forceDirection = level.getFanForceForBounds(getBounds());
+
+	if (std::abs(forceDirection.x) <= 0.001f &&
+		std::abs(forceDirection.y) <= 0.001f)
+	{
+		return;
+	}
+
+	const float fanSpeed = m_jumpSpeed;
+	const float fanAcceleration = fanSpeed * 8.f;
+
+	if (std::abs(forceDirection.x) > 0.001f)
+	{
+		m_velocity.x = moveTowards(
+			m_velocity.x,
+			forceDirection.x * fanSpeed,
+			fanAcceleration * deltaTime);
+	}
+
+	if (forceDirection.y < -0.001f)
+	{
+		m_velocity.y = std::min(m_velocity.y, -fanSpeed);
+		m_onGround = false;
+		m_wallGrabActive = false;
+		m_coyoteTimer = 0.f;
+		m_variableJumpActive = false;
+		m_releasedJumpGravityActive = false;
+	}
+	else if (forceDirection.y > 0.001f)
+	{
+		m_velocity.y = std::max(m_velocity.y, fanSpeed);
+		m_onGround = false;
+		m_wallGrabActive = false;
+		m_coyoteTimer = 0.f;
+		m_variableJumpActive = false;
+		m_releasedJumpGravityActive = false;
+	}
+}
+
 void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 {
 	m_onGround = false;
@@ -781,6 +824,7 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 		const int bottomTile = GetBottomTile(bounds);
 		const float previousBottom = m_previousPosition.y + bounds.size.y;
 		const bool dropThroughActive = m_dropThroughTimer > 0.f || isDropThroughHeld();
+		bool landed = false;
 
 		for (int col = leftTile; col <= rightTile; ++col)
 		{
@@ -811,8 +855,38 @@ void GAME1_Player::moveVertical(float deltaTime, GAME1_Level& level)
 				m_doubleJumpAnimationPlaying = false;
 				m_variableJumpActive = false;
 				m_releasedJumpGravityActive = false;
+				landed = true;
 
 				break;
+			}
+		}
+
+		if (!landed)
+		{
+			bounds = getBounds();
+
+			const std::optional<GAME1_TrapPlatformContact> platformContact =
+				level.findPlatformContact(bounds, previousBottom);
+
+			if (platformContact.has_value())
+			{
+				m_position.y =
+					platformContact->bounds.position.y -
+					bounds.size.y;
+
+				m_position.x += platformContact->delta.x;
+				m_velocity.y = 0.f;
+				m_onGround = true;
+				m_wallGrabActive = false;
+				m_groundedOnOneWayPlatform = false;
+
+				m_coyoteTimer = m_coyoteTime;
+				m_canDoubleJump = true;
+				m_doubleJumpAnimationPlaying = false;
+				m_variableJumpActive = false;
+				m_releasedJumpGravityActive = false;
+
+				level.markTrapPlayerStanding(platformContact->trapIndex);
 			}
 		}
 	}
@@ -877,6 +951,20 @@ void GAME1_Player::checkSpikeTrapCollisions(GAME1_Level& level)
 	}
 }
 
+void GAME1_Player::checkFireTrapCollisions(GAME1_Level& level)
+{
+	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	const std::optional<sf::FloatRect> fireBounds =
+		level.getActiveFireDamageBounds(getBounds());
+
+	if (!fireBounds.has_value())
+		return;
+
+	takeTrapDamage(fireBounds.value(), GAME1_TrapTuning::FireDamage);
+}
+
 void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 {
 	if (m_damageCooldownTimer > 0.f)
@@ -888,6 +976,25 @@ void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 
 	startHitAnimation();
 	applyKnockbackFromTile(spikeBounds);
+
+	if (m_health <= 0)
+	{
+		loseLifeAndRespawn();
+	}
+}
+
+void GAME1_Player::takeTrapDamage(const sf::FloatRect& trapBounds, int damage)
+{
+	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	const int resolvedDamage = std::max(0, damage);
+	playDamageOrDeathSoundForDamage(resolvedDamage);
+	m_health = std::max(0, m_health - resolvedDamage);
+	m_damageCooldownTimer = m_damageCooldownDuration;
+
+	startHitAnimation();
+	applyKnockbackFromTile(trapBounds);
 
 	if (m_health <= 0)
 	{

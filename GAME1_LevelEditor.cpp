@@ -382,6 +382,8 @@ bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 		return false;
 	}
 
+	m_trapAssets.load(getResourcesDirectory().string());
+
 	refreshSavedLevelList();
 	resetEmpty();
 	loadWorldBackgroundTexture();
@@ -430,9 +432,11 @@ void GAME1_LevelEditor::resetEmpty()
 		m_worldNumber = 1;
 
 	m_rows.assign(TotalRows, std::string(TotalCols, 'O'));
+	m_objects.clear();
 	m_viewStartCol = 0;
 	m_viewStartRow = std::max(0, TotalRows - VisibleRows);
 	m_hotbarPage = 0;
+	m_objectPreviewOrientation = GAME1_TrapOrientation::Up;
 
 	buildTools();
 	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
@@ -593,6 +597,55 @@ void GAME1_LevelEditor::buildTools()
 		"Checkpoint - updates player respawn point (no backtracking)",
 		checkpointIconPaths,
 		sf::Color(230, 90, 90));
+
+	for (GAME1_TrapType trapType : GAME1_GetAllTrapTypes())
+	{
+		Tool trapTool;
+		trapTool.kind = ToolKind::Object;
+		trapTool.objectType = trapType;
+		trapTool.label = GAME1_GetTrapEditorLabel(trapType);
+		trapTool.fallbackColor = GAME1_GetTrapFallbackColor(trapType);
+
+		switch (trapType)
+		{
+		case GAME1_TrapType::FallingPlatform:
+			trapTool.description = "Falling Platform - supports player, falls while stood on";
+			break;
+
+		case GAME1_TrapType::Fan:
+			trapTool.description = "Fan - middle-scroll rotates, pushes 2 tiles";
+			break;
+
+		case GAME1_TrapType::Fire:
+			trapTool.description = "Fire - middle-scroll rotates, active flame damages";
+			break;
+
+		case GAME1_TrapType::Chain:
+			trapTool.description = "Chain rail - required for moving platforms";
+			break;
+
+		case GAME1_TrapType::BrownMovingPlatform:
+			trapTool.description = "Brown moving platform - slow, place on Chain";
+			break;
+
+		case GAME1_TrapType::GreyMovingPlatform:
+			trapTool.description = "Grey moving platform - fast, place on Chain";
+			break;
+
+		default:
+			trapTool.description = "Trap object";
+			break;
+		}
+
+		const sf::Texture* iconTexture = m_trapAssets.getEditorIconTexture(trapType);
+		if (iconTexture != nullptr)
+		{
+			trapTool.texture = *iconTexture;
+			trapTool.hasTexture = true;
+		}
+
+		addTool(std::move(trapTool));
+	}
 
 	for (GAME1_FruitType fruitType : GAME1_GetAllFruitTypes())
 	{
@@ -1004,6 +1057,23 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 
 void GAME1_LevelEditor::handleMouseWheelScrolled(float delta)
 {
+	const Tool* selectedTool = getSelectedTool();
+	const bool rotatingObject =
+		sf::Mouse::isButtonPressed(sf::Mouse::Button::Middle) &&
+		selectedTool != nullptr &&
+		selectedTool->kind == ToolKind::Object &&
+		GAME1_IsRotatableTrapType(selectedTool->objectType);
+
+	if (rotatingObject)
+	{
+		if (delta > 0.f)
+			rotateSelectedObjectTool(1);
+		else if (delta < 0.f)
+			rotateSelectedObjectTool(-1);
+
+		return;
+	}
+
 	if (delta > 0.f)
 	{
 		selectNextTool();
@@ -1195,7 +1265,14 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 	if (tool == nullptr)
 		return;
 
-	placeTileAt(tilePosition->x, tilePosition->y, tool->tile);
+	if (tool->kind == ToolKind::Object)
+	{
+		placeObjectAt(tilePosition->x, tilePosition->y, tool->objectType);
+	}
+	else
+	{
+		placeTileAt(tilePosition->x, tilePosition->y, tool->tile);
+	}
 }
 
 void GAME1_LevelEditor::eraseAtPixel(sf::Vector2i mousePixelPosition)
@@ -1205,6 +1282,7 @@ void GAME1_LevelEditor::eraseAtPixel(sf::Vector2i mousePixelPosition)
 	if (!tilePosition.has_value())
 		return;
 
+	eraseObjectAt(tilePosition->x, tilePosition->y);
 	placeTileAt(tilePosition->x, tilePosition->y, 'O');
 }
 
@@ -1214,6 +1292,23 @@ void GAME1_LevelEditor::pickAtPixel(sf::Vector2i mousePixelPosition)
 
 	if (!tilePosition.has_value())
 		return;
+
+	if (const EditorObject* object = getTopObjectAt(tilePosition->x, tilePosition->y))
+	{
+		if (const Tool* tool = getToolForObject(object->type))
+		{
+			for (int i = 0; i < static_cast<int>(m_tools.size()); ++i)
+			{
+				if (&m_tools[i] == tool)
+				{
+					m_selectedToolIndex = i;
+					m_objectPreviewOrientation = object->orientation;
+					ensureSelectedToolVisible();
+					return;
+				}
+			}
+		}
+	}
 
 	selectToolByTile(m_rows[tilePosition->y][tilePosition->x]);
 }
@@ -1267,6 +1362,20 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 				file << '\n';
 		}
 
+		if (!m_objects.empty())
+		{
+			file << '\n' << "#OBJECTS" << '\n';
+
+			for (const EditorObject& object : m_objects)
+			{
+				GAME1_TrapSpawn spawn;
+				spawn.type = object.type;
+				spawn.gridPosition = object.gridPosition;
+				spawn.orientation = object.orientation;
+				file << GAME1_BuildTrapObjectLine(spawn) << '\n';
+			}
+		}
+
 		if (!file.good())
 		{
 			m_lastError = "Failed while writing file: " + savePath.string();
@@ -1307,9 +1416,11 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 	}
 
 	std::vector<std::string> rawLines;
+	std::vector<EditorObject> loadedObjects;
 	std::string line;
 	std::size_t widestLine = 0;
 	int loadedWorldNumber = 1;
+	bool objectSectionStarted = false;
 
 	while (std::getline(file, line))
 	{
@@ -1322,8 +1433,27 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 		if (TryParseWorldMetadata(line, loadedWorldNumber))
 			continue;
 
+		if (line == "#OBJECTS")
+		{
+			objectSectionStarted = true;
+			continue;
+		}
+
 		if (!line.empty() && line[0] == '#')
 			continue;
+
+		if (objectSectionStarted || line.rfind("OBJECT ", 0) == 0)
+		{
+			EditorObject object;
+			if (!parseObjectLine(line, object))
+			{
+				m_lastError = "SurfersQuest level file error: invalid object line: " + line;
+				return false;
+			}
+
+			loadedObjects.push_back(object);
+			continue;
+		}
 
 		widestLine = std::max(widestLine, line.size());
 		rawLines.push_back(line);
@@ -1373,6 +1503,7 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 	}
 
 	m_rows = std::move(loadedRows);
+	m_objects = std::move(loadedObjects);
 	m_viewStartCol = 0;
 	m_viewStartRow = std::max(0, static_cast<int>(m_rows.size()) - VisibleRows);
 	m_hotbarPage = 0;
@@ -1385,6 +1516,18 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 bool GAME1_LevelEditor::validateTileCharacter(char tile) const
 {
 	return findToolIndexForTile(tile) >= 0;
+}
+
+bool GAME1_LevelEditor::parseObjectLine(const std::string& line, EditorObject& outObject) const
+{
+	GAME1_TrapSpawn spawn;
+	if (!GAME1_TryParseTrapObjectLine(line, spawn))
+		return false;
+
+	outObject.type = spawn.type;
+	outObject.gridPosition = spawn.gridPosition;
+	outObject.orientation = spawn.orientation;
+	return true;
 }
 
 void GAME1_LevelEditor::refreshSavedLevelList()
@@ -1681,7 +1824,7 @@ int GAME1_LevelEditor::findToolIndexForTile(char tile) const
 {
 	for (int i = 0; i < static_cast<int>(m_tools.size()); ++i)
 	{
-		if (m_tools[i].tile == tile)
+		if (m_tools[i].kind == ToolKind::Tile && m_tools[i].tile == tile)
 			return i;
 	}
 
@@ -1699,6 +1842,9 @@ void GAME1_LevelEditor::placeTileAt(int col, int row, char tile)
 	if (!validateTileCharacter(tile))
 		return;
 
+	if (tile == 'O')
+		eraseObjectAt(col, row);
+
 	if (tile == 'P')
 	{
 		for (std::string& levelRow : m_rows)
@@ -1708,6 +1854,147 @@ void GAME1_LevelEditor::placeTileAt(int col, int row, char tile)
 	}
 
 	m_rows[row][col] = tile;
+}
+
+void GAME1_LevelEditor::placeObjectAt(int col, int row, GAME1_TrapType type)
+{
+	if (row < 0 || row >= static_cast<int>(m_rows.size()))
+		return;
+
+	if (col < 0 || col >= static_cast<int>(m_rows[row].size()))
+		return;
+
+	if (GAME1_IsMovingPlatformTrapType(type) && !hasChainAt(col, row))
+	{
+		m_popupMessage = "Place Chain first";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return;
+	}
+
+	if (type == GAME1_TrapType::Chain)
+	{
+		if (findObjectIndexAt(col, row, GAME1_TrapType::Chain) < 0)
+		{
+			EditorObject object;
+			object.type = type;
+			object.gridPosition = { col, row };
+			object.orientation = GAME1_TrapOrientation::Up;
+			m_objects.push_back(object);
+		}
+
+		return;
+	}
+
+	if (GAME1_IsMovingPlatformTrapType(type))
+	{
+		const int brownIndex = findObjectIndexAt(col, row, GAME1_TrapType::BrownMovingPlatform);
+		if (brownIndex >= 0)
+			m_objects.erase(m_objects.begin() + brownIndex);
+
+		const int greyIndex = findObjectIndexAt(col, row, GAME1_TrapType::GreyMovingPlatform);
+		if (greyIndex >= 0)
+			m_objects.erase(m_objects.begin() + greyIndex);
+	}
+	else
+	{
+		for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
+		{
+			const EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+			if (object.gridPosition.x != col || object.gridPosition.y != row)
+				continue;
+
+			if (!GAME1_IsMovingPlatformTrapType(object.type) &&
+				object.type != GAME1_TrapType::Chain)
+			{
+				m_objects.erase(m_objects.begin() + i);
+			}
+		}
+	}
+
+	EditorObject object;
+	object.type = type;
+	object.gridPosition = { col, row };
+	object.orientation = GAME1_IsRotatableTrapType(type)
+		? m_objectPreviewOrientation
+		: GAME1_TrapOrientation::Up;
+
+	m_objects.push_back(object);
+}
+
+void GAME1_LevelEditor::eraseObjectAt(int col, int row)
+{
+	for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
+	{
+		const EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+		if (object.gridPosition.x == col && object.gridPosition.y == row)
+			m_objects.erase(m_objects.begin() + i);
+	}
+}
+
+void GAME1_LevelEditor::rotateSelectedObjectTool(int quarterTurnsClockwise)
+{
+	const Tool* selectedTool = getSelectedTool();
+
+	if (selectedTool == nullptr ||
+		selectedTool->kind != ToolKind::Object ||
+		!GAME1_IsRotatableTrapType(selectedTool->objectType))
+	{
+		return;
+	}
+
+	m_objectPreviewOrientation =
+		GAME1_RotateTrapOrientation(m_objectPreviewOrientation, quarterTurnsClockwise);
+}
+
+bool GAME1_LevelEditor::hasChainAt(int col, int row) const
+{
+	return findObjectIndexAt(col, row, GAME1_TrapType::Chain) >= 0;
+}
+
+int GAME1_LevelEditor::findObjectIndexAt(int col,
+	int row,
+	std::optional<GAME1_TrapType> type) const
+{
+	for (int i = 0; i < static_cast<int>(m_objects.size()); ++i)
+	{
+		const EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+		if (object.gridPosition.x != col || object.gridPosition.y != row)
+			continue;
+
+		if (type.has_value() && object.type != type.value())
+			continue;
+
+		return i;
+	}
+
+	return -1;
+}
+
+const GAME1_LevelEditor::EditorObject* GAME1_LevelEditor::getObjectAt(int col, int row) const
+{
+	const int index = findObjectIndexAt(col, row);
+
+	if (index < 0)
+		return nullptr;
+
+	return &m_objects[static_cast<std::size_t>(index)];
+}
+
+const GAME1_LevelEditor::EditorObject* GAME1_LevelEditor::getTopObjectAt(int col, int row) const
+{
+	for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
+	{
+		const EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+		if (object.gridPosition.x == col && object.gridPosition.y == row)
+			return &object;
+	}
+
+	return nullptr;
 }
 
 void GAME1_LevelEditor::scrollLeft()
@@ -2110,6 +2397,26 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 				if (tile != 'O')
 					drawTilePreview(window, tile, tileRect);
 
+				for (const EditorObject& object : m_objects)
+				{
+					if (object.gridPosition.x == worldCol &&
+						object.gridPosition.y == worldRow &&
+						object.type == GAME1_TrapType::Chain)
+					{
+						drawObjectPreview(window, object.type, object.orientation, tileRect);
+					}
+				}
+
+				for (const EditorObject& object : m_objects)
+				{
+					if (object.gridPosition.x == worldCol &&
+						object.gridPosition.y == worldRow &&
+						object.type != GAME1_TrapType::Chain)
+					{
+						drawObjectPreview(window, object.type, object.orientation, tileRect);
+					}
+				}
+
 				sf::RectangleShape gridLine;
 				gridLine.setPosition(tileRect.position);
 				gridLine.setSize(tileRect.size);
@@ -2226,12 +2533,31 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 	{
 		const int visibleCol = hoveredTile->x - m_viewStartCol;
 		const int visibleRow = hoveredTile->y - m_viewStartRow;
+		const sf::FloatRect hoveredTileRect(
+			{
+				m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
+				m_gridOrigin.y + static_cast<float>(visibleRow) * m_tileSize
+			},
+			{
+				m_tileSize,
+				m_tileSize
+			});
+
+		const Tool* selectedPreviewTool = getSelectedTool();
+		if (selectedPreviewTool != nullptr &&
+			selectedPreviewTool->kind == ToolKind::Object)
+		{
+			drawObjectPreview(
+				window,
+				selectedPreviewTool->objectType,
+				GAME1_IsRotatableTrapType(selectedPreviewTool->objectType)
+					? m_objectPreviewOrientation
+					: GAME1_TrapOrientation::Up,
+				hoveredTileRect);
+		}
 
 		sf::RectangleShape hoverRect;
-		hoverRect.setPosition({
-			m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
-			m_gridOrigin.y + static_cast<float>(visibleRow) * m_tileSize
-			});
+		hoverRect.setPosition(hoveredTileRect.position);
 		hoverRect.setSize({ m_tileSize, m_tileSize });
 		hoverRect.setFillColor(sf::Color::Transparent);
 		hoverRect.setOutlineColor(sf::Color::Yellow);
@@ -2307,7 +2633,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 	drawTextCentered(
 		window,
-		"Left Click: place/select | Right Click: erase | Middle Click: color pick | Arrow Keys: pan view | Scroll: change hotbar tile | F5: save | F9: load | Delete: reset",
+		"Left Click: place/select | Right Click: erase | Middle Click: pick | Hold Middle + Scroll: rotate Fan/Fire | Scroll: tools | F5: save | F9: load",
 		14,
 		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
 		sf::Color(230, 230, 230),
@@ -2389,7 +2715,17 @@ void GAME1_LevelEditor::drawToolPreview(sf::RenderTarget& target,
 			bounds.size.y - padding * 2.f
 		});
 
-		if (tool.hasTexture)
+		if (tool.kind == ToolKind::Object)
+		{
+			drawObjectPreview(
+				target,
+				tool.objectType,
+				GAME1_IsRotatableTrapType(tool.objectType)
+					? m_objectPreviewOrientation
+					: GAME1_TrapOrientation::Up,
+				iconBounds);
+		}
+		else if (tool.hasTexture)
 		{
 			drawTextureFitted(target, tool.texture, iconBounds);
 		}
@@ -2452,6 +2788,28 @@ void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
 	}
 }
 
+void GAME1_LevelEditor::drawObjectPreview(sf::RenderTarget& target,
+	GAME1_TrapType type,
+	GAME1_TrapOrientation orientation,
+	const sf::FloatRect& bounds) const
+{
+	const sf::Texture* texture = m_trapAssets.getEditorIconTexture(type);
+
+	if (texture != nullptr)
+	{
+		drawTextureFittedRotated(target, *texture, bounds, orientation);
+		return;
+	}
+
+	sf::RectangleShape fallback;
+	fallback.setPosition(bounds.position);
+	fallback.setSize(bounds.size);
+	fallback.setFillColor(GAME1_GetTrapFallbackColor(type));
+	fallback.setOutlineColor(sf::Color::White);
+	fallback.setOutlineThickness(1.f);
+	target.draw(fallback);
+}
+
 void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 	const sf::Texture& texture,
 	const sf::FloatRect& bounds) const
@@ -2469,6 +2827,45 @@ void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 		});
 
 	sprite.setPosition(bounds.position);
+	target.draw(sprite);
+}
+
+void GAME1_LevelEditor::drawTextureFittedRotated(sf::RenderTarget& target,
+	const sf::Texture& texture,
+	const sf::FloatRect& bounds,
+	GAME1_TrapOrientation orientation) const
+{
+	sf::Sprite sprite(texture);
+
+	const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+		return;
+
+	const bool sideways =
+		orientation == GAME1_TrapOrientation::Right ||
+		orientation == GAME1_TrapOrientation::Left;
+
+	const float orientedWidth = sideways ? localBounds.size.y : localBounds.size.x;
+	const float orientedHeight = sideways ? localBounds.size.x : localBounds.size.y;
+
+	const float scale = std::min(
+		bounds.size.x / orientedWidth,
+		bounds.size.y / orientedHeight);
+
+	sprite.setOrigin({
+		localBounds.position.x + localBounds.size.x * 0.5f,
+		localBounds.position.y + localBounds.size.y * 0.5f
+		});
+
+	sprite.setPosition({
+		bounds.position.x + bounds.size.x * 0.5f,
+		bounds.position.y + bounds.size.y * 0.5f
+		});
+
+	sprite.setRotation(sf::degrees(static_cast<float>(GAME1_GetTrapOrientationValue(orientation)) * 90.f));
+	sprite.setScale({ scale, scale });
+
 	target.draw(sprite);
 }
 
@@ -2491,6 +2888,17 @@ const GAME1_LevelEditor::Tool* GAME1_LevelEditor::getToolForTile(char tile) cons
 		return nullptr;
 
 	return &m_tools[toolIndex];
+}
+
+const GAME1_LevelEditor::Tool* GAME1_LevelEditor::getToolForObject(GAME1_TrapType type) const
+{
+	for (const Tool& tool : m_tools)
+	{
+		if (tool.kind == ToolKind::Object && tool.objectType == type)
+			return &tool;
+	}
+
+	return nullptr;
 }
 
 std::filesystem::path GAME1_LevelEditor::getResourcesDirectory() const

@@ -542,19 +542,23 @@ bool GAME1_Menu::handleKeyReleased(sf::Keyboard::Key key)
 
 void GAME1_Menu::showPreviousControlsPage()
 {
-	m_controlsPopupPage = m_controlsPopupPage == 0 ? 1 : 0;
+	m_controlsPopupPage = m_controlsPopupPage == 0 ? 2 : m_controlsPopupPage - 1;
 }
 
 void GAME1_Menu::showNextControlsPage()
 {
-	m_controlsPopupPage = m_controlsPopupPage == 0 ? 1 : 0;
+	m_controlsPopupPage = (m_controlsPopupPage + 1) % 3;
 }
 
 std::string GAME1_Menu::getControlsPopupTitle() const
 {
-	return m_controlsPopupPage == 0
-		? "Game Controls"
-		: "Level Editor Controls";
+	if (m_controlsPopupPage == 0)
+		return "Game Controls";
+
+	if (m_controlsPopupPage == 1)
+		return "Level Editor Controls";
+
+	return "Traps and Platforms";
 }
 
 std::string GAME1_Menu::getControlsPopupBody() const
@@ -573,7 +577,9 @@ std::string GAME1_Menu::getControlsPopupBody() const
 			"and reach the end of the level.";
 	}
 
-	return
+	if (m_controlsPopupPage == 1)
+	{
+		return
 		"Left Click = Place tile / select toolbar button\n"
 		"Right Click = Erase tile\n"
 		"Middle Mouse = Pick tile / tool\n"
@@ -584,6 +590,17 @@ std::string GAME1_Menu::getControlsPopupBody() const
 		"World arrows = Switch world palette\n"
 		"Load arrows = Choose saved map, Load opens it\n"
 		"Hotbar < / > = Change tool page";
+	}
+
+	return
+		"Falling Platform: stand on it to make it fall; step off and it returns.\n"
+		"Fan: pushes the player in its facing direction; affects 2 tiles.\n"
+		"Fire: cycles between reload and active fire; active fire damages and knocks back.\n"
+		"Chain: rail/path used by moving platforms.\n"
+		"Brown Platform: slow moving platform; 50% player speed; must be placed on Chain.\n"
+		"Grey Platform: fast moving platform; 150% player speed; must be placed on Chain.\n\n"
+		"Editor rotation: hold middle mouse/wheel button and scroll to rotate Fan/Fire.\n"
+		"Moving platforms can only be placed on Chain.";
 }
 
 void GAME1_Menu::draw(sf::RenderWindow& window) const
@@ -691,7 +708,7 @@ void GAME1_Menu::drawControlsPopup(sf::RenderTarget& target, sf::Vector2u window
 
 	sf::Text bodyText(m_font);
 	bodyText.setString(getControlsPopupBody());
-	bodyText.setCharacterSize(m_controlsPopupPage == 0 ? 19 : 18);
+	bodyText.setCharacterSize(m_controlsPopupPage == 0 ? 19 : (m_controlsPopupPage == 1 ? 18 : 15));
 	bodyText.setFillColor(sf::Color(230, 230, 230));
 	bodyText.setOutlineColor(sf::Color::Black);
 	bodyText.setOutlineThickness(1.25f);
@@ -726,7 +743,7 @@ void GAME1_Menu::drawControlsPopup(sf::RenderTarget& target, sf::Vector2u window
 
 	drawTextCentered(
 		target,
-		"Page " + std::to_string(m_controlsPopupPage + 1) + " / 2",
+		"Page " + std::to_string(m_controlsPopupPage + 1) + " / 3",
 		16,
 		sf::FloatRect(
 			{ m_popupBounds.position.x, m_popupBounds.position.y + m_popupBounds.size.y - 46.f },

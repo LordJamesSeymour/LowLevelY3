@@ -120,8 +120,11 @@ private:
 	void updateWallGrabState(GAME1_Level& level);
 	bool detectWallContact(GAME1_Level& level, bool& touchingLeft, bool& touchingRight) const;
 
+	void applyFanForces(float deltaTime, GAME1_Level& level);
 	void checkSpikeTrapCollisions(GAME1_Level& level);
+	void checkFireTrapCollisions(GAME1_Level& level);
 	void takeSpikeDamage(const sf::FloatRect& spikeBounds);
+	void takeTrapDamage(const sf::FloatRect& trapBounds, int damage);
 	void updateMovementSounds(float deltaTime, const GAME1_Level& level);
 	void resetMovementSoundTimers();
 	void playDamageOrDeathSoundForDamage(int damage) const;

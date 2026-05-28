@@ -2,6 +2,8 @@
 
 #include <SFML/Graphics.hpp>
 
+#include "GAME1_Trap.h"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -68,9 +70,17 @@ public:
 	const std::string& getLastSavedPath() const;
 
 private:
+	enum class ToolKind
+	{
+		Tile,
+		Object
+	};
+
 	struct Tool
 	{
+		ToolKind kind = ToolKind::Tile;
 		char tile = 'O';
+		GAME1_TrapType objectType = GAME1_TrapType::FallingPlatform;
 		std::string label;
 		std::string description;
 
@@ -79,6 +89,13 @@ private:
 
 		sf::Color fallbackColor = sf::Color::White;
 		bool isEraser = false;
+	};
+
+	struct EditorObject
+	{
+		GAME1_TrapType type = GAME1_TrapType::FallingPlatform;
+		sf::Vector2i gridPosition{ 0, 0 };
+		GAME1_TrapOrientation orientation = GAME1_TrapOrientation::Up;
 	};
 
 private:
@@ -95,6 +112,7 @@ private:
 
 	bool loadRowsFromFile(const std::string& mapPath);
 	bool validateTileCharacter(char tile) const;
+	bool parseObjectLine(const std::string& line, EditorObject& outObject) const;
 
 	void refreshSavedLevelList();
 	bool loadSelectedLevelIntoEditor();
@@ -118,6 +136,13 @@ private:
 	int findToolIndexForTile(char tile) const;
 
 	void placeTileAt(int col, int row, char tile);
+	void placeObjectAt(int col, int row, GAME1_TrapType type);
+	void eraseObjectAt(int col, int row);
+	void rotateSelectedObjectTool(int quarterTurnsClockwise);
+	bool hasChainAt(int col, int row) const;
+	int findObjectIndexAt(int col, int row, std::optional<GAME1_TrapType> type = std::nullopt) const;
+	const EditorObject* getObjectAt(int col, int row) const;
+	const EditorObject* getTopObjectAt(int col, int row) const;
 
 	void scrollLeft();
 	void scrollRight();
@@ -159,12 +184,23 @@ private:
 		char tile,
 		const sf::FloatRect& bounds) const;
 
+	void drawObjectPreview(sf::RenderTarget& target,
+		GAME1_TrapType type,
+		GAME1_TrapOrientation orientation,
+		const sf::FloatRect& bounds) const;
+
 	void drawTextureFitted(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		const sf::FloatRect& bounds) const;
 
+	void drawTextureFittedRotated(sf::RenderTarget& target,
+		const sf::Texture& texture,
+		const sf::FloatRect& bounds,
+		GAME1_TrapOrientation orientation) const;
+
 	const Tool* getSelectedTool() const;
 	const Tool* getToolForTile(char tile) const;
+	const Tool* getToolForObject(GAME1_TrapType type) const;
 
 	std::filesystem::path getResourcesDirectory() const;
 	std::filesystem::path getMapsDirectory() const;
@@ -182,8 +218,10 @@ private:
 	sf::Font m_font;
 
 	std::vector<std::string> m_rows;
+	std::vector<EditorObject> m_objects;
 	std::vector<Tool> m_tools;
 	std::vector<int> m_visibleToolbarToolIndices;
+	GAME1_TrapAssets m_trapAssets;
 
 	std::vector<std::string> m_savedLevelPaths;
 	int m_selectedLoadLevelIndex = 0;
@@ -193,6 +231,7 @@ private:
 	int m_hotbarPage = 0;
 	int m_viewStartCol = 0;
 	int m_viewStartRow = 0;
+	GAME1_TrapOrientation m_objectPreviewOrientation = GAME1_TrapOrientation::Up;
 
 	sf::Texture m_backgroundTexture;
 	bool m_hasBackgroundTexture = false;

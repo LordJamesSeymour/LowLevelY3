@@ -1018,6 +1018,7 @@ int main()
 			game1LastCheckpointOrder = -1;
 			game1CameraNeedsSnap = true;
 			ResetGame1CollectiblesAndScores();
+			game1Level.resetTraps();
 
 			GAME1_SurfersQuestAudio::playGameplay();
 		};
@@ -2225,11 +2226,14 @@ int main()
 					GAME1_SurfersQuestAudio::playGameplay();
 				}
 
+				game1Level.updateTraps(deltaTime);
+
 				const bool game1PlayerWasGameOver = game1Player.isGameOver();
 				game1Player.update(deltaTime, game1Level);
 				if (!p2Joined && game1PlayerWasGameOver && !game1Player.isGameOver())
 				{
 					ResetGame1CollectiblesAndScores();
+					game1Level.resetTraps();
 				}
 				TriggerCheckpointsForPlayer(game1Player);
 				TryCollectPickupsForPlayer(game1Player, 0);

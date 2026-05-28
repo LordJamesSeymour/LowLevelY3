@@ -66,6 +66,9 @@
     <ClInclude Include="GAME1_Pickup.h">
       <Filter>Header Files\Platformer</Filter>
     </ClInclude>
+    <ClInclude Include="GAME1_Trap.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
     <ClInclude Include="GAME2_BackgroundLayer.h">
       <Filter>Header Files\SpaceGame</Filter>
     </ClInclude>
@@ -147,6 +150,9 @@
       <Filter>Source Files\Platformer</Filter>
     </ClCompile>
     <ClCompile Include="GAME1_Pickup.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_Trap.cpp">
       <Filter>Source Files\Platformer</Filter>
     </ClCompile>
     <ClCompile Include="GAME2_BackgroundLayer.cpp">

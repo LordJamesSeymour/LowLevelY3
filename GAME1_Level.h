@@ -3,8 +3,10 @@
 #include <SFML/Graphics.hpp>
 
 #include "GAME1_Pickup.h"
+#include "GAME1_Trap.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -66,6 +68,7 @@ public:
 	void drawBackground(sf::RenderWindow& window) const;
 
 	void updateCheckpoints(float deltaTime);
+	void resetTraps();
 
 	int getCheckpointCount() const;
 	sf::FloatRect getCheckpointBounds(int index) const;
@@ -87,6 +90,15 @@ public:
 	sf::Vector2f getPlayerSpawnPosition() const;
 	const std::vector<GAME1_LevelEnemySpawn>& getEnemySpawns() const;
 	const std::vector<GAME1_PickupSpawn>& getPickupSpawns() const;
+	const std::vector<GAME1_TrapSpawn>& getTrapSpawns() const;
+
+	void updateTraps(float deltaTime);
+	std::optional<GAME1_TrapPlatformContact> findPlatformContact(
+		const sf::FloatRect& playerBounds,
+		float previousPlayerBottom) const;
+	void markTrapPlayerStanding(std::size_t trapIndex);
+	sf::Vector2f getFanForceForBounds(const sf::FloatRect& playerBounds) const;
+	std::optional<sf::FloatRect> getActiveFireDamageBounds(const sf::FloatRect& playerBounds) const;
 
 	int getWidthInTiles() const;
 	int getHeightInTiles() const;
@@ -112,6 +124,11 @@ private:
 	bool isOneWayPlatformCode(char tile) const;
 	bool isSupportedSpecialTileCode(char tile) const;
 	const sf::Texture* getTextureForTile(char tile) const;
+	void rebuildTrapRuntime();
+	void configureMovingPlatformPaths();
+	bool hasChainAt(sf::Vector2i gridPosition) const;
+	void drawTraps(sf::RenderWindow& window) const;
+	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
 
 private:
 	std::vector<std::string> m_rows;
@@ -121,6 +138,9 @@ private:
 	sf::Vector2f m_playerSpawnPosition{ 100.f, 100.f };
 	std::vector<GAME1_LevelEnemySpawn> m_enemySpawns;
 	std::vector<GAME1_PickupSpawn> m_pickupSpawns;
+	std::vector<GAME1_TrapSpawn> m_trapSpawns;
+	std::vector<GAME1_Trap> m_traps;
+	GAME1_TrapAssets m_trapAssets;
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;
 	std::unordered_map<char, sf::Texture> m_specialTileTextures;
