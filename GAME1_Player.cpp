@@ -1270,23 +1270,33 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 			viewCenter.x - viewSize.x * 0.5f,
 			viewCenter.y - viewSize.y * 0.5f);
 
+		sf::Text titleText(m_uiFont);
+		titleText.setString("Player 1");
+		titleText.setCharacterSize(20);
+		titleText.setFillColor(sf::Color::White);
+		titleText.setOutlineColor(sf::Color::Black);
+		titleText.setOutlineThickness(2.f);
+		titleText.setPosition({ topLeft.x + 18.f, topLeft.y + 14.f });
+
+		target.draw(titleText);
+
 		sf::Text healthText(m_uiFont);
 		healthText.setString("Health: " + std::to_string(m_health) + " / " + std::to_string(m_maxHealth));
-		healthText.setCharacterSize(22);
+		healthText.setCharacterSize(20);
 		healthText.setFillColor(sf::Color::White);
 		healthText.setOutlineColor(sf::Color::Black);
 		healthText.setOutlineThickness(2.f);
-		healthText.setPosition({ topLeft.x + 18.f, topLeft.y + 16.f });
+		healthText.setPosition({ topLeft.x + 18.f, topLeft.y + 38.f });
 
 		target.draw(healthText);
 
 		sf::Text livesText(m_uiFont);
 		livesText.setString("Lives: " + std::to_string(m_lives) + " / " + std::to_string(m_maxLives));
-		livesText.setCharacterSize(22);
+		livesText.setCharacterSize(20);
 		livesText.setFillColor(sf::Color::White);
 		livesText.setOutlineColor(sf::Color::Black);
 		livesText.setOutlineThickness(2.f);
-		livesText.setPosition({ topLeft.x + 18.f, topLeft.y + 44.f });
+		livesText.setPosition({ topLeft.x + 18.f, topLeft.y + 62.f });
 
 		target.draw(livesText);
 

@@ -616,6 +616,9 @@ bool GAME1_Enemy::handlePlayerCollision(GAME1_Player& player)
 	if (!m_active || !m_alive)
 		return false;
 
+	if (!player.isActive())
+		return false;
+
 	const sf::FloatRect playerBounds = player.getBounds();
 	const sf::FloatRect enemyBounds = getBounds();
 

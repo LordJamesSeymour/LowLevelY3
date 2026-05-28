@@ -267,7 +267,7 @@ namespace
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode({ 1024, 640 }), "Arcade Collection");
+	sf::RenderWindow window(sf::VideoMode::getDesktopMode(), "Arcade Collection", sf::State::Fullscreen);
 	window.setFramerateLimit(60);
 
 	ApplyWindowView(window);
@@ -581,7 +581,7 @@ int main()
 				game1Player2Joined = false;
 				game1TeamGameOver = false;
 
-				game1Player.setInputProfile(GAME1_PlayerInputProfile::SinglePlayer);
+				game1Player.setInputProfile(GAME1_PlayerInputProfile::Player1Coop);
 				game1Player.setCoopMode(false);
 				game1Player.setDrawHud(true);
 			}
@@ -660,7 +660,34 @@ int main()
 			case GAME1_MenuAction::None:
 			default:
 				break;
+		}
+	};
+
+	auto ClampGame1CoopPosition = [&game1Level, &game1Player](sf::Vector2f position)
+		{
+			const float playerWidth = game1Player.getBounds().size.x;
+			const float maxX = std::max(0.f, game1Level.getPixelWidth() - playerWidth);
+
+			position.x = std::clamp(position.x, 0.f, maxX);
+			return position;
+		};
+
+	auto GetGame1CoopOffsetPosition = [&ClampGame1CoopPosition, &game1Level, &game1Player](
+		sf::Vector2f anchorPosition,
+		float xOffset)
+		{
+			const float playerWidth = game1Player.getBounds().size.x;
+			const float maxX = std::max(0.f, game1Level.getPixelWidth() - playerWidth);
+
+			sf::Vector2f position = anchorPosition;
+			position.x += xOffset;
+
+			if (position.x < 0.f || position.x > maxX)
+			{
+				position.x = anchorPosition.x - xOffset;
 			}
+
+			return ClampGame1CoopPosition(position);
 		};
 
 	auto TryJoinGame1Player2 = [&]() -> bool
@@ -680,8 +707,9 @@ int main()
 			const std::string player2IdleDirectory =
 				(kGame1ResourcesDirectory / "Player2" / "PlayerIdle").string();
 
-			sf::Vector2f spawnPosition = game1Player.getPosition();
-			spawnPosition.x -= kGame1CoopJoinSpawnOffsetX;
+			const sf::Vector2f spawnPosition = GetGame1CoopOffsetPosition(
+				game1Player.getPosition(),
+				-kGame1CoopJoinSpawnOffsetX);
 
 			if (!game1Player2.load(player2IdleDirectory, spawnPosition))
 			{
@@ -717,8 +745,9 @@ int main()
 
 			if (game1Player2Joined)
 			{
-				sf::Vector2f p2Spawn = game1Level.getPlayerSpawnPosition();
-				p2Spawn.x -= kGame1CoopJoinSpawnOffsetX;
+				const sf::Vector2f p2Spawn = GetGame1CoopOffsetPosition(
+					game1Level.getPlayerSpawnPosition(),
+					-kGame1CoopJoinSpawnOffsetX);
 
 				game1Player2.resetGame();
 				game1Player2.setSpawnPosition(game1Level.getPlayerSpawnPosition());
@@ -1664,9 +1693,10 @@ int main()
 
 			for (GAME1_Enemy& enemy : game1Enemies)
 			{
-				enemy.handlePlayerCollision(game1Player);
+				if (game1Player.isActive())
+					enemy.handlePlayerCollision(game1Player);
 
-				if (p2Joined && !game1Player2.isGameOver())
+				if (p2Joined && game1Player2.isActive())
 					enemy.handlePlayerCollision(game1Player2);
 			}
 
@@ -1698,22 +1728,41 @@ int main()
 					return b.position.y + b.size.y * 0.5f;
 				};
 
-			const bool p1Eligible = !game1Player.isGameOver();
-			const bool p2Eligible = p2Joined && !game1Player2.isGameOver();
+			const bool p1Active = game1Player.isActive();
+			const bool p2Active = p2Joined && game1Player2.isActive();
+			const bool p1OnField = !game1Player.isGameOver();
+			const bool p2OnField = p2Joined && !game1Player2.isGameOver();
 
 			// Camera follows the furthest-ahead living player.
-			const GAME1_Player* leadingPlayer = &game1Player;
-			if (p2Eligible)
+			const GAME1_Player* leadingPlayer = nullptr;
+
+			if (p1Active)
 			{
-				if (!p1Eligible)
-				{
-					leadingPlayer = &game1Player2;
-				}
-				else if (PlayerCenterX(game1Player2) > PlayerCenterX(game1Player))
+				leadingPlayer = &game1Player;
+			}
+
+			if (p2Active &&
+				(leadingPlayer == nullptr ||
+					PlayerCenterX(game1Player2) > PlayerCenterX(*leadingPlayer)))
+			{
+				leadingPlayer = &game1Player2;
+			}
+
+			if (leadingPlayer == nullptr)
+			{
+				if (p1OnField)
+					leadingPlayer = &game1Player;
+
+				if (p2OnField &&
+					(leadingPlayer == nullptr ||
+						PlayerCenterX(game1Player2) > PlayerCenterX(*leadingPlayer)))
 				{
 					leadingPlayer = &game1Player2;
 				}
 			}
+
+			if (leadingPlayer == nullptr)
+				leadingPlayer = &game1Player;
 
 			const float playerCenterX = PlayerCenterX(*leadingPlayer);
 			const float playerCenterY = PlayerCenterY(*leadingPlayer);
@@ -1795,7 +1844,7 @@ int main()
 			// Off-screen kill: the trailing player has fallen too far behind
 			// the camera.  Only the trailing player is penalised, and they
 			// respawn near the leading player.
-			if (p2Joined && p1Eligible && p2Eligible && !game1TeamGameOver)
+			if (p2Joined && p1Active && p2Active && !game1TeamGameOver)
 			{
 				const float cameraLeftEdge = targetViewCenterX - halfViewWidth;
 				const float killLine = cameraLeftEdge - kGame1CoopOffScreenKillDistance;
@@ -1814,8 +1863,9 @@ int main()
 						if (PlayerCenterX(trailing) >= PlayerCenterX(leading))
 							return;
 
-						sf::Vector2f respawnNear = leading.getPosition();
-						respawnNear.x -= kGame1CoopRespawnOffsetX;
+						const sf::Vector2f respawnNear = GetGame1CoopOffsetPosition(
+							leading.getPosition(),
+							-kGame1CoopRespawnOffsetX);
 
 						trailing.setNextRespawnPosition(respawnNear);
 						trailing.forceDeath();

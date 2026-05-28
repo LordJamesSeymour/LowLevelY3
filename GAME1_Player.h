@@ -10,9 +10,9 @@ class GAME1_Level;
 
 // Surfers Quest local co-op input source for a player instance.
 // Default = SinglePlayer (keyboard + every connected joystick), which
-// preserves the original single-player behaviour exactly.  When Player 2
-// joins in co-op, Player 1 should be switched to Player1Coop (keyboard +
-// joystick 0) and Player 2 uses Player2Coop (joystick 1 only).
+// preserves the original single-player aggregate input.  Surfers Quest
+// gameplay uses Player1Coop to reserve joystick 1 for Player 2 joining while
+// keeping keyboard + joystick 0 on Player 1. Player 2 uses Player2Coop.
 enum class GAME1_PlayerInputProfile
 {
 	SinglePlayer,
