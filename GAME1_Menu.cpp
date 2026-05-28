@@ -27,10 +27,7 @@ bool GAME1_Menu::load(const std::string& closeButtonTexturePath,
 
 	const std::vector<std::string> fontCandidates =
 	{
-		"assets/menu.ttf",
-		"Assets/menu.ttf",
-		"resources/menu.ttf",
-		"Resources/menu.ttf"
+		"assets/menu.ttf"
 	};
 
 	bool loadedFont = false;

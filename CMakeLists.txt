@@ -8,6 +8,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Builds the same C++/SFML source files on Raspberry Pi/Linux.
 # Your existing Visual Studio solution can still be used on Windows.
+set(LLGP_VENDORED_SFML_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/SFML-3.0.2/lib/cmake/SFML")
+
+if(WIN32 AND NOT SFML_DIR AND EXISTS "${LLGP_VENDORED_SFML_CONFIG}/SFMLConfig.cmake")
+    set(SFML_DIR "${LLGP_VENDORED_SFML_CONFIG}" CACHE PATH "SFML config directory")
+endif()
+
+if(WIN32 AND "${SFML_DIR}" STREQUAL "${LLGP_VENDORED_SFML_CONFIG}")
+    set(SFML_STATIC_LIBRARIES ON CACHE BOOL "Use static SFML libraries" FORCE)
+endif()
+
 find_package(SFML 3 COMPONENTS Graphics Window System Audio REQUIRED)
 
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
@@ -15,12 +25,12 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
 )
 
 # Do not accidentally compile generated/build folders if they exist inside the project.
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/build/.*")
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/cmake-build-.*/.*")
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/x64/.*")
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/Debug/.*")
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/Release/.*")
-list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*/ControllerTester\\.cpp$")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]build[/\\\\]")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]cmake-build-[^/\\\\]*[/\\\\]")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]x64[/\\\\]")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]Debug[/\\\\]")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]Release[/\\\\]")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "[/\\\\]ControllerTester\\.cpp$")
 
 add_executable(LLGP ${PROJECT_SOURCES})
 

@@ -3,10 +3,17 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#endif
 
 #include "ArcadeHub.h"
 #include "ArcadeHubOptions.h"
@@ -74,14 +81,31 @@ namespace
 		GAME2_Game
 	};
 
+	enum class UserMessageType
+	{
+		Error,
+		Info
+	};
+
+	void ShowUserMessage(const std::string& title, const std::string& message, UserMessageType type)
+	{
+#if defined(_WIN32)
+		const UINT icon = type == UserMessageType::Error ? MB_ICONERROR : MB_ICONINFORMATION;
+		MessageBoxA(nullptr, message.c_str(), title.c_str(), MB_OK | icon);
+#else
+		std::ostream& stream = type == UserMessageType::Error ? std::cerr : std::cout;
+		stream << title << ":\n" << message << std::endl;
+#endif
+	}
+
 	void ShowError(const std::string& message)
 	{
-		MessageBoxA(nullptr, message.c_str(), "Project Error", MB_OK | MB_ICONERROR);
+		ShowUserMessage("Project Error", message, UserMessageType::Error);
 	}
 
 	void ShowInfo(const std::string& message)
 	{
-		MessageBoxA(nullptr, message.c_str(), "Info", MB_OK | MB_ICONINFORMATION);
+		ShowUserMessage("Info", message, UserMessageType::Info);
 	}
 
 	void ApplyWindowView(sf::RenderWindow& window)
