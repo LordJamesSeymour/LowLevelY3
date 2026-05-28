@@ -42,6 +42,9 @@
     <ClInclude Include="ArcadeSettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="BombermanAudio.h">
+      <Filter>Header Files\Bomberman</Filter>
+    </ClInclude>
     <ClInclude Include="GAME1_BombermanWindow.h">
       <Filter>Header Files\Bomberman</Filter>
     </ClInclude>
@@ -104,6 +107,9 @@
     </ClInclude>
     <ClInclude Include="GAME1_Enemy.h">
       <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GamePauseMenu.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -175,6 +181,9 @@
     </ClCompile>
     <ClCompile Include="GAME1_Enemy.cpp">
       <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GamePauseMenu.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

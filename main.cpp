@@ -19,6 +19,8 @@
 #include "ArcadeHubOptions.h"
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "GamePauseMenu.h"
+#include "BombermanAudio.h"
 
 #include "GAME1_BombermanWindow.h"
 #include "GAME1_BombermanMenu.h"
@@ -375,6 +377,19 @@ int main()
 		return -1;
 	}
 
+	GamePauseMenu pauseMenu;
+	if (!pauseMenu.load(kGlobalFontPath.string(), kSettingsIconPath.string()))
+	{
+		std::string msg =
+			"Pause menu failed to load.\n\n" +
+			pauseMenu.getLastError() +
+			"\n\nCurrent working directory:\n" +
+			std::filesystem::current_path().string();
+
+		ShowError(msg);
+		return -1;
+	}
+
 	GAME1_BombermanMenu bombermanMenu;
 	if (!bombermanMenu.load(kGlobalFontPath.string(), kBombermanRootDirectory.string()))
 	{
@@ -536,6 +551,9 @@ int main()
 		return -1;
 	}
 
+	BombermanAudio::initialise(kBombermanRootDirectory.string());
+	GAME1_SurfersQuestAudio::initialise(kGame1ResourcesDirectory.string());
+
 	ArcadeSettings::registerAudioRefreshCallback(
 		[&bombermanMenu, &game1Menu, &bombermanWindow]()
 		{
@@ -543,6 +561,7 @@ int main()
 			game1Menu.refreshAudioVolumes();
 			bombermanWindow.refreshAudioVolumes();
 			GAME1_SurfersQuestAudio::refreshVolumes();
+			BombermanAudio::refreshVolumes();
 		});
 
 	AppState appState = AppState::Hub;
@@ -555,9 +574,23 @@ int main()
 				state == AppState::GAME1_Editor;
 		};
 
+	auto IsBombermanState = [](AppState state)
+		{
+			return state == AppState::GAME1_BombermanMenu ||
+				state == AppState::GAME1_BombermanLevelSelect ||
+				state == AppState::GAME1_BombermanEditor ||
+				state == AppState::GAME1_Bomberman;
+		};
+
 	auto SetAppState = [&](AppState newState)
 		{
 			const AppState previousState = appState;
+
+			if (pauseMenu.isOpen())
+			{
+				pauseMenu.close();
+			}
+			hubOptions.setGearVisible(true);
 
 			if (previousState == AppState::GAME1_BombermanMenu &&
 				newState != AppState::GAME1_BombermanMenu)
@@ -569,6 +602,12 @@ int main()
 				!IsSurfersQuestState(newState))
 			{
 				game1Menu.stopMusic();
+				GAME1_SurfersQuestAudio::stopAll();
+			}
+
+			if (IsBombermanState(previousState) && !IsBombermanState(newState))
+			{
+				BombermanAudio::stopAllMusic();
 			}
 
 			appState = newState;
@@ -582,22 +621,38 @@ int main()
 			{
 				bombermanMenu.resetSelection();
 				bombermanMenu.startMusic();
+				BombermanAudio::playMenuMusic();
+			}
+			else if (appState == AppState::GAME1_Bomberman)
+			{
+				BombermanAudio::playGameplayMusic();
+			}
+			else if (appState == AppState::GAME1_BombermanLevelSelect)
+			{
+				BombermanAudio::playMenuMusic();
+			}
+			else if (appState == AppState::GAME1_BombermanEditor)
+			{
+				BombermanAudio::stopAllMusic();
 			}
 
 			if (appState == AppState::GAME1_Menu)
 			{
 				game1Menu.resetSelection();
 				game1Menu.startMusic();
+				GAME1_SurfersQuestAudio::playMenu();
 			}
 
 			if (appState == AppState::GAME1_LevelSelect)
 			{
 				game1Menu.startMusic();
+				GAME1_SurfersQuestAudio::playMenu();
 			}
 
 			if (appState == AppState::GAME1_Editor)
 			{
 				game1Menu.stopMusic();
+				GAME1_SurfersQuestAudio::stopAll();
 			}
 
 			if (appState == AppState::GAME1_Game)
@@ -690,6 +745,59 @@ int main()
 				break;
 		}
 	};
+
+	auto IsPausableGameplayState = [](AppState state)
+		{
+			return state == AppState::GAME1_Bomberman ||
+				state == AppState::GAME1_Game;
+		};
+
+	auto OpenPauseMenu = [&]()
+		{
+			if (!IsPausableGameplayState(appState))
+				return;
+
+			if (pauseMenu.isOpen() || hubOptions.isOpen())
+				return;
+
+			hubOptions.setGearVisible(false);
+			pauseMenu.layout(window);
+			pauseMenu.open();
+		};
+
+	auto HandlePauseAction = [&](GamePauseMenu::Action action)
+		{
+			switch (action)
+			{
+			case GamePauseMenu::Action::Resume:
+				pauseMenu.close();
+				hubOptions.setGearVisible(true);
+				if (appState == AppState::GAME1_Bomberman)
+				{
+					bombermanWindow.suppressActionInputUntilReleased();
+				}
+				ArcadeInput::consumePressedState();
+				break;
+
+			case GamePauseMenu::Action::OpenSettings:
+				hubOptions.open();
+				ArcadeInput::consumePressedState();
+				break;
+
+			case GamePauseMenu::Action::Quit:
+			{
+				const AppState target = (appState == AppState::GAME1_Bomberman)
+					? AppState::GAME1_BombermanMenu
+					: AppState::GAME1_Menu;
+				SetAppState(target);
+				break;
+			}
+
+			case GamePauseMenu::Action::None:
+			default:
+				break;
+			}
+		};
 
 	auto ClampGame1CoopPosition = [&game1Level, &game1Player](sf::Vector2f position)
 		{
@@ -1175,11 +1283,79 @@ int main()
 			}
 			else if (appState == AppState::GAME1_Bomberman)
 			{
-				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				if (hubOptions.isOpen())
 				{
-					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 					{
-						SetAppState(AppState::GAME1_BombermanMenu);
+						hubOptions.handleKeyReleased(keyReleased->code);
+					}
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							hubOptions.handleMousePressed({
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+								});
+						}
+					}
+					if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
+					{
+						if (mouseReleased->button == sf::Mouse::Button::Left)
+						{
+							hubOptions.handleMouseReleased({
+								static_cast<float>(mouseReleased->position.x),
+								static_cast<float>(mouseReleased->position.y)
+								});
+						}
+					}
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						hubOptions.handleMouseMoved({
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y)
+							});
+					}
+				}
+				else if (pauseMenu.isOpen())
+				{
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+					{
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							HandlePauseAction(GamePauseMenu::Action::Resume);
+						}
+						else
+						{
+							HandlePauseAction(pauseMenu.handleKeyReleased(keyReleased->code));
+						}
+					}
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							HandlePauseAction(pauseMenu.handleMousePressed({
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+								}));
+						}
+					}
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						pauseMenu.handleMouseMoved({
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y)
+							});
+					}
+				}
+				else
+				{
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+					{
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							OpenPauseMenu();
+						}
 					}
 				}
 			}
@@ -1306,22 +1482,90 @@ int main()
 			}
 			else if (appState == AppState::GAME1_Game)
 			{
-				if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+				if (hubOptions.isOpen())
 				{
-					if (keyReleased->code == sf::Keyboard::Key::Escape)
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
 					{
-						SetAppState(AppState::GAME1_Menu);
+						hubOptions.handleKeyReleased(keyReleased->code);
 					}
-					else if (keyReleased->code == sf::Keyboard::Key::Enter)
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
 					{
-						if (game1TeamGameOver)
+						if (mousePressed->button == sf::Mouse::Button::Left)
 						{
-							RestartGame1Team();
+							hubOptions.handleMousePressed({
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+								});
 						}
-						else if (!game1Player2Joined)
+					}
+					if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
+					{
+						if (mouseReleased->button == sf::Mouse::Button::Left)
 						{
-							GAME1_PlayerBinding kb{false, GAME1_InputSource::Keyboard, 0};
-							TryJoinGame1Player2(kb);
+							hubOptions.handleMouseReleased({
+								static_cast<float>(mouseReleased->position.x),
+								static_cast<float>(mouseReleased->position.y)
+								});
+						}
+					}
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						hubOptions.handleMouseMoved({
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y)
+							});
+					}
+				}
+				else if (pauseMenu.isOpen())
+				{
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+					{
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							HandlePauseAction(GamePauseMenu::Action::Resume);
+						}
+						else
+						{
+							HandlePauseAction(pauseMenu.handleKeyReleased(keyReleased->code));
+						}
+					}
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							HandlePauseAction(pauseMenu.handleMousePressed({
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y)
+								}));
+						}
+					}
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						pauseMenu.handleMouseMoved({
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y)
+							});
+					}
+				}
+				else
+				{
+					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
+					{
+						if (keyReleased->code == sf::Keyboard::Key::Escape)
+						{
+							OpenPauseMenu();
+						}
+						else if (keyReleased->code == sf::Keyboard::Key::Enter)
+						{
+							if (game1TeamGameOver)
+							{
+								RestartGame1Team();
+							}
+							else if (!game1Player2Joined)
+							{
+								GAME1_PlayerBinding kb{false, GAME1_InputSource::Keyboard, 0};
+								TryJoinGame1Player2(kb);
+							}
 						}
 					}
 				}
@@ -1515,6 +1759,21 @@ int main()
 				ArcadeInput::consumePressedState();
 			}
 		}
+		else if (appState == AppState::GAME1_Bomberman)
+		{
+			if (hubOptions.isOpen())
+			{
+				hubOptions.handleControllerInput();
+			}
+			else if (pauseMenu.isOpen())
+			{
+				HandlePauseAction(pauseMenu.handleControllerInput());
+			}
+			else if (ArcadeInput::isControllerBackPressed())
+			{
+				OpenPauseMenu();
+			}
+		}
 		else if (appState == AppState::GAME1_Menu)
 		{
 			const GAME1_MenuAction controllerAction = game1Menu.handleControllerInput();
@@ -1576,10 +1835,17 @@ int main()
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
-			if (ArcadeInput::isControllerBackPressed())
+			if (hubOptions.isOpen())
 			{
-				SetAppState(AppState::GAME1_Menu);
-				ArcadeInput::consumePressedState();
+				hubOptions.handleControllerInput();
+			}
+			else if (pauseMenu.isOpen())
+			{
+				HandlePauseAction(pauseMenu.handleControllerInput());
+			}
+			else if (ArcadeInput::isControllerBackPressed())
+			{
+				OpenPauseMenu();
 			}
 			else if (game1TeamGameOver && ArcadeInput::isRestartPressed())
 			{
@@ -1683,6 +1949,7 @@ int main()
 		}
 		else if (appState == AppState::GAME1_BombermanMenu)
 		{
+			BombermanAudio::updateMenuMusic(deltaTime);
 			bombermanMenu.layout(window);
 
 			window.clear(sf::Color::Black);
@@ -1691,6 +1958,7 @@ int main()
 		}
 		else if (appState == AppState::GAME1_BombermanLevelSelect)
 		{
+			BombermanAudio::updateMenuMusic(deltaTime);
 			bombermanLevelSelect.layout(window);
 
 			window.clear(sf::Color::Black);
@@ -1707,16 +1975,31 @@ int main()
 		}
 		else if (appState == AppState::GAME1_Bomberman)
 		{
-			bombermanWindow.update(deltaTime, window.getSize());
+			const bool paused = pauseMenu.isOpen() || hubOptions.isOpen();
+
+			if (!paused)
+			{
+				bombermanWindow.update(deltaTime, window.getSize());
+			}
+
 			bombermanWindow.layout(window);
+			pauseMenu.layout(window);
+			hubOptions.layout(window);
+			hubOptions.update(deltaTime);
 
 			window.clear(sf::Color::Black);
 			bombermanWindow.draw(window);
+			pauseMenu.draw(window);
+			if (hubOptions.isOpen())
+			{
+				hubOptions.draw(window);
+			}
 			DisplayFrame();
 		}
 		else if (appState == AppState::GAME1_Game)
 		{
 			const bool p2Joined = game1Player2Joined;
+			const bool game1Paused = pauseMenu.isOpen() || hubOptions.isOpen();
 
 			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player)
 				{
@@ -1757,46 +2040,49 @@ int main()
 					}
 				};
 
-			if (p2Joined && !game1TeamGameOver)
+			if (!game1Paused)
 			{
-				GAME1_SurfersQuestAudio::playGameplay();
+				if (p2Joined && !game1TeamGameOver)
+				{
+					GAME1_SurfersQuestAudio::playGameplay();
+				}
+
+				game1Player.update(deltaTime, game1Level);
+				TriggerCheckpointsForPlayer(game1Player);
+
+				if (p2Joined && !game1Player2.isGameOver())
+				{
+					game1Player2.update(deltaTime, game1Level);
+					TriggerCheckpointsForPlayer(game1Player2);
+				}
+
+				game1Level.updateCheckpoints(deltaTime);
+
+				for (GAME1_Enemy& enemy : game1Enemies)
+				{
+					enemy.update(deltaTime, game1Level, game1Player,
+						p2Joined ? &game1Player2 : nullptr);
+				}
+
+				for (GAME1_Enemy& enemy : game1Enemies)
+				{
+					if (game1Player.isActive())
+						enemy.handlePlayerCollision(game1Player);
+
+					if (p2Joined && game1Player2.isActive())
+						enemy.handlePlayerCollision(game1Player2);
+				}
+
+				game1Enemies.erase(
+					std::remove_if(
+						game1Enemies.begin(),
+						game1Enemies.end(),
+						[](const GAME1_Enemy& enemy)
+						{
+							return !enemy.isActive();
+						}),
+					game1Enemies.end());
 			}
-
-			game1Player.update(deltaTime, game1Level);
-			TriggerCheckpointsForPlayer(game1Player);
-
-			if (p2Joined && !game1Player2.isGameOver())
-			{
-				game1Player2.update(deltaTime, game1Level);
-				TriggerCheckpointsForPlayer(game1Player2);
-			}
-
-			game1Level.updateCheckpoints(deltaTime);
-
-			for (GAME1_Enemy& enemy : game1Enemies)
-			{
-				enemy.update(deltaTime, game1Level, game1Player,
-					p2Joined ? &game1Player2 : nullptr);
-			}
-
-			for (GAME1_Enemy& enemy : game1Enemies)
-			{
-				if (game1Player.isActive())
-					enemy.handlePlayerCollision(game1Player);
-
-				if (p2Joined && game1Player2.isActive())
-					enemy.handlePlayerCollision(game1Player2);
-			}
-
-			game1Enemies.erase(
-				std::remove_if(
-					game1Enemies.begin(),
-					game1Enemies.end(),
-					[](const GAME1_Enemy& enemy)
-					{
-						return !enemy.isActive();
-					}),
-				game1Enemies.end());
 
 			sf::View worldView = window.getDefaultView();
 
@@ -1926,13 +2212,16 @@ int main()
 			const float easeRate = cameraMovingUp ? upEaseRate : downEaseRate;
 			const float easeFactor = 1.f - std::exp(-easeRate * deltaTime);
 
-			game1CameraCenterY += (targetViewCenterY - game1CameraCenterY) * easeFactor;
+			if (!game1Paused)
+			{
+				game1CameraCenterY += (targetViewCenterY - game1CameraCenterY) * easeFactor;
+			}
 			game1CameraCenterY = std::min(game1CameraCenterY, maxViewCenterY);
 
 			// Off-screen kill: the trailing player has fallen too far behind
 			// the camera.  Only the trailing player is penalised, and they
 			// respawn near the leading player.
-			if (p2Joined && p1Active && p2Active && !game1TeamGameOver)
+			if (!game1Paused && p2Joined && p1Active && p2Active && !game1TeamGameOver)
 			{
 				const float cameraLeftEdge = targetViewCenterX - halfViewWidth;
 				const float killLine = cameraLeftEdge - kGame1CoopOffScreenKillDistance;
@@ -1970,7 +2259,7 @@ int main()
 			}
 
 			// Team game-over detection.
-			if (p2Joined && !game1TeamGameOver)
+			if (!game1Paused && p2Joined && !game1TeamGameOver)
 			{
 				if (game1Player.isGameOver() && game1Player2.isGameOver())
 				{
@@ -2128,6 +2417,15 @@ int main()
 
 				// Restore single-player default size for the next respawn render.
 				respawnText.setCharacterSize(34);
+			}
+
+			pauseMenu.layout(window);
+			hubOptions.layout(window);
+			hubOptions.update(deltaTime);
+			pauseMenu.draw(window);
+			if (hubOptions.isOpen())
+			{
+				hubOptions.draw(window);
 			}
 
 			DisplayFrame();

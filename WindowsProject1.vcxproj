@@ -148,6 +148,7 @@
     <ClInclude Include="ArcadeHubOptions.h" />
     <ClInclude Include="ArcadeInput.h" />
     <ClInclude Include="ArcadeSettings.h" />
+    <ClInclude Include="BombermanAudio.h" />
     <ClInclude Include="BombermanBomb.h" />
     <ClInclude Include="BombermanEnemy.h" />
     <ClInclude Include="BombermanLevel.h" />
@@ -169,6 +170,7 @@
     <ClInclude Include="GAME2_Game.h" />
     <ClInclude Include="GAME2_Menu.h" />
     <ClInclude Include="GAME2_Player.h" />
+    <ClInclude Include="GamePauseMenu.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ArcadeHub.cpp" />
@@ -192,6 +194,7 @@
     <ClCompile Include="GAME2_Game.cpp" />
     <ClCompile Include="GAME2_Menu.cpp" />
     <ClCompile Include="GAME2_Player.cpp" />
+    <ClCompile Include="GamePauseMenu.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GAME1_Menu.cpp" />
     <ClCompile Include="GAME1_Player.cpp" />

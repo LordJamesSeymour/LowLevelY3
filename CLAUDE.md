@@ -73,9 +73,31 @@ So the `GAME1_` prefix is shared: `GAME1_Bomberman*` files belong to Bomberman, 
 - Inspect all relevant files before editing.
 - Check both `.h` and `.cpp` files when changing a class.
 - Use SFML 3 APIs, not SFML 2 assumptions.
-- Keep Linux/Raspberry Pi compatibility in mind.
-- Avoid unguarded Windows-only APIs. (`main.cpp` currently uses `<windows.h>` MessageBox for fatal-load errors — keep new platform-specific code guarded.)
 - Be careful with asset paths and existing folder naming (note the `Game#0/#1/#2` vs hub numbering mismatch above).
+
+## Linux / Raspberry Pi Portability — MANDATORY
+
+Every line of code in this repository MUST compile and run on the Raspberry Pi / Linux target as well as Windows. This is non-negotiable. Before writing or editing code, assume it will be cross-compiled.
+
+**Hard rules:**
+
+1. **No unguarded Windows-only headers or APIs.** `<windows.h>`, `<conio.h>`, `<direct.h>`, `<tchar.h>`, `<shellapi.h>`, `MessageBox*`, `Sleep()`, `GetTickCount`, `CreateFileA`, `CreateThread`, `_getch`, `_kbhit`, `ShellExecute`, `OutputDebugString`, `WinMain`, `HWND`, `LPSTR`, etc. — ALL must be inside `#if defined(_WIN32) ... #else ... #endif` with a working POSIX fallback. No exceptions.
+2. **No Windows-only CRT functions.** Do not use `fopen_s`, `sprintf_s`, `strcpy_s`, `strcat_s`, `localtime_s` alone, `_strdup`, `_stricmp`, `_snprintf`. Use the standard C++ equivalents (`std::ofstream`, `std::ostringstream`, `std::snprintf`, `strcasecmp` only inside POSIX guards, etc.). For `localtime`, pair `localtime_s` (Windows) with `localtime_r` (POSIX) under `_WIN32` guards — see `ArcadeHub.cpp:BuildCurrentClockText`.
+3. **Paths are case-sensitive on Linux.** Every asset path string must EXACTLY match the on-disk casing — including folder names (`assets`, `Game#0`, `Bomberman`, `Resources`, `Maps`, `Shaders`) and file extensions (`.png`, `.ttf`, `.wav`, `.ogg`, `.frag`). Never write `Assets/`, `.PNG`, `Menu.ttf`, etc. Treat the actual filename on disk as the canonical form.
+4. **Forward slashes only in path literals.** No `\\` in path strings. Prefer `std::filesystem::path` and the `/` operator to compose paths (`kRoot / "Maps" / "level01.txt"`) over raw string concatenation.
+5. **Use `std::filesystem` for all path manipulation.** Do not assume drive letters, `\` separators, or `C:\`-style absolute paths. Asset paths are relative to `std::filesystem::current_path()`.
+6. **Use the C++ standard library for OS facilities.** Threading → `<thread>` / `<mutex>`. Timing → `<chrono>`. File I/O → `<fstream>`. Process sleep → `std::this_thread::sleep_for`. No Win32 equivalents.
+7. **Keyboard / input codes come from SFML enums only.** Never use Win32 `VK_*` codes, `GetAsyncKeyState`, `GetKeyState`. All input goes through SFML events or `ArcadeInput`.
+8. **Line endings and text files.** Save level files (`levelNN.txt`) and shader files as UTF-8. Parsers must tolerate both `\n` and `\r\n` (strip trailing `\r` when reading lines).
+9. **Endianness / integer sizes.** Do not assume `long` is 32 bits or that `int` and pointer sizes match. Use `<cstdint>` fixed-width types when serializing.
+10. **Compiler-specific extensions banned.** No `__declspec`, `#pragma comment(lib, ...)`, `__forceinline`, `__int64`, MSVC-only `#pragma warning`. Use `[[nodiscard]]`, `[[maybe_unused]]`, `inline`, `std::int64_t`.
+11. **CMake glob is authoritative for Linux builds.** Adding a `.cpp` at the repo root is picked up automatically; re-run `cmake -S . -B build` to refresh the glob. Do not place new sources under excluded paths (`build/`, `x64/`, `Debug/`, `Release/`). Do not rename the CMake executable target — it must stay `LLGP`.
+12. **Vendored SFML is Windows-only.** The Linux build uses system-installed SFML 3 via `find_package(SFML 3 ...)`. Do not hardcode paths into `SFML-3.0.2/`.
+13. **Windows-specific platform code lives only in `main.cpp`** (the `MessageBoxA` fatal-error popup) and `ArcadeHub.cpp` (`localtime_s` clock helper). If you must add more, isolate it behind `_WIN32` with a POSIX `#else` branch in the same translation unit. Do not spread platform `#ifdef` across gameplay/editor files.
+14. **No `system()`, `popen()`, `ShellExecute`, or shelling out** for any reason — the arcade cabinet has no shell.
+15. **No environment-variable assumptions.** Do not read `%APPDATA%`, `$HOME`, `$XDG_CONFIG_HOME`, etc. Config files (e.g. `settings.cfg`) live next to the working directory.
+
+**Before committing any change, mentally answer:** "Will this compile with `g++ -std=c++17` on Raspberry Pi OS against system SFML 3?" If you cannot confidently say yes, the change is not done.
 
 ## Controller Rules
 

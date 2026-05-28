@@ -329,13 +329,6 @@ bool GAME1_Player::loadAnimationFramesFromDirectory(AnimationSet& animation,
 
 void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 {
-	// In single-player the player owns global concerns (music/back/restart).
-	// In co-op those are owned by main.cpp so they apply to the team.
-	if (!m_coopMode && ArcadeInput::isBackHeld())
-	{
-		stopMusic();
-	}
-
 	if (m_gameOver)
 	{
 		if (!m_coopMode)

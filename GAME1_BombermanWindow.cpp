@@ -1,6 +1,7 @@
 #include "GAME1_BombermanWindow.h"
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "BombermanAudio.h"
 
 
 #include <algorithm>
@@ -892,6 +893,7 @@ void GAME1_BombermanWindow::reset()
 	m_fourthFootstepPending = false;
 
 	loadLevelAndActors(true);
+	BombermanAudio::playGameplayMusic();
 }
 
 void GAME1_BombermanWindow::suppressActionInputUntilReleased()
@@ -1281,6 +1283,7 @@ void GAME1_BombermanWindow::damagePlayer()
 	{
 		m_playerLives = 0;
 		m_playState = PlayState::GameOver;
+		BombermanAudio::playGameOverMusic();
 		return;
 	}
 
@@ -1914,6 +1917,7 @@ void GAME1_BombermanWindow::beginTeleportOut()
 	m_teleportGridPosition = m_player.getGridPosition(m_level);
 	m_teleportTimer = 0.f;
 	m_playState = PlayState::TeleportingOut;
+	BombermanAudio::playLevelCompleteMusic();
 }
 
 void GAME1_BombermanWindow::updateTeleport(float deltaTime)
@@ -1989,6 +1993,7 @@ void GAME1_BombermanWindow::finishTeleportIn()
 	m_teleportTimer = 0.f;
 	m_playState = PlayState::Playing;
 	m_player.beginInvincibility(1.0f);
+	BombermanAudio::playGameplayMusic();
 }
 
 const sf::Texture* GAME1_BombermanWindow::getCurrentTeleportTexture() const

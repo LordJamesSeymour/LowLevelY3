@@ -179,6 +179,16 @@ const sf::FloatRect& ArcadeHubOptions::getGearBounds() const
 	return m_gearBounds;
 }
 
+void ArcadeHubOptions::setGearVisible(bool visible)
+{
+	m_gearVisible = visible;
+}
+
+bool ArcadeHubOptions::isGearVisible() const
+{
+	return m_gearVisible;
+}
+
 bool ArcadeHubOptions::containsPoint(const sf::FloatRect& rect, sf::Vector2f point)
 {
 	return point.x >= rect.position.x &&
@@ -215,7 +225,7 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 {
 	if (!m_isOpen)
 	{
-		if (containsPoint(m_gearBounds, mousePosition))
+		if (m_gearVisible && containsPoint(m_gearBounds, mousePosition))
 		{
 			open();
 			return true;
@@ -443,12 +453,18 @@ void ArcadeHubOptions::activateSelected()
 		ArcadeSettings::setCrtEnabled(!ArcadeSettings::isCrtEnabled());
 		break;
 
+	case Row::Music:
+		ArcadeSettings::setMusicMuted(!ArcadeSettings::isMusicMuted());
+		break;
+
+	case Row::Sfx:
+		ArcadeSettings::setSfxMuted(!ArcadeSettings::isSfxMuted());
+		break;
+
 	case Row::Close:
 		close();
 		break;
 
-	case Row::Music:
-	case Row::Sfx:
 	case Row::Count:
 	default:
 		break;
@@ -643,6 +659,7 @@ void ArcadeHubOptions::drawMuteButton(sf::RenderTarget& target,
 
 void ArcadeHubOptions::draw(sf::RenderTarget& target) const
 {
+	if (m_gearVisible)
 	{
 		sf::RectangleShape gearBackground;
 		gearBackground.setPosition(m_gearBounds.position);

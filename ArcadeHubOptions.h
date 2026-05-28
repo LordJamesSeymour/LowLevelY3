@@ -27,6 +27,13 @@ public:
 	void open();
 	void close();
 
+	// Hides the bottom-right gear icon. The options panel still works
+	// (it can be opened via open() and closed normally), but the screen-corner
+	// button is suppressed so other UI (like the pause popup) can own the
+	// "open settings" action without a duplicated gear in the screen corner.
+	void setGearVisible(bool visible);
+	bool isGearVisible() const;
+
 	const sf::FloatRect& getGearBounds() const;
 
 	// Returns true when the click was consumed by the gear button or popup.
@@ -87,6 +94,7 @@ private:
 	bool m_hasVolumeOffIcon = false;
 
 	bool m_isOpen = false;
+	bool m_gearVisible = true;
 
 	sf::FloatRect m_gearBounds;
 	sf::FloatRect m_panelBounds;

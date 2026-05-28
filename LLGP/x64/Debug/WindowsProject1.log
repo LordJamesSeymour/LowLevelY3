@@ -1,6 +1,16 @@
-﻿  GAME1_Enemy.cpp
+﻿  ArcadeHubOptions.cpp
+  ArcadeSettings.cpp
+  GAME1_BombermanMenu.cpp
+  GAME1_BombermanWindow.cpp
+  GAME1_Enemy.cpp
   GAME1_Menu.cpp
   GAME1_Player.cpp
   main.cpp
   Generating Code...
+sfml-graphics-s-d.lib(Image.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Image.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-graphics-s-d.lib(Shader.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shader.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-window-s-d.lib(JoystickImpl.cpp.obj) : warning LNK4099: PDB 'sfml-window-s-d.pdb' was not found with 'sfml-window-s-d.lib(JoystickImpl.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-window-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundFileFactory.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundFileFactory.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundFileWriterOgg.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundFileWriterOgg.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundFileWriterWav.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundFileWriterWav.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
   WindowsProject1.vcxproj -> C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\LLGP.exe
