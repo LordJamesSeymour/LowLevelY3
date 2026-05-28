@@ -33,6 +33,12 @@ public:
 	static float getSfxVolume();
 	static void setSfxVolume(float value);
 
+	static bool isMusicMuted();
+	static void setMusicMuted(bool muted);
+
+	static bool isSfxMuted();
+	static void setSfxMuted(bool muted);
+
 	// Convert a base 0..100 SFML volume into the current scaled volume.
 	static float scaleMusic(float baseVolume);
 	static float scaleSfx(float baseVolume);

@@ -55,7 +55,6 @@ namespace
 	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/SplashScreen/GIFs";
 
 	// Surfers Quest local co-op tuning.
-	constexpr unsigned int kGame1Player2JoystickIndex = 1;
 	constexpr float kGame1CoopJoinSpawnOffsetX = 60.f;
 	constexpr float kGame1CoopOffScreenKillDistance = 220.f;
 	constexpr float kGame1CoopRespawnOffsetX = 50.f;
@@ -504,6 +503,10 @@ int main()
 	// Surfers Quest local co-op state.
 	bool game1Player2Joined = false;
 	bool game1TeamGameOver = false;
+	// Tracks which device P1 first used (keyboard or a specific joystick).
+	// Remains singlePlayer=true until P1 makes their first movement/action input.
+	// Used to assign P1's binding correctly when P2 joins.
+	GAME1_PlayerBinding game1Player1DetectedSource{};
 
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
@@ -605,9 +608,10 @@ int main()
 				game1Player2Joined = false;
 				game1TeamGameOver = false;
 
-				game1Player.setInputProfile(GAME1_PlayerInputProfile::Player1Coop);
+				game1Player.setBinding(GAME1_PlayerBinding{});
 				game1Player.setCoopMode(false);
 				game1Player.setDrawHud(true);
+				game1Player1DetectedSource = GAME1_PlayerBinding{};
 			}
 		};
 
@@ -714,7 +718,7 @@ int main()
 			return ClampGame1CoopPosition(position);
 		};
 
-	auto TryJoinGame1Player2 = [&]() -> bool
+	auto TryJoinGame1Player2 = [&](GAME1_PlayerBinding p2Binding) -> bool
 		{
 			if (appState != AppState::GAME1_Game)
 				return false;
@@ -749,11 +753,31 @@ int main()
 
 			game1Player2.setSpawnPosition(game1Player.getSpawnPosition());
 
-			game1Player.setInputProfile(GAME1_PlayerInputProfile::Player1Coop);
+			// Derive P1 binding: use the detected source if available, otherwise
+			// infer from P2's source (P2 on joystick 0 → P1 gets keyboard; otherwise joystick 0).
+			GAME1_PlayerBinding p1Binding;
+			if (!game1Player1DetectedSource.singlePlayer)
+			{
+				p1Binding = game1Player1DetectedSource;
+			}
+			else if (p2Binding.source == GAME1_InputSource::Keyboard)
+			{
+				p1Binding = {false, GAME1_InputSource::Joystick, 0};
+			}
+			else if (p2Binding.joystickIndex == 0)
+			{
+				p1Binding = {false, GAME1_InputSource::Keyboard, 0};
+			}
+			else
+			{
+				p1Binding = {false, GAME1_InputSource::Joystick, 0};
+			}
+
+			game1Player.setBinding(p1Binding);
 			game1Player.setCoopMode(true);
 			game1Player.setDrawHud(false);
 
-			game1Player2.setInputProfile(GAME1_PlayerInputProfile::Player2Coop);
+			game1Player2.setBinding(p2Binding);
 			game1Player2.setCoopMode(true);
 			game1Player2.setDrawHud(false);
 
@@ -1296,7 +1320,8 @@ int main()
 						}
 						else if (!game1Player2Joined)
 						{
-							TryJoinGame1Player2();
+							GAME1_PlayerBinding kb{false, GAME1_InputSource::Keyboard, 0};
+							TryJoinGame1Player2(kb);
 						}
 					}
 				}
@@ -1556,15 +1581,53 @@ int main()
 				SetAppState(AppState::GAME1_Menu);
 				ArcadeInput::consumePressedState();
 			}
-			else if (game1TeamGameOver &&
-				ArcadeInput::isJoystickStartPressed(0))
+			else if (game1TeamGameOver && ArcadeInput::isRestartPressed())
 			{
 				RestartGame1Team();
 			}
-			else if (!game1Player2Joined &&
-				ArcadeInput::isJoystickStartPressed(kGame1Player2JoystickIndex))
+			else if (!game1Player2Joined)
 			{
-				TryJoinGame1Player2();
+				// Auto-detect P1's input source on first movement/action input.
+				// Only runs until the source is claimed (singlePlayer stays true until then).
+				if (game1Player1DetectedSource.singlePlayer)
+				{
+					if (ArcadeInput::isKeyboardMoveLeftHeld() || ArcadeInput::isKeyboardMoveRightHeld() ||
+						ArcadeInput::isKeyboardPrimaryHeld() || ArcadeInput::isKeyboardSecondaryHeld())
+					{
+						game1Player1DetectedSource = {false, GAME1_InputSource::Keyboard, 0};
+					}
+					else
+					{
+						for (unsigned int i = 0; i < sf::Joystick::Count; ++i)
+						{
+							if (ArcadeInput::isJoystickConnected(i) &&
+								(ArcadeInput::isJoystickMoveLeftHeld(i) || ArcadeInput::isJoystickMoveRightHeld(i) ||
+								 ArcadeInput::isJoystickPrimaryHeld(i) || ArcadeInput::isJoystickSecondaryHeld(i)))
+							{
+								game1Player1DetectedSource = {false, GAME1_InputSource::Joystick, i};
+								break;
+							}
+						}
+					}
+				}
+
+				// Check any connected joystick START for P2 join.
+				// Skip if that joystick is already claimed by P1.
+				for (unsigned int i = 0; i < sf::Joystick::Count; ++i)
+				{
+					if (ArcadeInput::isJoystickStartPressed(i))
+					{
+						if (!game1Player1DetectedSource.singlePlayer &&
+							game1Player1DetectedSource.source == GAME1_InputSource::Joystick &&
+							game1Player1DetectedSource.joystickIndex == i)
+						{
+							break;
+						}
+						GAME1_PlayerBinding joy{false, GAME1_InputSource::Joystick, i};
+						TryJoinGame1Player2(joy);
+						break;
+					}
+				}
 			}
 		}
 
@@ -1611,6 +1674,7 @@ int main()
 			hub.updateVisualTheme(totalAppTime);
 			hub.layout(window);
 			hubOptions.layout(window);
+			hubOptions.update(deltaTime);
 
 			window.clear(sf::Color::Black);
 			hub.draw(window);

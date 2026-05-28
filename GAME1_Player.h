@@ -8,16 +8,16 @@
 
 class GAME1_Level;
 
-// Surfers Quest local co-op input source for a player instance.
-// Default = SinglePlayer (keyboard + every connected joystick), which
-// preserves the original single-player aggregate input.  Surfers Quest
-// gameplay uses Player1Coop to reserve joystick 1 for Player 2 joining while
-// keeping keyboard + joystick 0 on Player 1. Player 2 uses Player2Coop.
-enum class GAME1_PlayerInputProfile
+// Surfers Quest local co-op input binding.
+// singlePlayer = true (default) uses the original keyboard + all joystick aggregate.
+// When false, source and joystickIndex identify the exact device this player is locked to.
+enum class GAME1_InputSource { Keyboard, Joystick };
+
+struct GAME1_PlayerBinding
 {
-	SinglePlayer,
-	Player1Coop,
-	Player2Coop
+	bool singlePlayer = true;
+	GAME1_InputSource source = GAME1_InputSource::Keyboard;
+	unsigned int joystickIndex = 0;
 };
 
 class GAME1_Player
@@ -58,8 +58,8 @@ public:
 	bool isActive() const;
 
 	// Co-op support.
-	void setInputProfile(GAME1_PlayerInputProfile profile);
-	GAME1_PlayerInputProfile getInputProfile() const;
+	void setBinding(GAME1_PlayerBinding binding);
+	GAME1_PlayerBinding getBinding() const;
 
 	// When co-op mode is active, the player no longer manages global concerns
 	// like music start/stop or the game-over restart prompt — those are owned
@@ -256,7 +256,7 @@ private:
 	sf::Font m_uiFont;
 	bool m_hasUiFont = false;
 
-	GAME1_PlayerInputProfile m_inputProfile = GAME1_PlayerInputProfile::SinglePlayer;
+	GAME1_PlayerBinding m_binding{};
 	bool m_coopMode = false;
 	bool m_drawHud = true;
 

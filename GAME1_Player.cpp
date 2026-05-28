@@ -14,9 +14,6 @@
 
 namespace
 {
-	constexpr unsigned int kCoopPlayer1JoystickIndex = 0;
-	constexpr unsigned int kCoopPlayer2JoystickIndex = 1;
-
 	std::string ToLower(std::string value)
 	{
 		std::transform(value.begin(), value.end(), value.begin(),
@@ -1446,14 +1443,14 @@ bool GAME1_Player::isActive() const
 	return !m_gameOver && !m_respawning;
 }
 
-void GAME1_Player::setInputProfile(GAME1_PlayerInputProfile profile)
+void GAME1_Player::setBinding(GAME1_PlayerBinding binding)
 {
-	m_inputProfile = profile;
+	m_binding = binding;
 }
 
-GAME1_PlayerInputProfile GAME1_Player::getInputProfile() const
+GAME1_PlayerBinding GAME1_Player::getBinding() const
 {
-	return m_inputProfile;
+	return m_binding;
 }
 
 void GAME1_Player::setCoopMode(bool coopActive)
@@ -1693,62 +1690,30 @@ bool GAME1_Player::isDropThroughHeld() const
 
 bool GAME1_Player::inputMoveLeftHeld() const
 {
-	switch (m_inputProfile)
-	{
-	case GAME1_PlayerInputProfile::Player1Coop:
-		return ArcadeInput::isKeyboardMoveLeftHeld() ||
-			ArcadeInput::isJoystickMoveLeftHeld(kCoopPlayer1JoystickIndex);
-	case GAME1_PlayerInputProfile::Player2Coop:
-		return ArcadeInput::isJoystickMoveLeftHeld(kCoopPlayer2JoystickIndex);
-	case GAME1_PlayerInputProfile::SinglePlayer:
-	default:
-		return ArcadeInput::isMoveLeftHeld();
-	}
+	if (m_binding.singlePlayer) return ArcadeInput::isMoveLeftHeld();
+	if (m_binding.source == GAME1_InputSource::Keyboard) return ArcadeInput::isKeyboardMoveLeftHeld();
+	return ArcadeInput::isJoystickMoveLeftHeld(m_binding.joystickIndex);
 }
 
 bool GAME1_Player::inputMoveRightHeld() const
 {
-	switch (m_inputProfile)
-	{
-	case GAME1_PlayerInputProfile::Player1Coop:
-		return ArcadeInput::isKeyboardMoveRightHeld() ||
-			ArcadeInput::isJoystickMoveRightHeld(kCoopPlayer1JoystickIndex);
-	case GAME1_PlayerInputProfile::Player2Coop:
-		return ArcadeInput::isJoystickMoveRightHeld(kCoopPlayer2JoystickIndex);
-	case GAME1_PlayerInputProfile::SinglePlayer:
-	default:
-		return ArcadeInput::isMoveRightHeld();
-	}
+	if (m_binding.singlePlayer) return ArcadeInput::isMoveRightHeld();
+	if (m_binding.source == GAME1_InputSource::Keyboard) return ArcadeInput::isKeyboardMoveRightHeld();
+	return ArcadeInput::isJoystickMoveRightHeld(m_binding.joystickIndex);
 }
 
 bool GAME1_Player::inputJumpHeld() const
 {
-	switch (m_inputProfile)
-	{
-	case GAME1_PlayerInputProfile::Player1Coop:
-		return ArcadeInput::isKeyboardPrimaryHeld() ||
-			ArcadeInput::isJoystickPrimaryHeld(kCoopPlayer1JoystickIndex);
-	case GAME1_PlayerInputProfile::Player2Coop:
-		return ArcadeInput::isJoystickPrimaryHeld(kCoopPlayer2JoystickIndex);
-	case GAME1_PlayerInputProfile::SinglePlayer:
-	default:
-		return ArcadeInput::isPrimaryHeld();
-	}
+	if (m_binding.singlePlayer) return ArcadeInput::isPrimaryHeld();
+	if (m_binding.source == GAME1_InputSource::Keyboard) return ArcadeInput::isKeyboardPrimaryHeld();
+	return ArcadeInput::isJoystickPrimaryHeld(m_binding.joystickIndex);
 }
 
 bool GAME1_Player::inputDropThroughHeld() const
 {
-	switch (m_inputProfile)
-	{
-	case GAME1_PlayerInputProfile::Player1Coop:
-		return ArcadeInput::isKeyboardSecondaryHeld() ||
-			ArcadeInput::isJoystickSecondaryHeld(kCoopPlayer1JoystickIndex);
-	case GAME1_PlayerInputProfile::Player2Coop:
-		return ArcadeInput::isJoystickSecondaryHeld(kCoopPlayer2JoystickIndex);
-	case GAME1_PlayerInputProfile::SinglePlayer:
-	default:
-		return ArcadeInput::isSecondaryHeld();
-	}
+	if (m_binding.singlePlayer) return ArcadeInput::isSecondaryHeld();
+	if (m_binding.source == GAME1_InputSource::Keyboard) return ArcadeInput::isKeyboardSecondaryHeld();
+	return ArcadeInput::isJoystickSecondaryHeld(m_binding.joystickIndex);
 }
 
 bool GAME1_Player::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)

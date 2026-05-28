@@ -15,9 +15,13 @@
 class ArcadeHubOptions
 {
 public:
-	bool load(const std::string& fontPath, const std::string& settingsIconPath);
+	bool load(const std::string& fontPath,
+		const std::string& settingsIconPath,
+		const std::string& volumeOnIconPath = "assets/Volume.png",
+		const std::string& volumeOffIconPath = "assets/Volume2.png");
 
 	void layout(const sf::RenderWindow& window);
+	void update(float deltaTime);
 
 	bool isOpen() const;
 	void open();
@@ -67,11 +71,20 @@ private:
 		float maxValue,
 		bool selected) const;
 
+	void drawMuteButton(sf::RenderTarget& target,
+		const sf::FloatRect& bounds,
+		float animationT) const;
+
 private:
 	sf::Font m_font;
 
 	sf::Texture m_settingsIconTexture;
 	bool m_hasSettingsIcon = false;
+
+	sf::Texture m_volumeOnTexture;
+	sf::Texture m_volumeOffTexture;
+	bool m_hasVolumeOnIcon = false;
+	bool m_hasVolumeOffIcon = false;
 
 	bool m_isOpen = false;
 
@@ -80,7 +93,13 @@ private:
 	sf::FloatRect m_crtToggleBounds;
 	sf::FloatRect m_musicSliderBounds;
 	sf::FloatRect m_sfxSliderBounds;
+	sf::FloatRect m_musicMuteButtonBounds;
+	sf::FloatRect m_sfxMuteButtonBounds;
 	sf::FloatRect m_closeButtonBounds;
+
+	// Animation 0..1: 0 = unmuted (Volume.png, no X), 1 = muted (Volume2.png + red X)
+	float m_musicMuteAnimT = 0.f;
+	float m_sfxMuteAnimT = 0.f;
 
 	Row m_selectedRow = Row::CrtShader;
 

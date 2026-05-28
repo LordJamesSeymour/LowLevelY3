@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 
@@ -18,10 +19,15 @@ namespace
 	}
 }
 
-bool ArcadeHubOptions::load(const std::string& fontPath, const std::string& settingsIconPath)
+bool ArcadeHubOptions::load(const std::string& fontPath,
+	const std::string& settingsIconPath,
+	const std::string& volumeOnIconPath,
+	const std::string& volumeOffIconPath)
 {
 	m_lastError.clear();
 	m_hasSettingsIcon = false;
+	m_hasVolumeOnIcon = false;
+	m_hasVolumeOffIcon = false;
 
 	if (!m_font.openFromFile(fontPath))
 	{
@@ -37,6 +43,27 @@ bool ArcadeHubOptions::load(const std::string& fontPath, const std::string& sett
 			m_settingsIconTexture.setSmooth(true);
 		}
 	}
+
+	if (!volumeOnIconPath.empty())
+	{
+		if (m_volumeOnTexture.loadFromFile(volumeOnIconPath))
+		{
+			m_hasVolumeOnIcon = true;
+			m_volumeOnTexture.setSmooth(true);
+		}
+	}
+
+	if (!volumeOffIconPath.empty())
+	{
+		if (m_volumeOffTexture.loadFromFile(volumeOffIconPath))
+		{
+			m_hasVolumeOffIcon = true;
+			m_volumeOffTexture.setSmooth(true);
+		}
+	}
+
+	m_musicMuteAnimT = ArcadeSettings::isMusicMuted() ? 1.f : 0.f;
+	m_sfxMuteAnimT = ArcadeSettings::isSfxMuted() ? 1.f : 0.f;
 
 	return true;
 }
@@ -83,12 +110,46 @@ void ArcadeHubOptions::layout(const sf::RenderWindow& window)
 		{ contentRight - contentLeft, rowHeight }
 	);
 
+	const float muteButtonSize = 40.f;
+	const float muteButtonOffsetY = (rowHeight - muteButtonSize) * 0.5f;
+
+	m_musicMuteButtonBounds = sf::FloatRect(
+		{ m_musicSliderBounds.position.x + m_musicSliderBounds.size.x - muteButtonSize,
+		  m_musicSliderBounds.position.y + muteButtonOffsetY },
+		{ muteButtonSize, muteButtonSize }
+	);
+
+	m_sfxMuteButtonBounds = sf::FloatRect(
+		{ m_sfxSliderBounds.position.x + m_sfxSliderBounds.size.x - muteButtonSize,
+		  m_sfxSliderBounds.position.y + muteButtonOffsetY },
+		{ muteButtonSize, muteButtonSize }
+	);
+
 	const float closeWidth = 180.f;
 	const float closeHeight = 48.f;
 	m_closeButtonBounds = sf::FloatRect(
 		{ panelX + (panelWidth - closeWidth) * 0.5f, panelY + panelHeight - closeHeight - 24.f },
 		{ closeWidth, closeHeight }
 	);
+}
+
+void ArcadeHubOptions::update(float deltaTime)
+{
+	// Animation duration ~0.15s. We move animT toward the boolean target.
+	const float animSpeed = 1.f / 0.15f;
+	const float step = animSpeed * deltaTime;
+
+	const float musicTarget = ArcadeSettings::isMusicMuted() ? 1.f : 0.f;
+	if (m_musicMuteAnimT < musicTarget)
+		m_musicMuteAnimT = std::min(musicTarget, m_musicMuteAnimT + step);
+	else if (m_musicMuteAnimT > musicTarget)
+		m_musicMuteAnimT = std::max(musicTarget, m_musicMuteAnimT - step);
+
+	const float sfxTarget = ArcadeSettings::isSfxMuted() ? 1.f : 0.f;
+	if (m_sfxMuteAnimT < sfxTarget)
+		m_sfxMuteAnimT = std::min(sfxTarget, m_sfxMuteAnimT + step);
+	else if (m_sfxMuteAnimT > sfxTarget)
+		m_sfxMuteAnimT = std::max(sfxTarget, m_sfxMuteAnimT - step);
 }
 
 bool ArcadeHubOptions::isOpen() const
@@ -128,8 +189,10 @@ bool ArcadeHubOptions::containsPoint(const sf::FloatRect& rect, sf::Vector2f poi
 
 void ArcadeHubOptions::getSliderTrackEdges(const sf::FloatRect& row, float& outLeft, float& outRight) const
 {
+	// Right side reserves room for the value text (~52 px) AND the mute
+	// button (~48 px including padding).
 	outLeft = row.position.x + 120.f;
-	outRight = row.position.x + row.size.x - 80.f;
+	outRight = row.position.x + row.size.x - 132.f;
 
 	if (outRight < outLeft + 1.f)
 		outRight = outLeft + 1.f;
@@ -164,6 +227,21 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 	{
 		m_selectedRow = Row::CrtShader;
 		ArcadeSettings::setCrtEnabled(!ArcadeSettings::isCrtEnabled());
+		return true;
+	}
+
+	// Mute buttons are inside the slider row bounds, so check them first.
+	if (containsPoint(m_musicMuteButtonBounds, mousePosition))
+	{
+		m_selectedRow = Row::Music;
+		ArcadeSettings::setMusicMuted(!ArcadeSettings::isMusicMuted());
+		return true;
+	}
+
+	if (containsPoint(m_sfxMuteButtonBounds, mousePosition))
+	{
+		m_selectedRow = Row::Sfx;
+		ArcadeSettings::setSfxMuted(!ArcadeSettings::isSfxMuted());
 		return true;
 	}
 
@@ -454,11 +532,113 @@ void ArcadeHubOptions::drawSliderRow(sf::RenderTarget& target,
 	valueText.setOutlineThickness(1.5f);
 
 	const sf::FloatRect valueBounds = valueText.getLocalBounds();
+	// Right-align value text just to the left of the mute button (~48 px wide).
 	valueText.setPosition({
-		row.position.x + row.size.x - valueBounds.size.x - 4.f - valueBounds.position.x,
+		row.position.x + row.size.x - 56.f - valueBounds.size.x - valueBounds.position.x,
 		row.position.y + (row.size.y - valueBounds.size.y) * 0.5f - valueBounds.position.y
 		});
 	target.draw(valueText);
+}
+
+void ArcadeHubOptions::drawMuteButton(sf::RenderTarget& target,
+	const sf::FloatRect& bounds,
+	float animationT) const
+{
+	// Texture swap happens at the midpoint of the animation.
+	const bool useOffTexture = animationT >= 0.5f;
+	const sf::Texture* texture = useOffTexture ? &m_volumeOffTexture : &m_volumeOnTexture;
+	const bool textureLoaded = useOffTexture ? m_hasVolumeOffIcon : m_hasVolumeOnIcon;
+
+	// Subtle background plate so the button reads as clickable.
+	sf::RectangleShape plate;
+	plate.setPosition(bounds.position);
+	plate.setSize(bounds.size);
+	plate.setFillColor(sf::Color(30, 30, 45, 200));
+	plate.setOutlineColor(sf::Color(200, 200, 200));
+	plate.setOutlineThickness(1.5f);
+	target.draw(plate);
+
+	if (textureLoaded)
+	{
+		const sf::Vector2u textureSize = texture->getSize();
+
+		if (textureSize.x > 0 && textureSize.y > 0)
+		{
+			const float scale = std::min(
+				(bounds.size.x - 8.f) / static_cast<float>(textureSize.x),
+				(bounds.size.y - 8.f) / static_cast<float>(textureSize.y)
+			);
+
+			sf::Sprite icon(*texture);
+			icon.setScale({ scale, scale });
+			icon.setPosition({
+				bounds.position.x + (bounds.size.x - textureSize.x * scale) * 0.5f,
+				bounds.position.y + (bounds.size.y - textureSize.y * scale) * 0.5f
+				});
+			target.draw(icon);
+		}
+	}
+	else
+	{
+		sf::Text fallback(m_font);
+		fallback.setString(useOffTexture ? "M" : "V");
+		fallback.setCharacterSize(20);
+		fallback.setFillColor(sf::Color::White);
+		const sf::FloatRect fb = fallback.getLocalBounds();
+		fallback.setPosition({
+			bounds.position.x + (bounds.size.x - fb.size.x) * 0.5f - fb.position.x,
+			bounds.position.y + (bounds.size.y - fb.size.y) * 0.5f - fb.position.y
+			});
+		target.draw(fallback);
+	}
+
+	// Red X overlay: fades in during second half of animation (0.5 → 1.0).
+	const float xAlpha = std::clamp((animationT - 0.5f) * 2.f, 0.f, 1.f);
+	if (xAlpha > 0.f)
+	{
+		const std::uint8_t alpha = static_cast<std::uint8_t>(xAlpha * 255.f);
+		const sf::Color xColor(230, 40, 40, alpha);
+		const sf::Color xOutline(0, 0, 0, alpha);
+
+		const float padding = 6.f;
+		const float x0 = bounds.position.x + padding;
+		const float y0 = bounds.position.y + padding;
+		const float x1 = bounds.position.x + bounds.size.x - padding;
+		const float y1 = bounds.position.y + bounds.size.y - padding;
+
+		const float dx = x1 - x0;
+		const float dy = y1 - y0;
+		const float length = std::sqrt(dx * dx + dy * dy);
+		const float thickness = 4.5f;
+
+		// Diagonal 1: top-left to bottom-right
+		{
+			sf::RectangleShape diag;
+			diag.setSize({ length, thickness });
+			diag.setOrigin({ 0.f, thickness * 0.5f });
+			diag.setPosition({ x0, y0 });
+			const float angle = std::atan2(dy, dx) * 180.f / 3.14159265f;
+			diag.setRotation(sf::degrees(angle));
+			diag.setFillColor(xColor);
+			diag.setOutlineColor(xOutline);
+			diag.setOutlineThickness(1.f);
+			target.draw(diag);
+		}
+
+		// Diagonal 2: bottom-left to top-right
+		{
+			sf::RectangleShape diag;
+			diag.setSize({ length, thickness });
+			diag.setOrigin({ 0.f, thickness * 0.5f });
+			diag.setPosition({ x0, y1 });
+			const float angle = std::atan2(-dy, dx) * 180.f / 3.14159265f;
+			diag.setRotation(sf::degrees(angle));
+			diag.setFillColor(xColor);
+			diag.setOutlineColor(xOutline);
+			diag.setOutlineThickness(1.f);
+			target.draw(diag);
+		}
+	}
 }
 
 void ArcadeHubOptions::draw(sf::RenderTarget& target) const
@@ -575,9 +755,13 @@ void ArcadeHubOptions::draw(sf::RenderTarget& target) const
 		ArcadeSettings::getMusicVolume(), ArcadeSettings::kMaxVolume,
 		m_selectedRow == Row::Music);
 
+	drawMuteButton(target, m_musicMuteButtonBounds, m_musicMuteAnimT);
+
 	drawSliderRow(target, m_sfxSliderBounds, "SFX:",
 		ArcadeSettings::getSfxVolume(), ArcadeSettings::kMaxVolume,
 		m_selectedRow == Row::Sfx);
+
+	drawMuteButton(target, m_sfxMuteButtonBounds, m_sfxMuteAnimT);
 
 	{
 		const bool selected = (m_selectedRow == Row::Close);

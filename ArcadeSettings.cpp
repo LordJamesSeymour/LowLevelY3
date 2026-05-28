@@ -13,6 +13,8 @@ namespace
 	bool s_crtEnabled = true;
 	float s_musicVolume = ArcadeSettings::kMaxVolume;
 	float s_sfxVolume = ArcadeSettings::kMaxVolume;
+	bool s_musicMuted = false;
+	bool s_sfxMuted = false;
 
 	std::vector<ArcadeSettings::AudioRefreshCallback> s_callbacks;
 
@@ -71,6 +73,8 @@ void ArcadeSettings::initialize(const std::string& filePath)
 		s_crtEnabled = true;
 		s_musicVolume = kMaxVolume;
 		s_sfxVolume = kMaxVolume;
+		s_musicMuted = false;
+		s_sfxMuted = false;
 		save();
 		return;
 	}
@@ -99,6 +103,14 @@ void ArcadeSettings::initialize(const std::string& filePath)
 			try { s_sfxVolume = std::stof(value); }
 			catch (...) { s_sfxVolume = kMaxVolume; }
 		}
+		else if (key == "music_muted")
+		{
+			s_musicMuted = parseBool(value);
+		}
+		else if (key == "sfx_muted")
+		{
+			s_sfxMuted = parseBool(value);
+		}
 	}
 
 	clampStoredValues();
@@ -116,6 +128,9 @@ bool ArcadeSettings::save()
 	stream.precision(1);
 	stream << "music_volume=" << s_musicVolume << "\n";
 	stream << "sfx_volume=" << s_sfxVolume << "\n";
+
+	stream << "music_muted=" << (s_musicMuted ? 1 : 0) << "\n";
+	stream << "sfx_muted=" << (s_sfxMuted ? 1 : 0) << "\n";
 
 	return true;
 }
@@ -168,13 +183,47 @@ void ArcadeSettings::setSfxVolume(float value)
 	save();
 }
 
+bool ArcadeSettings::isMusicMuted()
+{
+	return s_musicMuted;
+}
+
+void ArcadeSettings::setMusicMuted(bool muted)
+{
+	if (s_musicMuted == muted)
+		return;
+
+	s_musicMuted = muted;
+	notifyAudioChanged();
+	save();
+}
+
+bool ArcadeSettings::isSfxMuted()
+{
+	return s_sfxMuted;
+}
+
+void ArcadeSettings::setSfxMuted(bool muted)
+{
+	if (s_sfxMuted == muted)
+		return;
+
+	s_sfxMuted = muted;
+	notifyAudioChanged();
+	save();
+}
+
 float ArcadeSettings::scaleMusic(float baseVolume)
 {
+	if (s_musicMuted)
+		return 0.f;
 	return std::clamp(baseVolume * (s_musicVolume / kMaxVolume), 0.f, 100.f);
 }
 
 float ArcadeSettings::scaleSfx(float baseVolume)
 {
+	if (s_sfxMuted)
+		return 0.f;
 	return std::clamp(baseVolume * (s_sfxVolume / kMaxVolume), 0.f, 100.f);
 }
 
