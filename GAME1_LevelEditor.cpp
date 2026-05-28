@@ -1,5 +1,7 @@
 #include "GAME1_LevelEditor.h"
 
+#include "GAME1_Pickup.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -145,7 +147,8 @@ namespace
 
 	std::vector<char> FallbackTileCodes()
 	{
-		// O is empty, P is player spawn, and B is intentionally unused now.
+		// O is empty, P is player spawn, B is intentionally unused now,
+		// and lowercase fruit pickup codes are reserved.
 		return
 		{
 			'X', 'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -155,6 +158,8 @@ namespace
 
 	bool IsReservedEditorTileCode(char code)
 	{
+		GAME1_FruitType ignoredFruitType;
+
 		return code == 'O' ||
 			code == 'P' ||
 			code == 'e' ||
@@ -163,7 +168,8 @@ namespace
 			code == '[' ||
 			code == '=' ||
 			code == ']' ||
-			code == 'K';
+			code == 'K' ||
+			GAME1_TryGetFruitTypeForMapCode(code, ignoredFruitType);
 	}
 
 	bool ContainsAnyKeyword(const std::filesystem::path& path,
@@ -527,12 +533,24 @@ void GAME1_LevelEditor::buildTools()
 		spikePaths,
 		sf::Color(210, 210, 220));
 
-	const std::vector<fs::path> platformPaths =
-		FindSpecialPngFiles(tilesDirectory, { "platform", "oneway", "one_way", "one-way" });
-
 	std::vector<fs::path> platformLeftPaths;
 	std::vector<fs::path> platformMiddlePaths;
 	std::vector<fs::path> platformRightPaths;
+
+	const fs::path platformDirectory = tilesDirectory / "Platform_1";
+	const fs::path preferredPlatformLeftPath = platformDirectory / "Platform_Left.png";
+	const fs::path preferredPlatformMiddlePath = platformDirectory / "Platform_Center.png";
+	const fs::path preferredPlatformRightPath = platformDirectory / "Platform_Right.png";
+
+	if (fs::exists(preferredPlatformLeftPath))
+		platformLeftPaths.push_back(preferredPlatformLeftPath);
+	if (fs::exists(preferredPlatformMiddlePath))
+		platformMiddlePaths.push_back(preferredPlatformMiddlePath);
+	if (fs::exists(preferredPlatformRightPath))
+		platformRightPaths.push_back(preferredPlatformRightPath);
+
+	const std::vector<fs::path> platformPaths =
+		FindSpecialPngFiles(tilesDirectory, { "platform", "oneway", "one_way", "one-way" });
 
 	if (!platformPaths.empty())
 	{
@@ -575,6 +593,27 @@ void GAME1_LevelEditor::buildTools()
 		"Checkpoint - updates player respawn point (no backtracking)",
 		checkpointIconPaths,
 		sf::Color(230, 90, 90));
+
+	for (GAME1_FruitType fruitType : GAME1_GetAllFruitTypes())
+	{
+		Tool fruitTool;
+		fruitTool.tile = GAME1_GetFruitMapCode(fruitType);
+		fruitTool.label = std::string(1, fruitTool.tile);
+		fruitTool.description =
+			GAME1_GetFruitName(fruitType) +
+			" pickup - " +
+			std::to_string(GAME1_GetFruitPointValue(fruitType)) +
+			" points";
+		fruitTool.fallbackColor = GAME1_GetFruitFallbackColor(fruitType);
+
+		const fs::path fruitDirectory =
+			getResourcesDirectory() / "Pickups" / GAME1_GetFruitName(fruitType);
+
+		fruitTool.hasTexture =
+			loadFirstTextureFromDirectory(fruitTool.texture, fruitDirectory.string());
+
+		addTool(std::move(fruitTool));
+	}
 
 	const fs::path worldTilesDirectory = getCurrentWorldTilesDirectory();
 

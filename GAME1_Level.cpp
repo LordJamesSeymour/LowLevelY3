@@ -162,7 +162,7 @@ namespace
 	std::vector<char> FallbackTileCodes()
 	{
 		// P is reserved for PlayerSpawn, O is empty, and special trap/platform
-		// characters are handled separately.
+		// characters plus lowercase fruit pickup codes are handled separately.
 		return
 		{
 			'X', 'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -172,6 +172,8 @@ namespace
 
 	bool IsReservedMapTileCode(char code)
 	{
+		GAME1_FruitType ignoredFruitType;
+
 		return code == 'O' ||
 			code == 'B' ||
 			code == 'P' ||
@@ -179,7 +181,8 @@ namespace
 			code == GAME1_Level::OneWayPlatformLeftTile ||
 			code == GAME1_Level::OneWayPlatformMiddleTile ||
 			code == GAME1_Level::OneWayPlatformRightTile ||
-			code == GAME1_Level::CheckpointTile;
+			code == GAME1_Level::CheckpointTile ||
+			GAME1_TryGetFruitTypeForMapCode(code, ignoredFruitType);
 	}
 
 	std::vector<std::pair<char, std::filesystem::path>> BuildWorldTileDefinitions(
@@ -339,6 +342,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_floorTextures.clear();
 	m_specialTileTextures.clear();
 	m_enemySpawns.clear();
+	m_pickupSpawns.clear();
 	m_checkpoints.clear();
 	m_checkpointActivationFrames.clear();
 	m_checkpointLoopFrames.clear();
@@ -466,6 +470,30 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				continue;
 			}
 
+			GAME1_FruitType pickupType;
+			if (GAME1_TryGetFruitTypeForMapCode(tile, pickupType))
+			{
+				const sf::Vector2i gridPosition(
+					static_cast<int>(col),
+					static_cast<int>(row));
+
+				const float pickupOffset =
+					(static_cast<float>(TileSize) - GAME1_Pickup::DrawSize) * 0.5f;
+
+				m_pickupSpawns.push_back(
+					{
+						pickupType,
+						gridPosition,
+						{
+							static_cast<float>(col * TileSize) + pickupOffset,
+							static_cast<float>(row * TileSize) + pickupOffset
+						}
+					});
+
+				rawRows[row][col] = 'O';
+				continue;
+			}
+
 			if (tile == 'O' || isFloorTile(tile) || isSupportedSpecialTileCode(tile))
 				continue;
 
@@ -474,7 +502,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				std::string(1, tile) +
 				"' at row " + std::to_string(row + 1) +
 				", column " + std::to_string(col + 1) +
-				". Use O for empty, P for player spawn, e for enemy spawn, a floor tile letter from the editor, ^ for spikes, or [/= /] for one-way platforms.";
+				". Use O for empty, P for player spawn, e for enemy spawn, c/s/a/b/o/k/m/p for fruit, a floor tile letter from the editor, ^ for spikes, or [/= /] for one-way platforms.";
 			return false;
 		}
 	}
@@ -556,13 +584,39 @@ void GAME1_Level::loadSpecialTileTextures(const std::filesystem::path& resources
 	}
 
 	// One-way platforms are three separate parts, not an animation.
-	// Common layouts supported:
-	// Resources/Tiles/Platforms/Platform_0.png, _1, _2
-	// Resources/Tiles/Platform/Platform_0.png, _1, _2
-	// Any PNG under Tiles with platform / oneway / one_way in the file/folder name.
-	const std::vector<fs::path> platformPaths = FindSpecialPngFiles(
-		tilesDirectory,
-		{ "platform", "oneway", "one_way", "one-way" });
+	// Preferred layout:
+	// Resources/Tiles/Platform_1/Platform_Left.png
+	// Resources/Tiles/Platform_1/Platform_Center.png
+	// Resources/Tiles/Platform_1/Platform_Right.png
+	// Falls back to recursive discovery for older asset layouts.
+	std::vector<fs::path> platformPaths;
+	const fs::path platformDirectory = tilesDirectory / "Platform_1";
+	const std::vector<fs::path> preferredPlatformPaths =
+	{
+		platformDirectory / "Platform_Left.png",
+		platformDirectory / "Platform_Center.png",
+		platformDirectory / "Platform_Right.png"
+	};
+
+	const bool hasPreferredPlatformSet =
+		std::all_of(
+			preferredPlatformPaths.begin(),
+			preferredPlatformPaths.end(),
+			[](const fs::path& path)
+			{
+				return fs::exists(path) && fs::is_regular_file(path);
+			});
+
+	if (hasPreferredPlatformSet)
+	{
+		platformPaths = preferredPlatformPaths;
+	}
+	else
+	{
+		platformPaths = FindSpecialPngFiles(
+			tilesDirectory,
+			{ "platform", "oneway", "one_way", "one-way" });
+	}
 
 	if (!platformPaths.empty())
 	{
@@ -960,6 +1014,11 @@ sf::Vector2f GAME1_Level::getPlayerSpawnPosition() const
 const std::vector<GAME1_LevelEnemySpawn>& GAME1_Level::getEnemySpawns() const
 {
 	return m_enemySpawns;
+}
+
+const std::vector<GAME1_PickupSpawn>& GAME1_Level::getPickupSpawns() const
+{
+	return m_pickupSpawns;
 }
 
 int GAME1_Level::getWidthInTiles() const

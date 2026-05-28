@@ -2,6 +2,8 @@
 
 #include <SFML/Graphics.hpp>
 
+#include "GAME1_Pickup.h"
+
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -39,6 +41,9 @@ public:
 	// [  = one-way platform left part
 	// =  = one-way platform middle part
 	// ]  = one-way platform right part
+	// Fruit pickups use lowercase ASCII codes:
+	// c Cherry, s Strawberry, a Apple, b Banana, o Orange, k Kiwi,
+	// m Melon, p Pineapple.
 	static constexpr char SpikeTrapTile = '^';
 	static constexpr char OneWayPlatformLeftTile = '[';
 	static constexpr char OneWayPlatformMiddleTile = '=';
@@ -81,6 +86,7 @@ public:
 	int getWorldNumber() const;
 	sf::Vector2f getPlayerSpawnPosition() const;
 	const std::vector<GAME1_LevelEnemySpawn>& getEnemySpawns() const;
+	const std::vector<GAME1_PickupSpawn>& getPickupSpawns() const;
 
 	int getWidthInTiles() const;
 	int getHeightInTiles() const;
@@ -114,6 +120,7 @@ private:
 	int m_worldNumber = 1;
 	sf::Vector2f m_playerSpawnPosition{ 100.f, 100.f };
 	std::vector<GAME1_LevelEnemySpawn> m_enemySpawns;
+	std::vector<GAME1_PickupSpawn> m_pickupSpawns;
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;
 	std::unordered_map<char, sf::Texture> m_specialTileTextures;

@@ -19,6 +19,9 @@
 // - right-click erase
 // - horizontal screen scrolling for wide platformer maps
 // - vertical screen scrolling for tall maps (build upward from the bottom)
+// - fruit pickup placement using lowercase map codes:
+//   c Cherry, s Strawberry, a Apple, b Banana, o Orange, k Kiwi,
+//   m Melon, p Pineapple
 //
 // Save is handled by the SAVE button or F5. P is not a save key.
 class GAME1_LevelEditor

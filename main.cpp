@@ -1,5 +1,6 @@
 #include <SFML/Graphics.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -33,6 +34,7 @@
 #include "GAME1_LevelEditor.h"
 #include "GAME1_LevelSelect.h"
 #include "GAME1_Enemy.h"
+#include "GAME1_Pickup.h"
 #include "GAME1_SurfersQuestAudio.h"
 
 #include "GAME2_Menu.h"
@@ -63,6 +65,26 @@ namespace
 
 	const std::filesystem::path kGame2ResourcesDirectory = "assets/Game#2/Resources";
 	const std::filesystem::path kGame2SplashStillImagePath = "assets/Game#2/SplashScreen/Game2SplashScreen.png";
+
+	struct GAME1_PlayerScoreState
+	{
+		int score = 0;
+		std::vector<GAME1_FruitType> collectedFruits;
+
+		void reset()
+		{
+			score = 0;
+			collectedFruits.clear();
+		}
+	};
+
+	struct GAME1_FloatingScorePopup
+	{
+		sf::Vector2f position{ 0.f, 0.f };
+		int points = 0;
+		float age = 0.f;
+		float lifetime = 0.75f;
+	};
 
 	enum class AppState
 	{
@@ -236,10 +258,17 @@ namespace
 		return result;
 	}
 
-	bool LoadGame1(GAME1_Level& level, GAME1_Player& player, std::vector<GAME1_Enemy>& enemies, const std::string& mapPath)
+	bool LoadGame1(GAME1_Level& level,
+		GAME1_Player& player,
+		std::vector<GAME1_Enemy>& enemies,
+		std::vector<GAME1_Pickup>& pickups,
+		const std::string& mapPath)
 	{
 		const std::string playerIdleDirectory =
 			(kGame1ResourcesDirectory / "Player" / "PlayerIdle").string();
+
+		enemies.clear();
+		pickups.clear();
 
 		if (!level.loadFromFile(mapPath, kGame1ResourcesDirectory.string()))
 		{
@@ -265,8 +294,6 @@ namespace
 			return false;
 		}
 
-		enemies.clear();
-
 		for (const GAME1_LevelEnemySpawn& spawn : level.getEnemySpawns())
 		{
 			GAME1_Enemy enemy;
@@ -284,6 +311,11 @@ namespace
 			}
 
 			enemies.push_back(std::move(enemy));
+		}
+
+		for (const GAME1_PickupSpawn& spawn : level.getPickupSpawns())
+		{
+			pickups.emplace_back(spawn.type, spawn.gridPosition, spawn.position);
 		}
 
 		return true;
@@ -507,6 +539,11 @@ int main()
 	GAME1_Player game1Player;
 	GAME1_Player game1Player2;
 	std::vector<GAME1_Enemy> game1Enemies;
+	GAME1_PickupAssets game1PickupAssets;
+	game1PickupAssets.load(kGame1ResourcesDirectory.string());
+	std::vector<GAME1_Pickup> game1Pickups;
+	std::array<GAME1_PlayerScoreState, 2> game1Scores;
+	std::vector<GAME1_FloatingScorePopup> game1ScorePopups;
 
 	// Vertical camera state for Surfers Quest: persistent across frames,
 	// snapped on level load, smoothly follows player with margin-pinning.
@@ -611,6 +648,9 @@ int main()
 			}
 
 			appState = newState;
+			window.setMouseCursorVisible(
+				appState != AppState::GAME1_Bomberman &&
+				appState != AppState::GAME1_Game);
 
 			if (appState == AppState::Hub)
 			{
@@ -668,6 +708,59 @@ int main()
 				game1Player.setDrawHud(true);
 				game1Player1DetectedSource = GAME1_PlayerBinding{};
 			}
+		};
+
+	auto ResetGame1Scores = [&]()
+		{
+			for (GAME1_PlayerScoreState& scoreState : game1Scores)
+			{
+				scoreState.reset();
+			}
+
+			game1ScorePopups.clear();
+		};
+
+	auto ResetGame1PickupsFromLevel = [&]()
+		{
+			game1Pickups.clear();
+
+			for (const GAME1_PickupSpawn& spawn : game1Level.getPickupSpawns())
+			{
+				game1Pickups.emplace_back(spawn.type, spawn.gridPosition, spawn.position);
+			}
+		};
+
+	auto ResetGame1CollectiblesAndScores = [&]()
+		{
+			ResetGame1Scores();
+			ResetGame1PickupsFromLevel();
+		};
+
+	auto AddGame1ScorePopup = [&](sf::Vector2f position, int points)
+		{
+			GAME1_FloatingScorePopup popup;
+			popup.position = position;
+			popup.points = points;
+			game1ScorePopups.push_back(popup);
+		};
+
+	auto AwardGame1Points = [&](int playerIndex,
+		int points,
+		sf::Vector2f worldPosition,
+		std::optional<GAME1_FruitType> collectedFruit)
+		{
+			if (playerIndex < 0 || playerIndex >= static_cast<int>(game1Scores.size()))
+				return;
+
+			GAME1_PlayerScoreState& scoreState =
+				game1Scores[static_cast<std::size_t>(playerIndex)];
+
+			scoreState.score += points;
+
+			if (collectedFruit.has_value())
+				scoreState.collectedFruits.push_back(collectedFruit.value());
+
+			AddGame1ScorePopup(worldPosition, points);
 		};
 
 	auto TryLaunchSelectedHubGame = [&]()
@@ -752,6 +845,14 @@ int main()
 				state == AppState::GAME1_Game;
 		};
 
+	auto UpdateMouseCursorVisibility = [&]()
+		{
+			const bool gameplayCursorHidden = IsPausableGameplayState(appState);
+			const bool menuCursorVisible = pauseMenu.isOpen() || hubOptions.isOpen();
+
+			window.setMouseCursorVisible(!gameplayCursorHidden || menuCursorVisible);
+		};
+
 	auto OpenPauseMenu = [&]()
 		{
 			if (!IsPausableGameplayState(appState))
@@ -763,6 +864,7 @@ int main()
 			hubOptions.setGearVisible(false);
 			pauseMenu.layout(window);
 			pauseMenu.open();
+			window.setMouseCursorVisible(true);
 		};
 
 	auto HandlePauseAction = [&](GamePauseMenu::Action action)
@@ -772,6 +874,7 @@ int main()
 			case GamePauseMenu::Action::Resume:
 				pauseMenu.close();
 				hubOptions.setGearVisible(true);
+				UpdateMouseCursorVisibility();
 				if (appState == AppState::GAME1_Bomberman)
 				{
 					bombermanWindow.suppressActionInputUntilReleased();
@@ -890,6 +993,7 @@ int main()
 			game1Player2.setDrawHud(false);
 
 			game1Player2Joined = true;
+			game1Scores[1].reset();
 			return true;
 		};
 
@@ -913,6 +1017,7 @@ int main()
 			game1TeamGameOver = false;
 			game1LastCheckpointOrder = -1;
 			game1CameraNeedsSnap = true;
+			ResetGame1CollectiblesAndScores();
 
 			GAME1_SurfersQuestAudio::playGameplay();
 		};
@@ -1437,9 +1542,10 @@ int main()
 
 						if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 						{
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getSelectedLevelPath()))
+							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
 								return -1;
 
+							ResetGame1Scores();
 							SetAppState(AppState::GAME1_Game);
 						}
 					}
@@ -1462,9 +1568,10 @@ int main()
 						}
 						else if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
 						{
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getLevelPathAt(slotIndex)))
+							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
 
+							ResetGame1Scores();
 							SetAppState(AppState::GAME1_Game);
 						}
 					}
@@ -1813,9 +1920,10 @@ int main()
 
 				if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 				{
-					if (!LoadGame1(game1Level, game1Player, game1Enemies, game1LevelSelect.getSelectedLevelPath()))
+					if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
 						return -1;
 
+					ResetGame1Scores();
 					ArcadeInput::consumePressedState();
 					SetAppState(AppState::GAME1_Game);
 				}
@@ -1899,6 +2007,7 @@ int main()
 
 
 		ApplyWindowView(window);
+		UpdateMouseCursorVisibility();
 
 		auto DisplayFrame = [&]()
 			{
@@ -1976,6 +2085,7 @@ int main()
 		else if (appState == AppState::GAME1_Bomberman)
 		{
 			const bool paused = pauseMenu.isOpen() || hubOptions.isOpen();
+			window.setMouseCursorVisible(paused);
 
 			if (!paused)
 			{
@@ -2000,6 +2110,7 @@ int main()
 		{
 			const bool p2Joined = game1Player2Joined;
 			const bool game1Paused = pauseMenu.isOpen() || hubOptions.isOpen();
+			window.setMouseCursorVisible(game1Paused);
 
 			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player)
 				{
@@ -2040,6 +2151,73 @@ int main()
 					}
 				};
 
+			auto TryCollectPickupsForPlayer = [&](GAME1_Player& player, int playerIndex)
+				{
+					if (!player.isActive())
+						return;
+
+					const sf::FloatRect playerBounds = player.getBounds();
+
+					for (GAME1_Pickup& pickup : game1Pickups)
+					{
+						if (!pickup.tryCollect(playerBounds))
+							continue;
+
+						const sf::Vector2f pickupPosition = pickup.getPosition();
+						const sf::Vector2f popupPosition(
+							pickupPosition.x + GAME1_Pickup::DrawSize * 0.5f,
+							pickupPosition.y - 8.f);
+
+						AwardGame1Points(
+							playerIndex,
+							pickup.getPointValue(),
+							popupPosition,
+							pickup.getType());
+					}
+				};
+
+			auto UpdateGame1ScorePopups = [&](float frameDeltaTime)
+				{
+					for (GAME1_FloatingScorePopup& popup : game1ScorePopups)
+					{
+						popup.age += frameDeltaTime;
+						popup.position.y -= 42.f * frameDeltaTime;
+					}
+
+					game1ScorePopups.erase(
+						std::remove_if(
+							game1ScorePopups.begin(),
+							game1ScorePopups.end(),
+							[](const GAME1_FloatingScorePopup& popup)
+							{
+								return popup.age >= popup.lifetime;
+							}),
+						game1ScorePopups.end());
+				};
+
+			auto HandleEnemyCollisionForPlayer = [&](GAME1_Enemy& enemy,
+				GAME1_Player& player,
+				int playerIndex)
+				{
+					if (!player.isActive())
+						return;
+
+					const bool wasAlive = enemy.isAlive();
+					const sf::FloatRect enemyBounds = enemy.getBounds();
+
+					if (!enemy.handlePlayerCollision(player))
+						return;
+
+					if (wasAlive && !enemy.isAlive())
+					{
+						const sf::Vector2f popupPosition(
+							enemyBounds.position.x + enemyBounds.size.x * 0.5f,
+							enemyBounds.position.y - 8.f);
+
+						AwardGame1Points(playerIndex, 200, popupPosition, std::nullopt);
+					}
+				};
+
 			if (!game1Paused)
 			{
 				if (p2Joined && !game1TeamGameOver)
@@ -2047,16 +2225,40 @@ int main()
 					GAME1_SurfersQuestAudio::playGameplay();
 				}
 
+				const bool game1PlayerWasGameOver = game1Player.isGameOver();
 				game1Player.update(deltaTime, game1Level);
+				if (!p2Joined && game1PlayerWasGameOver && !game1Player.isGameOver())
+				{
+					ResetGame1CollectiblesAndScores();
+				}
 				TriggerCheckpointsForPlayer(game1Player);
+				TryCollectPickupsForPlayer(game1Player, 0);
 
 				if (p2Joined && !game1Player2.isGameOver())
 				{
 					game1Player2.update(deltaTime, game1Level);
 					TriggerCheckpointsForPlayer(game1Player2);
+					TryCollectPickupsForPlayer(game1Player2, 1);
 				}
 
 				game1Level.updateCheckpoints(deltaTime);
+
+				for (GAME1_Pickup& pickup : game1Pickups)
+				{
+					pickup.update(deltaTime, game1PickupAssets);
+				}
+
+				game1Pickups.erase(
+					std::remove_if(
+						game1Pickups.begin(),
+						game1Pickups.end(),
+						[&](const GAME1_Pickup& pickup)
+						{
+							return pickup.isFinished(game1PickupAssets);
+						}),
+					game1Pickups.end());
+
+				UpdateGame1ScorePopups(deltaTime);
 
 				for (GAME1_Enemy& enemy : game1Enemies)
 				{
@@ -2066,11 +2268,10 @@ int main()
 
 				for (GAME1_Enemy& enemy : game1Enemies)
 				{
-					if (game1Player.isActive())
-						enemy.handlePlayerCollision(game1Player);
+					HandleEnemyCollisionForPlayer(enemy, game1Player, 0);
 
-					if (p2Joined && game1Player2.isActive())
-						enemy.handlePlayerCollision(game1Player2);
+					if (p2Joined)
+						HandleEnemyCollisionForPlayer(enemy, game1Player2, 1);
 				}
 
 				game1Enemies.erase(
@@ -2279,6 +2480,11 @@ int main()
 			window.setView(worldView);
 			game1Level.draw(window);
 
+			for (const GAME1_Pickup& pickup : game1Pickups)
+			{
+				pickup.draw(window, game1PickupAssets);
+			}
+
 			for (const GAME1_Enemy& enemy : game1Enemies)
 			{
 				enemy.draw(window);
@@ -2296,10 +2502,103 @@ int main()
 				game1Player2.draw(window);
 			}
 
+			for (const GAME1_FloatingScorePopup& popup : game1ScorePopups)
+			{
+				const int flickerIndex = static_cast<int>(popup.age * 34.f);
+				if (flickerIndex % 2 != 0)
+					continue;
+
+				sf::Text popupText(game1UiFont);
+				popupText.setString("+" + std::to_string(popup.points));
+				popupText.setCharacterSize(24);
+				popupText.setFillColor(sf::Color(255, 245, 0));
+				popupText.setOutlineColor(sf::Color::Black);
+				popupText.setOutlineThickness(2.f);
+
+				const sf::FloatRect popupBounds = popupText.getLocalBounds();
+				popupText.setPosition({
+					popup.position.x - popupBounds.size.x * 0.5f - popupBounds.position.x,
+					popup.position.y - popupBounds.size.y * 0.5f - popupBounds.position.y
+					});
+
+				window.draw(popupText);
+			}
+
 			ApplyWindowView(window);
+
+			auto DrawGame1TextureFitted = [&](const sf::Texture& texture, const sf::FloatRect& bounds)
+				{
+					sf::Sprite sprite(texture);
+					const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+					if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+						return;
+
+					sprite.setScale({
+						bounds.size.x / localBounds.size.x,
+						bounds.size.y / localBounds.size.y
+						});
+					sprite.setPosition(bounds.position);
+					window.draw(sprite);
+				};
+
+			auto DrawGame1FruitIcons = [&](const GAME1_PlayerScoreState& scoreState,
+				sf::Vector2f topLeft)
+				{
+					const float iconSize = 66.f;
+					const float iconGap = 6.f;
+
+					for (std::size_t i = 0; i < scoreState.collectedFruits.size(); ++i)
+					{
+						const int col = static_cast<int>(i % 4);
+						const int row = static_cast<int>(i / 4);
+
+						const sf::FloatRect iconBounds(
+							{
+								topLeft.x + static_cast<float>(col) * (iconSize + iconGap),
+								topLeft.y + static_cast<float>(row) * (iconSize + iconGap)
+							},
+							{ iconSize, iconSize });
+
+						const GAME1_FruitType fruitType = scoreState.collectedFruits[i];
+						const sf::Texture* iconTexture = game1PickupAssets.getIconTexture(fruitType);
+
+						if (iconTexture != nullptr)
+						{
+							DrawGame1TextureFitted(*iconTexture, iconBounds);
+						}
+						else
+						{
+							sf::RectangleShape fallback;
+							fallback.setPosition(iconBounds.position);
+							fallback.setSize(iconBounds.size);
+							fallback.setFillColor(GAME1_GetFruitFallbackColor(fruitType));
+							fallback.setOutlineColor(sf::Color::White);
+							fallback.setOutlineThickness(1.f);
+							window.draw(fallback);
+						}
+					}
+				};
+
+			auto DrawGame1ScoreHud = [&](const GAME1_PlayerScoreState& scoreState,
+				sf::Vector2f topLeft)
+				{
+					sf::Text scoreText(game1UiFont);
+					scoreText.setString("Score: " + std::to_string(scoreState.score));
+					scoreText.setCharacterSize(20);
+					scoreText.setFillColor(sf::Color::White);
+					scoreText.setOutlineColor(sf::Color::Black);
+					scoreText.setOutlineThickness(2.f);
+					scoreText.setPosition(topLeft);
+					window.draw(scoreText);
+
+					DrawGame1FruitIcons(scoreState, { topLeft.x, topLeft.y + 28.f });
+				};
 
 			if (!p2Joined)
 			{
+				DrawGame1ScoreHud(game1Scores[0], { 18.f, 86.f });
+
 				if (game1Player.isRespawning())
 				{
 					respawnText.setCharacterSize(34);
@@ -2319,8 +2618,13 @@ int main()
 				// Dual-player HUD.
 				const float windowWidth = static_cast<float>(window.getSize().x);
 
-				auto DrawPlayerStats = [&](const std::string& title, int health, int maxHealth,
-					int lives, int maxLives, sf::Vector2f topLeft)
+				auto DrawPlayerStats = [&](const std::string& title,
+					int health,
+					int maxHealth,
+					int lives,
+					int maxLives,
+					const GAME1_PlayerScoreState& scoreState,
+					sf::Vector2f topLeft)
 					{
 						sf::Text titleText(game1UiFont);
 						titleText.setString(title);
@@ -2348,23 +2652,27 @@ int main()
 						livesText.setOutlineThickness(2.f);
 						livesText.setPosition({ topLeft.x, topLeft.y + 48.f });
 						window.draw(livesText);
+
+						DrawGame1ScoreHud(scoreState, { topLeft.x, topLeft.y + 72.f });
 					};
 
 				DrawPlayerStats("Player 1",
 					game1Player.getHealth(), game1Player.getMaxHealth(),
 					game1Player.getLives(), game1Player.getMaxLives(),
+					game1Scores[0],
 					{ 18.f, 14.f });
 
 				DrawPlayerStats("Player 2",
 					game1Player2.getHealth(), game1Player2.getMaxHealth(),
 					game1Player2.getLives(), game1Player2.getMaxLives(),
-					{ windowWidth - 220.f, 14.f });
+					game1Scores[1],
+					{ windowWidth - 380.f, 14.f });
 
 				if (game1Player.isRespawning() && !game1Player.isGameOver())
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P1 respawn: " + std::to_string(game1Player.getRespawnCountdown()));
-					respawnText.setPosition({ 18.f, 90.f });
+					respawnText.setPosition({ 18.f, 186.f });
 					window.draw(respawnText);
 				}
 
@@ -2372,7 +2680,7 @@ int main()
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P2 respawn: " + std::to_string(game1Player2.getRespawnCountdown()));
-					respawnText.setPosition({ windowWidth - 220.f, 90.f });
+					respawnText.setPosition({ windowWidth - 380.f, 186.f });
 					window.draw(respawnText);
 				}
 

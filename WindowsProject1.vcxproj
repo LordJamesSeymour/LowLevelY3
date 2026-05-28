@@ -163,6 +163,7 @@
     <ClInclude Include="GAME1_LevelEditor.h" />
     <ClInclude Include="GAME1_LevelSelect.h" />
     <ClInclude Include="GAME1_Menu.h" />
+    <ClInclude Include="GAME1_Pickup.h" />
     <ClInclude Include="GAME1_Player.h" />
     <ClInclude Include="GAME2_BackgroundLayer.h" />
     <ClInclude Include="GAME2_Bullet.h" />
@@ -197,6 +198,7 @@
     <ClCompile Include="GamePauseMenu.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GAME1_Menu.cpp" />
+    <ClCompile Include="GAME1_Pickup.cpp" />
     <ClCompile Include="GAME1_Player.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
