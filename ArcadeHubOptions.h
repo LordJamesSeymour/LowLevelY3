@@ -51,11 +51,12 @@ public:
 private:
 	enum class Row
 	{
-		CrtShader = 0,
-		Music = 1,
-		Sfx = 2,
-		Close = 3,
-		Count = 4
+		Fullscreen = 0,
+		CrtShader = 1,
+		Music = 2,
+		Sfx = 3,
+		Close = 4,
+		Count = 5
 	};
 
 	static bool containsPoint(const sf::FloatRect& rect, sf::Vector2f point);
@@ -98,6 +99,7 @@ private:
 
 	sf::FloatRect m_gearBounds;
 	sf::FloatRect m_panelBounds;
+	sf::FloatRect m_fullscreenToggleBounds;
 	sf::FloatRect m_crtToggleBounds;
 	sf::FloatRect m_musicSliderBounds;
 	sf::FloatRect m_sfxSliderBounds;
@@ -109,7 +111,7 @@ private:
 	float m_musicMuteAnimT = 0.f;
 	float m_sfxMuteAnimT = 0.f;
 
-	Row m_selectedRow = Row::CrtShader;
+	Row m_selectedRow = Row::Fullscreen;
 
 	bool m_draggingMusic = false;
 	bool m_draggingSfx = false;

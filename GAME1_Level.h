@@ -2,6 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include "GAME1_ParallaxBackground.h"
 #include "GAME1_Pickup.h"
 #include "GAME1_Trap.h"
 
@@ -67,6 +68,10 @@ public:
 
 	void draw(sf::RenderWindow& window) const;
 	void drawBackground(sf::RenderWindow& window) const;
+	// Parallax-aware background. Pass the gameplay camera centre (world px).
+	// Falls back to the legacy bg.png if no parallax set is loaded.
+	void drawBackground(sf::RenderWindow& window,
+		sf::Vector2f cameraCenter) const;
 
 	void updateCheckpoints(float deltaTime);
 	void resetTraps();
@@ -117,6 +122,7 @@ private:
 	void loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory);
 	void loadCheckpointTextures(const std::filesystem::path& resourcesDirectory);
 	void loadWorldBackgroundTexture(const std::filesystem::path& resourcesDirectory);
+	void loadParallaxBackground(const std::filesystem::path& resourcesDirectory);
 	const sf::Texture* getCheckpointCurrentTexture(std::size_t checkpointIndex) const;
 
 	bool isInside(int col, int row) const;
@@ -167,6 +173,8 @@ private:
 
 	sf::Texture m_backgroundTexture;
 	bool m_hasBackgroundTexture = false;
+
+	GAME1_ParallaxBackground m_parallaxBackground;
 
 	sf::Texture m_checkpointNoFlagTexture;
 	bool m_hasCheckpointNoFlagTexture = false;

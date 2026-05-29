@@ -10,6 +10,7 @@ namespace
 	bool s_loaded = false;
 	std::string s_filePath = "settings.cfg";
 
+	bool s_fullscreenEnabled = true;
 	bool s_crtEnabled = true;
 	float s_musicVolume = ArcadeSettings::kMaxVolume;
 	float s_sfxVolume = ArcadeSettings::kMaxVolume;
@@ -17,6 +18,7 @@ namespace
 	bool s_sfxMuted = false;
 
 	std::vector<ArcadeSettings::AudioRefreshCallback> s_callbacks;
+	std::vector<ArcadeSettings::WindowApplyCallback> s_windowCallbacks;
 
 	std::string trim(const std::string& value)
 	{
@@ -70,6 +72,7 @@ void ArcadeSettings::initialize(const std::string& filePath)
 	std::ifstream stream(filePath);
 	if (!stream.is_open())
 	{
+		s_fullscreenEnabled = true;
 		s_crtEnabled = true;
 		s_musicVolume = kMaxVolume;
 		s_sfxVolume = kMaxVolume;
@@ -89,7 +92,11 @@ void ArcadeSettings::initialize(const std::string& filePath)
 		const std::string key = trim(line.substr(0, equals));
 		const std::string value = trim(line.substr(equals + 1));
 
-		if (key == "crt_shader_enabled")
+		if (key == "fullscreen_enabled")
+		{
+			s_fullscreenEnabled = parseBool(value);
+		}
+		else if (key == "crt_shader_enabled")
 		{
 			s_crtEnabled = parseBool(value);
 		}
@@ -122,6 +129,7 @@ bool ArcadeSettings::save()
 	if (!stream.is_open())
 		return false;
 
+	stream << "fullscreen_enabled=" << (s_fullscreenEnabled ? 1 : 0) << "\n";
 	stream << "crt_shader_enabled=" << (s_crtEnabled ? 1 : 0) << "\n";
 
 	stream << std::fixed;
@@ -133,6 +141,21 @@ bool ArcadeSettings::save()
 	stream << "sfx_muted=" << (s_sfxMuted ? 1 : 0) << "\n";
 
 	return true;
+}
+
+bool ArcadeSettings::isFullscreenEnabled()
+{
+	return s_fullscreenEnabled;
+}
+
+void ArcadeSettings::setFullscreenEnabled(bool enabled)
+{
+	if (s_fullscreenEnabled == enabled)
+		return;
+
+	s_fullscreenEnabled = enabled;
+	save();
+	notifyWindowChanged();
 }
 
 bool ArcadeSettings::isCrtEnabled()
@@ -236,6 +259,21 @@ void ArcadeSettings::registerAudioRefreshCallback(AudioRefreshCallback callback)
 void ArcadeSettings::notifyAudioChanged()
 {
 	for (const auto& cb : s_callbacks)
+	{
+		if (cb)
+			cb();
+	}
+}
+
+void ArcadeSettings::registerWindowApplyCallback(WindowApplyCallback callback)
+{
+	if (callback)
+		s_windowCallbacks.push_back(std::move(callback));
+}
+
+void ArcadeSettings::notifyWindowChanged()
+{
+	for (const auto& cb : s_windowCallbacks)
 	{
 		if (cb)
 			cb();

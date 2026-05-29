@@ -24,8 +24,10 @@
   GamePauseMenu.cpp
   main.cpp
   GAME1_Menu.cpp
+  GAME1_ParallaxBackground.cpp
   GAME1_Pickup.cpp
   GAME1_Player.cpp
+  GAME1_Trap.cpp
   Generating Code...
 sfml-graphics-s-d.lib(Transformable.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Transformable.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Shape.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shape.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
@@ -43,9 +45,9 @@ sfml-graphics-s-d.lib(StencilMode.cpp.obj) : warning LNK4099: PDB 'sfml-graphics
 sfml-graphics-s-d.lib(RenderWindow.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(RenderWindow.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(Shader.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Shader.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(BlendMode.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(BlendMode.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
+sfml-graphics-s-d.lib(Image.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Image.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(GLExtensions.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(GLExtensions.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(GLCheck.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(GLCheck.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
-sfml-graphics-s-d.lib(Image.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(Image.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(TextureSaver.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(TextureSaver.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(VertexBuffer.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(VertexBuffer.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
 sfml-graphics-s-d.lib(RenderTextureImplFBO.cpp.obj) : warning LNK4099: PDB 'sfml-graphics-s-d.pdb' was not found with 'sfml-graphics-s-d.lib(RenderTextureImplFBO.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-graphics-s-d.pdb'; linking object as if no debug info
@@ -81,10 +83,10 @@ sfml-system-s-d.lib(Utils.cpp.obj) : warning LNK4099: PDB 'sfml-system-s-d.pdb' 
 sfml-system-s-d.lib(Sleep.cpp.obj) : warning LNK4099: PDB 'sfml-system-s-d.pdb' was not found with 'sfml-system-s-d.lib(Sleep.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-system-s-d.pdb'; linking object as if no debug info
 sfml-system-s-d.lib(SleepImpl.cpp.obj) : warning LNK4099: PDB 'sfml-system-s-d.pdb' was not found with 'sfml-system-s-d.lib(SleepImpl.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-system-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(SoundSource.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundSource.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
-sfml-audio-s-d.lib(SoundStream.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundStream.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
-sfml-audio-s-d.lib(Music.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(Music.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(Sound.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(Sound.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(SoundBuffer.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundBuffer.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(SoundStream.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(SoundStream.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
+sfml-audio-s-d.lib(Music.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(Music.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(Miniaudio.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(Miniaudio.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(AudioDevice.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(AudioDevice.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info
 sfml-audio-s-d.lib(AudioResource.cpp.obj) : warning LNK4099: PDB 'sfml-audio-s-d.pdb' was not found with 'sfml-audio-s-d.lib(AudioResource.cpp.obj)' or at 'C:\Users\james\OneDrive\Escritorio\LowLevelY3\x64\Debug\sfml-audio-s-d.pdb'; linking object as if no debug info

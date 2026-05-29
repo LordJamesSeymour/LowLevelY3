@@ -24,6 +24,9 @@ public:
 	static void initialize(const std::string& filePath = "settings.cfg");
 	static bool save();
 
+	static bool isFullscreenEnabled();
+	static void setFullscreenEnabled(bool enabled);
+
 	static bool isCrtEnabled();
 	static void setCrtEnabled(bool enabled);
 
@@ -45,4 +48,11 @@ public:
 
 	static void registerAudioRefreshCallback(AudioRefreshCallback callback);
 	static void notifyAudioChanged();
+
+	// Window-apply callbacks fire when a window-affecting setting (currently
+	// fullscreen) changes, so main() can recreate/reconfigure the SFML window
+	// immediately. Modelled on the audio-refresh callback mechanism.
+	using WindowApplyCallback = std::function<void()>;
+	static void registerWindowApplyCallback(WindowApplyCallback callback);
+	static void notifyWindowChanged();
 };

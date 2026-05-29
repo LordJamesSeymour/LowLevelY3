@@ -1,6 +1,7 @@
 #include "GAME1_BombermanMenu.h"
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "ArcadeUISounds.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -364,10 +365,13 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::activateSelectedItem()
 	if (m_selectedItem == MenuSelection::Controls)
 	{
 		m_controlsPopupOpen = true;
+		ArcadeUISounds::playUIClick();
 		return GAME1_BombermanMenuAction::None;
 	}
 
 	const Button* selectedButton = getButtonForSelection(m_selectedItem);
+	if (selectedButton != nullptr)
+		ArcadeUISounds::playUIClick();
 	return selectedButton != nullptr ? selectedButton->action : GAME1_BombermanMenuAction::None;
 }
 
@@ -378,6 +382,7 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleControllerInput()
 		if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 		{
 			m_controlsPopupOpen = false;
+			ArcadeUISounds::playUIClick();
 			return GAME1_BombermanMenuAction::None;
 		}
 
@@ -415,6 +420,7 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleControllerInput()
 
 	if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 	{
+		ArcadeUISounds::playUIClick();
 		return GAME1_BombermanMenuAction::BackToHub;
 	}
 
@@ -427,6 +433,7 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePos
 	{
 		setSelectedItem(MenuSelection::Controls);
 		m_controlsPopupOpen = !m_controlsPopupOpen;
+		ArcadeUISounds::playUIClick();
 		return GAME1_BombermanMenuAction::None;
 	}
 
@@ -450,18 +457,21 @@ GAME1_BombermanMenuAction GAME1_BombermanMenu::handleClick(sf::Vector2f mousePos
 	if (containsPoint(m_playLevelsButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::PlayLevels);
+		ArcadeUISounds::playUIClick();
 		return m_playLevelsButton.action;
 	}
 
 	if (containsPoint(m_levelEditorButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::LevelEditor);
+		ArcadeUISounds::playUIClick();
 		return m_levelEditorButton.action;
 	}
 
 	if (containsPoint(m_backButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::BackToHub);
+		ArcadeUISounds::playUIClick();
 		return m_backButton.action;
 	}
 
@@ -498,6 +508,7 @@ bool GAME1_BombermanMenu::handleKeyReleased(sf::Keyboard::Key key)
 		if (key == sf::Keyboard::Key::Escape)
 		{
 			m_controlsPopupOpen = false;
+			ArcadeUISounds::playUIClick();
 			return true;
 		}
 

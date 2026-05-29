@@ -1,6 +1,7 @@
 #include "GAME1_Menu.h"
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "ArcadeUISounds.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -371,10 +372,13 @@ GAME1_MenuAction GAME1_Menu::activateSelectedItem()
 	if (m_selectedItem == MenuSelection::Controls)
 	{
 		m_controlsPopupOpen = true;
+		ArcadeUISounds::playUIClick();
 		return GAME1_MenuAction::None;
 	}
 
 	const Button* selectedButton = getButtonForSelection(m_selectedItem);
+	if (selectedButton != nullptr)
+		ArcadeUISounds::playUIClick();
 	return selectedButton != nullptr ? selectedButton->action : GAME1_MenuAction::None;
 }
 
@@ -385,6 +389,7 @@ GAME1_MenuAction GAME1_Menu::handleControllerInput()
 		if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 		{
 			m_controlsPopupOpen = false;
+			ArcadeUISounds::playUIClick();
 			return GAME1_MenuAction::None;
 		}
 
@@ -422,6 +427,7 @@ GAME1_MenuAction GAME1_Menu::handleControllerInput()
 
 	if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 	{
+		ArcadeUISounds::playUIClick();
 		return GAME1_MenuAction::Quit;
 	}
 
@@ -434,6 +440,7 @@ GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 	{
 		setSelectedItem(MenuSelection::Controls);
 		m_controlsPopupOpen = !m_controlsPopupOpen;
+		ArcadeUISounds::playUIClick();
 		return GAME1_MenuAction::None;
 	}
 
@@ -457,18 +464,21 @@ GAME1_MenuAction GAME1_Menu::handleClick(sf::Vector2f mousePosition)
 	if (containsPoint(m_playButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::Play);
+		ArcadeUISounds::playUIClick();
 		return m_playButton.action;
 	}
 
 	if (containsPoint(m_levelEditorButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::LevelEditor);
+		ArcadeUISounds::playUIClick();
 		return m_levelEditorButton.action;
 	}
 
 	if (containsPoint(m_backButton.box.getGlobalBounds(), mousePosition))
 	{
 		setSelectedItem(MenuSelection::BackToArcade);
+		ArcadeUISounds::playUIClick();
 		return m_backButton.action;
 	}
 
@@ -505,6 +515,7 @@ bool GAME1_Menu::handleKeyReleased(sf::Keyboard::Key key)
 		if (key == sf::Keyboard::Key::Escape)
 		{
 			m_controlsPopupOpen = false;
+			ArcadeUISounds::playUIClick();
 			return true;
 		}
 

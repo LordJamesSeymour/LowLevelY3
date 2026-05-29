@@ -439,6 +439,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	loadSpecialTileTextures(resourcesPath);
 	loadCheckpointTextures(resourcesPath);
 	loadWorldBackgroundTexture(resourcesPath);
+	loadParallaxBackground(resourcesPath);
 
 	for (std::size_t row = 0; row < rawRows.size(); ++row)
 	{
@@ -745,8 +746,34 @@ void GAME1_Level::loadWorldBackgroundTexture(const std::filesystem::path& resour
 		m_hasBackgroundTexture = true;
 }
 
+void GAME1_Level::loadParallaxBackground(const std::filesystem::path& resourcesDirectory)
+{
+	// Parallax assets live in a flat folder shared by every Surfers Quest
+	// level. Future work can pick a per-world set via loadSet().
+	const std::filesystem::path parallaxDirectory = resourcesDirectory / "Parallax";
+	m_parallaxBackground.loadFromDirectory(parallaxDirectory);
+}
+
+void GAME1_Level::drawBackground(sf::RenderWindow& window,
+	sf::Vector2f cameraCenter) const
+{
+	if (m_parallaxBackground.hasAnyLayer())
+	{
+		m_parallaxBackground.draw(window, cameraCenter);
+		return;
+	}
+
+	drawBackground(window);
+}
+
 void GAME1_Level::drawBackground(sf::RenderWindow& window) const
 {
+	if (m_parallaxBackground.hasAnyLayer())
+	{
+		m_parallaxBackground.draw(window, { 0.f, 0.f });
+		return;
+	}
+
 	if (!m_hasBackgroundTexture)
 		return;
 

@@ -2,6 +2,7 @@
 
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "ArcadeUISounds.h"
 
 #include <algorithm>
 #include <cmath>
@@ -83,7 +84,7 @@ void ArcadeHubOptions::layout(const sf::RenderWindow& window)
 	);
 
 	const float panelWidth = std::min(640.f, std::max(420.f, width - 120.f));
-	const float panelHeight = std::min(460.f, std::max(360.f, height - 120.f));
+	const float panelHeight = std::min(520.f, std::max(440.f, height - 120.f));
 	const float panelX = (width - panelWidth) * 0.5f;
 	const float panelY = (height - panelHeight) * 0.5f;
 
@@ -92,21 +93,26 @@ void ArcadeHubOptions::layout(const sf::RenderWindow& window)
 	const float contentLeft = panelX + 40.f;
 	const float contentRight = panelX + panelWidth - 40.f;
 	const float rowHeight = 50.f;
-	const float topContent = panelY + 110.f;
-	const float rowGap = 22.f;
+	const float topContent = panelY + 90.f;
+	const float rowGap = 20.f;
 
-	m_crtToggleBounds = sf::FloatRect(
+	m_fullscreenToggleBounds = sf::FloatRect(
 		{ contentLeft, topContent },
 		{ contentRight - contentLeft, rowHeight }
 	);
 
-	m_musicSliderBounds = sf::FloatRect(
+	m_crtToggleBounds = sf::FloatRect(
 		{ contentLeft, topContent + rowHeight + rowGap },
 		{ contentRight - contentLeft, rowHeight }
 	);
 
-	m_sfxSliderBounds = sf::FloatRect(
+	m_musicSliderBounds = sf::FloatRect(
 		{ contentLeft, topContent + (rowHeight + rowGap) * 2.f },
+		{ contentRight - contentLeft, rowHeight }
+	);
+
+	m_sfxSliderBounds = sf::FloatRect(
+		{ contentLeft, topContent + (rowHeight + rowGap) * 3.f },
 		{ contentRight - contentLeft, rowHeight }
 	);
 
@@ -160,7 +166,7 @@ bool ArcadeHubOptions::isOpen() const
 void ArcadeHubOptions::open()
 {
 	m_isOpen = true;
-	m_selectedRow = Row::CrtShader;
+	m_selectedRow = Row::Fullscreen;
 	m_draggingMusic = false;
 	m_draggingSfx = false;
 	ArcadeInput::consumePressedState();
@@ -227,16 +233,26 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 	{
 		if (m_gearVisible && containsPoint(m_gearBounds, mousePosition))
 		{
+			ArcadeUISounds::playUIClick();
 			open();
 			return true;
 		}
 		return false;
 	}
 
+	if (containsPoint(m_fullscreenToggleBounds, mousePosition))
+	{
+		m_selectedRow = Row::Fullscreen;
+		ArcadeSettings::setFullscreenEnabled(!ArcadeSettings::isFullscreenEnabled());
+		ArcadeUISounds::playUIClick();
+		return true;
+	}
+
 	if (containsPoint(m_crtToggleBounds, mousePosition))
 	{
 		m_selectedRow = Row::CrtShader;
 		ArcadeSettings::setCrtEnabled(!ArcadeSettings::isCrtEnabled());
+		ArcadeUISounds::playUIClick();
 		return true;
 	}
 
@@ -245,6 +261,7 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 	{
 		m_selectedRow = Row::Music;
 		ArcadeSettings::setMusicMuted(!ArcadeSettings::isMusicMuted());
+		ArcadeUISounds::playUIClick();
 		return true;
 	}
 
@@ -252,6 +269,7 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 	{
 		m_selectedRow = Row::Sfx;
 		ArcadeSettings::setSfxMuted(!ArcadeSettings::isSfxMuted());
+		ArcadeUISounds::playUIClick();
 		return true;
 	}
 
@@ -261,6 +279,7 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 		m_draggingMusic = true;
 		const float t = sliderFractionFromX(m_musicSliderBounds, mousePosition.x);
 		ArcadeSettings::setMusicVolume(t * ArcadeSettings::kMaxVolume);
+		ArcadeUISounds::playUIClick();
 		return true;
 	}
 
@@ -270,11 +289,13 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 		m_draggingSfx = true;
 		const float t = sliderFractionFromX(m_sfxSliderBounds, mousePosition.x);
 		ArcadeSettings::setSfxVolume(t * ArcadeSettings::kMaxVolume);
+		ArcadeUISounds::playUIClick();
 		return true;
 	}
 
 	if (containsPoint(m_closeButtonBounds, mousePosition))
 	{
+		ArcadeUISounds::playUIClick();
 		close();
 		return true;
 	}
@@ -282,6 +303,7 @@ bool ArcadeHubOptions::handleMousePressed(sf::Vector2f mousePosition)
 	if (containsPoint(m_panelBounds, mousePosition))
 		return true;
 
+	ArcadeUISounds::playUIClick();
 	close();
 	return true;
 }
@@ -318,6 +340,7 @@ bool ArcadeHubOptions::handleKeyReleased(sf::Keyboard::Key key)
 
 	if (key == sf::Keyboard::Key::Escape)
 	{
+		ArcadeUISounds::playUIClick();
 		close();
 		return true;
 	}
@@ -420,8 +443,14 @@ void ArcadeHubOptions::adjustSelected(int direction)
 {
 	switch (m_selectedRow)
 	{
+	case Row::Fullscreen:
+		ArcadeSettings::setFullscreenEnabled(!ArcadeSettings::isFullscreenEnabled());
+		ArcadeUISounds::playUIClick();
+		break;
+
 	case Row::CrtShader:
 		ArcadeSettings::setCrtEnabled(!ArcadeSettings::isCrtEnabled());
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Music:
@@ -429,6 +458,7 @@ void ArcadeHubOptions::adjustSelected(int direction)
 			ArcadeSettings::getMusicVolume() +
 			static_cast<float>(direction) * ArcadeSettings::kVolumeStep
 		);
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Sfx:
@@ -436,6 +466,7 @@ void ArcadeHubOptions::adjustSelected(int direction)
 			ArcadeSettings::getSfxVolume() +
 			static_cast<float>(direction) * ArcadeSettings::kVolumeStep
 		);
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Close:
@@ -449,19 +480,28 @@ void ArcadeHubOptions::activateSelected()
 {
 	switch (m_selectedRow)
 	{
+	case Row::Fullscreen:
+		ArcadeSettings::setFullscreenEnabled(!ArcadeSettings::isFullscreenEnabled());
+		ArcadeUISounds::playUIClick();
+		break;
+
 	case Row::CrtShader:
 		ArcadeSettings::setCrtEnabled(!ArcadeSettings::isCrtEnabled());
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Music:
 		ArcadeSettings::setMusicMuted(!ArcadeSettings::isMusicMuted());
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Sfx:
 		ArcadeSettings::setSfxMuted(!ArcadeSettings::isSfxMuted());
+		ArcadeUISounds::playUIClick();
 		break;
 
 	case Row::Close:
+		ArcadeUISounds::playUIClick();
 		close();
 		break;
 
@@ -734,6 +774,38 @@ void ArcadeHubOptions::draw(sf::RenderTarget& target) const
 			m_panelBounds.position.y + 30.f - bounds.position.y
 			});
 		target.draw(title);
+	}
+
+	drawRowHighlight(target, m_fullscreenToggleBounds, m_selectedRow == Row::Fullscreen);
+
+	{
+		sf::Text label(m_font);
+		label.setString("Fullscreen:");
+		label.setCharacterSize(26);
+		label.setFillColor(sf::Color::White);
+		label.setOutlineColor(sf::Color::Black);
+		label.setOutlineThickness(1.5f);
+		const sf::FloatRect labelBounds = label.getLocalBounds();
+		label.setPosition({
+			m_fullscreenToggleBounds.position.x,
+			m_fullscreenToggleBounds.position.y + (m_fullscreenToggleBounds.size.y - labelBounds.size.y) * 0.5f - labelBounds.position.y
+			});
+		target.draw(label);
+
+		const bool fullscreenOn = ArcadeSettings::isFullscreenEnabled();
+
+		sf::Text stateText(m_font);
+		stateText.setString(fullscreenOn ? "ON" : "OFF");
+		stateText.setCharacterSize(30);
+		stateText.setFillColor(fullscreenOn ? sf::Color(60, 220, 80) : sf::Color(235, 70, 70));
+		stateText.setOutlineColor(sf::Color::Black);
+		stateText.setOutlineThickness(2.f);
+		const sf::FloatRect stateBounds = stateText.getLocalBounds();
+		stateText.setPosition({
+			m_fullscreenToggleBounds.position.x + m_fullscreenToggleBounds.size.x - stateBounds.size.x - 4.f - stateBounds.position.x,
+			m_fullscreenToggleBounds.position.y + (m_fullscreenToggleBounds.size.y - stateBounds.size.y) * 0.5f - stateBounds.position.y
+			});
+		target.draw(stateText);
 	}
 
 	drawRowHighlight(target, m_crtToggleBounds, m_selectedRow == Row::CrtShader);

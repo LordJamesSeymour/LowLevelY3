@@ -20,6 +20,7 @@
 #include "ArcadeHubOptions.h"
 #include "ArcadeInput.h"
 #include "ArcadeSettings.h"
+#include "ArcadeUISounds.h"
 #include "GamePauseMenu.h"
 #include "BombermanAudio.h"
 
@@ -144,6 +145,30 @@ namespace
 		);
 
 		window.setView(sf::View(visibleArea));
+	}
+
+	// Windowed fallback resolution. Matches the Raspberry Pi / Elecrow panel
+	// (1024x600) and is a safe size on desktop too.
+	const sf::Vector2u kWindowedResolution(1024u, 600u);
+
+	// Creates (or recreates) the main window in the mode currently stored in
+	// ArcadeSettings, then reapplies the framerate limit, 1:1 view and cursor
+	// visibility. Used both at startup and whenever the fullscreen setting is
+	// toggled at runtime.
+	void ApplyWindowMode(sf::RenderWindow& window)
+	{
+		if (ArcadeSettings::isFullscreenEnabled())
+		{
+			window.create(sf::VideoMode::getDesktopMode(), "Arcade Collection", sf::State::Fullscreen);
+		}
+		else
+		{
+			window.create(sf::VideoMode(kWindowedResolution), "Arcade Collection", sf::State::Windowed);
+		}
+
+		window.setFramerateLimit(60);
+		ApplyWindowView(window);
+		window.setMouseCursorVisible(!ArcadeSettings::isFullscreenEnabled());
 	}
 
 	bool ResizeTexture(sf::Texture& texture, sf::Vector2u newSize)
@@ -324,12 +349,10 @@ namespace
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode::getDesktopMode(), "Arcade Collection", sf::State::Fullscreen);
-	window.setFramerateLimit(60);
-
-	ApplyWindowView(window);
-
 	ArcadeSettings::initialize();
+
+	sf::RenderWindow window;
+	ApplyWindowMode(window);
 
 	sf::Texture crtFrameTexture;
 	if (!crtFrameTexture.resize(window.getSize()))
@@ -590,6 +613,7 @@ int main()
 
 	BombermanAudio::initialise(kBombermanRootDirectory.string());
 	GAME1_SurfersQuestAudio::initialise(kGame1ResourcesDirectory.string());
+	ArcadeUISounds::loadUIClick();
 
 	ArcadeSettings::registerAudioRefreshCallback(
 		[&bombermanMenu, &game1Menu, &bombermanWindow]()
@@ -599,6 +623,23 @@ int main()
 			bombermanWindow.refreshAudioVolumes();
 			GAME1_SurfersQuestAudio::refreshVolumes();
 			BombermanAudio::refreshVolumes();
+		});
+
+	// Recreate the window immediately when the fullscreen setting is toggled,
+	// then resize the CRT frame texture to match the new framebuffer.
+	ArcadeSettings::registerWindowApplyCallback(
+		[&window, &crtFrameTexture, &crtShaderLoaded]()
+		{
+			ApplyWindowMode(window);
+
+			if (!ResizeTexture(crtFrameTexture, window.getSize()))
+			{
+				crtShaderLoaded = false;
+			}
+			else
+			{
+				crtFrameTexture.setSmooth(false);
+			}
 		});
 
 	AppState appState = AppState::Hub;
@@ -768,6 +809,8 @@ int main()
 			if (hub.isSelectedGameLocked())
 				return;
 
+			ArcadeUISounds::playUIClick();
+
 			if (hub.getSelectedIndex() == 0)
 			{
 				SetAppState(AppState::GAME1_BombermanMenu);
@@ -861,6 +904,7 @@ int main()
 			if (pauseMenu.isOpen() || hubOptions.isOpen())
 				return;
 
+			ArcadeUISounds::playUIClick();
 			hubOptions.setGearVisible(false);
 			pauseMenu.layout(window);
 			pauseMenu.open();
@@ -1162,6 +1206,7 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
+							ArcadeUISounds::playUIClick();
 							hubOptions.open();
 						}
 						else if (keyReleased->code == sf::Keyboard::Key::Left)
@@ -1229,6 +1274,7 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
+							ArcadeUISounds::playUIClick();
 							SetAppState(AppState::Hub);
 						}
 						else if (keyReleased->code == sf::Keyboard::Key::Enter ||
@@ -1268,6 +1314,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
+						ArcadeUISounds::playUIClick();
 						SetAppState(AppState::GAME1_BombermanMenu);
 					}
 					else if (keyReleased->code == sf::Keyboard::Key::Up ||
@@ -1298,6 +1345,7 @@ int main()
 
 						if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
 						{
+							ArcadeUISounds::playUIClick();
 							if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
 								return -1;
 						}
@@ -1319,10 +1367,12 @@ int main()
 						switch (action)
 						{
 						case GAME1_BombermanLevelSelectAction::Back:
+							ArcadeUISounds::playUIClick();
 							SetAppState(AppState::GAME1_BombermanMenu);
 							break;
 
 						case GAME1_BombermanLevelSelectAction::SelectedLevel:
+							ArcadeUISounds::playUIClick();
 							if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
 								return -1;
 
@@ -1429,6 +1479,7 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
+							ArcadeUISounds::playUIClick();
 							HandlePauseAction(GamePauseMenu::Action::Resume);
 						}
 						else
@@ -1475,6 +1526,7 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
+							ArcadeUISounds::playUIClick();
 							SetAppState(AppState::Hub);
 						}
 						else if (keyReleased->code == sf::Keyboard::Key::Enter ||
@@ -1514,6 +1566,7 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
+						ArcadeUISounds::playUIClick();
 						SetAppState(AppState::GAME1_Menu);
 					}
 					else if (keyReleased->code == sf::Keyboard::Key::Up ||
@@ -1543,6 +1596,7 @@ int main()
 
 						if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 						{
+							ArcadeUISounds::playUIClick();
 							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
 								return -1;
 
@@ -1565,10 +1619,12 @@ int main()
 
 						if (slotIndex == GAME1_LevelSelect::BackClickedSentinel)
 						{
+							ArcadeUISounds::playUIClick();
 							SetAppState(AppState::GAME1_Menu);
 						}
 						else if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
 						{
+							ArcadeUISounds::playUIClick();
 							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
 
@@ -1630,6 +1686,7 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
+							ArcadeUISounds::playUIClick();
 							HandlePauseAction(GamePauseMenu::Action::Resume);
 						}
 						else
@@ -1801,6 +1858,7 @@ int main()
 
 				if (ArcadeInput::isControllerBackPressed())
 				{
+					ArcadeUISounds::playUIClick();
 					hubOptions.open();
 					ArcadeInput::consumePressedState();
 				}
@@ -1836,6 +1894,7 @@ int main()
 		{
 			if (ArcadeInput::isControllerCancelPressed() || ArcadeInput::isControllerBackPressed())
 			{
+				ArcadeUISounds::playUIClick();
 				SetAppState(AppState::GAME1_BombermanMenu);
 				ArcadeInput::consumePressedState();
 			}
@@ -1861,6 +1920,7 @@ int main()
 
 				if (action == GAME1_BombermanLevelSelectAction::SelectedLevel)
 				{
+					ArcadeUISounds::playUIClick();
 					if (!TryStartBombermanLevel(bombermanLevelSelect.getSelectedLevelPath()))
 						return -1;
 				}
@@ -1905,6 +1965,7 @@ int main()
 		{
 			if (ArcadeInput::isControllerBackPressed())
 			{
+				ArcadeUISounds::playUIClick();
 				SetAppState(AppState::GAME1_Menu);
 				ArcadeInput::consumePressedState();
 			}
@@ -1930,6 +1991,7 @@ int main()
 
 				if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 				{
+					ArcadeUISounds::playUIClick();
 					if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
 						return -1;
 
@@ -2172,6 +2234,8 @@ int main()
 					{
 						if (!pickup.tryCollect(playerBounds))
 							continue;
+
+						GAME1_SurfersQuestAudio::playPickupSound();
 
 						const sf::Vector2f pickupPosition = pickup.getPosition();
 						const sf::Vector2f popupPosition(
@@ -2488,7 +2552,7 @@ int main()
 			});
 
 			window.clear(sf::Color::Black);
-			game1Level.drawBackground(window);
+			game1Level.drawBackground(window, worldView.getCenter());
 
 			window.setView(worldView);
 			game1Level.draw(window);

@@ -1,6 +1,7 @@
 #include "GamePauseMenu.h"
 
 #include "ArcadeInput.h"
+#include "ArcadeUISounds.h"
 
 #include <algorithm>
 
@@ -147,7 +148,10 @@ GamePauseMenu::Action GamePauseMenu::handleKeyReleased(sf::Keyboard::Key key)
 	if (key == sf::Keyboard::Key::Enter ||
 		key == sf::Keyboard::Key::Space)
 	{
-		return activate(m_selectedItem);
+		const Action action = activate(m_selectedItem);
+		if (action != Action::None)
+			ArcadeUISounds::playUIClick();
+		return action;
 	}
 
 	return Action::None;
@@ -161,18 +165,21 @@ GamePauseMenu::Action GamePauseMenu::handleMousePressed(sf::Vector2f mousePositi
 	if (containsPoint(m_settingsBounds, mousePosition))
 	{
 		m_selectedItem = Item::Settings;
+		ArcadeUISounds::playUIClick();
 		return Action::OpenSettings;
 	}
 
 	if (containsPoint(m_resumeBounds, mousePosition))
 	{
 		m_selectedItem = Item::Resume;
+		ArcadeUISounds::playUIClick();
 		return Action::Resume;
 	}
 
 	if (containsPoint(m_quitBounds, mousePosition))
 	{
 		m_selectedItem = Item::Quit;
+		ArcadeUISounds::playUIClick();
 		return Action::Quit;
 	}
 
@@ -223,6 +230,8 @@ GamePauseMenu::Action GamePauseMenu::handleControllerInput()
 		ArcadeInput::isControllerPrimaryPressed())
 	{
 		const Action action = activate(m_selectedItem);
+		if (action != Action::None)
+			ArcadeUISounds::playUIClick();
 		ArcadeInput::consumePressedState();
 		return action;
 	}
