@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 enum class GAME1_LevelEnemyType
@@ -140,6 +141,9 @@ private:
 	std::vector<GAME1_PickupSpawn> m_pickupSpawns;
 	std::vector<GAME1_TrapSpawn> m_trapSpawns;
 	std::vector<GAME1_Trap> m_traps;
+	// Grid cells occupied by the solid base block of a Fire trap.  Packed
+	// as (col * 65536 + row) for O(1) lookup from isSolidTile().
+	std::unordered_set<long long> m_fireBaseTileCells;
 	GAME1_TrapAssets m_trapAssets;
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;

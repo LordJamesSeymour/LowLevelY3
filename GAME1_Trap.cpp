@@ -118,31 +118,6 @@ namespace
 		return true;
 	}
 
-	sf::FloatRect ApplyRotationToNormalizedRect(const sf::FloatRect& normalized,
-		GAME1_TrapOrientation orientation)
-	{
-		const float x = normalized.position.x;
-		const float y = normalized.position.y;
-		const float w = normalized.size.x;
-		const float h = normalized.size.y;
-
-		switch (orientation)
-		{
-		case GAME1_TrapOrientation::Right:
-			// Rotate 90 CW: (x,y,w,h) -> (1 - y - h, x, h, w)
-			return sf::FloatRect({ 1.f - y - h, x }, { h, w });
-
-		case GAME1_TrapOrientation::Down:
-			return sf::FloatRect({ 1.f - x - w, 1.f - y - h }, { w, h });
-
-		case GAME1_TrapOrientation::Left:
-			return sf::FloatRect({ y, 1.f - x - w }, { h, w });
-
-		case GAME1_TrapOrientation::Up:
-		default:
-			return normalized;
-		}
-	}
 }
 
 const std::vector<GAME1_TrapType>& GAME1_GetAllTrapTypes()
@@ -293,7 +268,7 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 	m_fireOnFrames.clear();
 	m_brownPlatformFrames.clear();
 	m_greyPlatformFrames.clear();
-	m_trimmedNormalizedBounds.clear();
+	m_trimmedBounds.clear();
 	m_hasChainTexture = false;
 
 	const fs::path trapsDirectory = fs::path(resourcesDirectory) / "Tiles" / "Traps";
@@ -345,24 +320,25 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 		m_chainTexture,
 		m_hasChainTexture);
 
-	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::FallingPlatform, m_fallingPlatformFrames);
-	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::Fan, m_fanFrames);
-	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::BrownMovingPlatform, m_brownPlatformFrames);
-	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::GreyMovingPlatform, m_greyPlatformFrames);
+	buildTrimmedPixelBoundsForType(GAME1_TrapType::FallingPlatform, m_fallingPlatformFrames);
+	buildTrimmedPixelBoundsForType(GAME1_TrapType::Fan, m_fanFrames);
+	buildTrimmedPixelBoundsForType(GAME1_TrapType::BrownMovingPlatform, m_brownPlatformFrames);
+	buildTrimmedPixelBoundsForType(GAME1_TrapType::GreyMovingPlatform, m_greyPlatformFrames);
 
 	return true;
 }
 
-void GAME1_TrapAssets::buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
+void GAME1_TrapAssets::buildTrimmedPixelBoundsForType(GAME1_TrapType type,
 	const std::vector<sf::Texture>& frames)
 {
 	if (frames.empty())
 		return;
 
-	float minX = 1.f;
-	float minY = 1.f;
+	float minX = 0.f;
+	float minY = 0.f;
 	float maxX = 0.f;
 	float maxY = 0.f;
+	sf::Vector2u representativeSize{ 0u, 0u };
 	bool any = false;
 
 	for (const sf::Texture& frame : frames)
@@ -377,13 +353,10 @@ void GAME1_TrapAssets::buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
 		if (!ComputeTrimmedPixelBounds(frame, 8u, pixelMin, pixelMaxInclusive))
 			continue;
 
-		const float sx = static_cast<float>(size.x);
-		const float sy = static_cast<float>(size.y);
-
-		const float fx = static_cast<float>(pixelMin.x) / sx;
-		const float fy = static_cast<float>(pixelMin.y) / sy;
-		const float fxMax = static_cast<float>(pixelMaxInclusive.x + 1u) / sx;
-		const float fyMax = static_cast<float>(pixelMaxInclusive.y + 1u) / sy;
+		const float fx = static_cast<float>(pixelMin.x);
+		const float fy = static_cast<float>(pixelMin.y);
+		const float fxMax = static_cast<float>(pixelMaxInclusive.x + 1u);
+		const float fyMax = static_cast<float>(pixelMaxInclusive.y + 1u);
 
 		if (!any)
 		{
@@ -391,6 +364,7 @@ void GAME1_TrapAssets::buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
 			minY = fy;
 			maxX = fxMax;
 			maxY = fyMax;
+			representativeSize = size;
 			any = true;
 		}
 		else
@@ -405,26 +379,37 @@ void GAME1_TrapAssets::buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
 	if (!any)
 		return;
 
-	const sf::FloatRect normalized(
+	TrimmedBoundsEntry entry;
+	entry.pixelBounds = sf::FloatRect(
 		{ minX, minY },
 		{ std::max(0.001f, maxX - minX), std::max(0.001f, maxY - minY) });
+	entry.representativeSize = representativeSize;
 
-	m_trimmedNormalizedBounds[static_cast<int>(type)] = normalized;
+	m_trimmedBounds[static_cast<int>(type)] = entry;
 }
 
-sf::FloatRect GAME1_TrapAssets::getTrimmedNormalizedBounds(GAME1_TrapType type) const
+sf::FloatRect GAME1_TrapAssets::getTrimmedPixelBounds(GAME1_TrapType type) const
 {
-	const auto found = m_trimmedNormalizedBounds.find(static_cast<int>(type));
-	if (found == m_trimmedNormalizedBounds.end())
-		return sf::FloatRect({ 0.f, 0.f }, { 1.f, 1.f });
+	const auto found = m_trimmedBounds.find(static_cast<int>(type));
+	if (found == m_trimmedBounds.end())
+		return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
 
-	return found->second;
+	return found->second.pixelBounds;
+}
+
+sf::Vector2u GAME1_TrapAssets::getRepresentativeTextureSize(GAME1_TrapType type) const
+{
+	const auto found = m_trimmedBounds.find(static_cast<int>(type));
+	if (found == m_trimmedBounds.end())
+		return sf::Vector2u{ 0u, 0u };
+
+	return found->second.representativeSize;
 }
 
 bool GAME1_TrapAssets::hasTrimmedBounds(GAME1_TrapType type) const
 {
-	return m_trimmedNormalizedBounds.find(static_cast<int>(type)) !=
-		m_trimmedNormalizedBounds.end();
+	return m_trimmedBounds.find(static_cast<int>(type)) !=
+		m_trimmedBounds.end();
 }
 
 void GAME1_TrapAssets::loadFrames(const std::filesystem::path& directory,
@@ -840,25 +825,36 @@ sf::FloatRect GAME1_Trap::getCollisionBounds() const
 	if (m_assets == nullptr || !m_assets->hasTrimmedBounds(m_type))
 		return tileRect;
 
-	const sf::FloatRect normalizedSource =
-		m_assets->getTrimmedNormalizedBounds(m_type);
+	const sf::Vector2u repSize = m_assets->getRepresentativeTextureSize(m_type);
+	if (repSize.x == 0 || repSize.y == 0)
+		return tileRect;
 
-	// Moving platforms and falling platforms are drawn unrotated, so no
-	// rotation transform is required on the trimmed rect.  Fan would be
-	// affected here, but collision is not consulted for fan force volumes.
-	const sf::FloatRect normalized =
-		(m_type == GAME1_TrapType::Fan)
-			? ApplyRotationToNormalizedRect(normalizedSource, m_orientation)
-			: normalizedSource;
+	const sf::FloatRect pixelBounds = m_assets->getTrimmedPixelBounds(m_type);
+
+	const float texW = static_cast<float>(repSize.x);
+	const float texH = static_cast<float>(repSize.y);
+
+	// Reproduce the same uniform fit-scale used at draw time so the
+	// collision rectangle matches the band the sprite actually occupies
+	// inside the tile cell (rather than the full tile).
+	const float fitScale = std::min(tileRect.size.x / texW, tileRect.size.y / texH);
+	const float fittedWidth = texW * fitScale;
+	const float fittedHeight = texH * fitScale;
+
+	// Centred fit for Falling / Brown / Grey platforms.  Fan is drawn
+	// bottom-anchored, but its collision rect is unused (Fan only emits a
+	// gameplay force volume), so we don't bother shifting it here.
+	const float offsetX = (tileRect.size.x - fittedWidth) * 0.5f;
+	const float offsetY = (tileRect.size.y - fittedHeight) * 0.5f;
 
 	return sf::FloatRect(
 		{
-			tileRect.position.x + normalized.position.x * tileRect.size.x,
-			tileRect.position.y + normalized.position.y * tileRect.size.y
+			tileRect.position.x + offsetX + pixelBounds.position.x * fitScale,
+			tileRect.position.y + offsetY + pixelBounds.position.y * fitScale
 		},
 		{
-			normalized.size.x * tileRect.size.x,
-			normalized.size.y * tileRect.size.y
+			pixelBounds.size.x * fitScale,
+			pixelBounds.size.y * fitScale
 		});
 }
 

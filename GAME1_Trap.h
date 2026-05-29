@@ -16,8 +16,9 @@ namespace GAME1_TrapTuning
 	constexpr float PlayerJumpForce = 650.f;
 	constexpr float PlayerGravity = 1500.f;
 	// Falling platform descent speed - halved (50% slower than the
-	// previous implementation which was PlayerGravity * 0.5f).
-	constexpr float FallingPlatformSpeed = PlayerGravity * 0.25f;
+	// previous implementation which was PlayerGravity * 0.5f), then
+	// reduced by a further 10% per gameplay tuning.
+	constexpr float FallingPlatformSpeed = PlayerGravity * 0.225f;
 	constexpr float FallingPlatformReturnSpeed = PlayerGravity * 0.35f;
 	constexpr float FallingPlatformMaxDrop = TileSize * 6.f;
 	constexpr float BrownPlatformSpeed = PlayerMoveSpeed * 0.5f;
@@ -92,11 +93,14 @@ public:
 	const sf::Texture* getEditorIconTexture(GAME1_TrapType type) const;
 	const std::string& getLastWarning() const;
 
-	// Normalized [0..1] alpha-trimmed bounds for the visible pixels of the
-	// representative frames of a given trap type.  Used to build collision
-	// rectangles that match the sprite art rather than the whole tile cell.
-	// Returns { {0,0}, {1,1} } when no trim data is available.
-	sf::FloatRect getTrimmedNormalizedBounds(GAME1_TrapType type) const;
+	// Alpha-trimmed pixel-space bounds for the visible pixels of the
+	// representative frames of a given trap type, together with the
+	// representative source-texture size.  The two together let the trap
+	// project the trimmed sprite area into world space taking into account
+	// the same fit-scale used at draw time, so collision matches the band
+	// the sprite actually occupies inside the tile (not the whole tile).
+	sf::FloatRect getTrimmedPixelBounds(GAME1_TrapType type) const;
+	sf::Vector2u getRepresentativeTextureSize(GAME1_TrapType type) const;
 	bool hasTrimmedBounds(GAME1_TrapType type) const;
 
 private:
@@ -110,7 +114,7 @@ private:
 		bool& outLoaded);
 	void warn(const std::string& message);
 
-	void buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
+	void buildTrimmedPixelBoundsForType(GAME1_TrapType type,
 		const std::vector<sf::Texture>& frames);
 
 private:
@@ -125,7 +129,13 @@ private:
 	sf::Texture m_chainTexture;
 	bool m_hasChainTexture = false;
 
-	std::unordered_map<int, sf::FloatRect> m_trimmedNormalizedBounds;
+	struct TrimmedBoundsEntry
+	{
+		sf::FloatRect pixelBounds{ { 0.f, 0.f }, { 0.f, 0.f } };
+		sf::Vector2u representativeSize{ 0u, 0u };
+	};
+
+	std::unordered_map<int, TrimmedBoundsEntry> m_trimmedBounds;
 
 	std::string m_lastWarning;
 };

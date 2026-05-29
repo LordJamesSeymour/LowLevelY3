@@ -1669,8 +1669,17 @@ int main()
 							{
 								RestartGame1Team();
 							}
-							else if (!game1Player2Joined)
+							else if (!game1Player2Joined &&
+								!game1Player1DetectedSource.singlePlayer &&
+								game1Player1DetectedSource.source == GAME1_InputSource::Joystick)
 							{
+								// One player per input: only allow Enter to spawn a
+								// keyboard P2 once P1 has explicitly claimed a
+								// joystick.  Otherwise P1 is still on (or could
+								// still claim) the keyboard, so Enter must not
+								// also fire a P2 join (e.g. the Enter that
+								// restarts a single-player run would otherwise
+								// immediately join P2 as keyboard).
 								GAME1_PlayerBinding kb{false, GAME1_InputSource::Keyboard, 0};
 								TryJoinGame1Player2(kb);
 							}

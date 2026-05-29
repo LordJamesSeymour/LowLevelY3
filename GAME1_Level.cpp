@@ -974,6 +974,14 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 
 bool GAME1_Level::isSolidTile(int col, int row) const
 {
+	// Fire base tiles are treated as solid floor cells so the player (and
+	// enemies) can stand on / collide with the block.  The flame in the
+	// forward tile remains a damage-only trigger and is NOT solid.
+	const long long key =
+		static_cast<long long>(col) * 65536LL + static_cast<long long>(row);
+	if (m_fireBaseTileCells.find(key) != m_fireBaseTileCells.end())
+		return true;
+
 	if (!isInside(col, row))
 		return false;
 
@@ -1108,7 +1116,18 @@ std::optional<GAME1_TrapPlatformContact> GAME1_Level::findPlatformContact(
 	const sf::FloatRect& playerBounds,
 	float previousPlayerBottom) const
 {
+	// Pick whichever candidate platform has the largest horizontal overlap
+	// with the player.  When two falling platforms sit side-by-side and the
+	// player straddles them, the platform under the larger share of the
+	// player wins — the player can only stand on one platform at a time,
+	// so the other one is not marked as occupied and will not start to
+	// fall, preventing the jitter that arose when each platform fell at a
+	// slightly different cadence.
 	std::optional<GAME1_TrapPlatformContact> bestContact;
+	float bestOverlap = 0.f;
+
+	const float playerLeft = playerBounds.position.x;
+	const float playerRight = playerBounds.position.x + playerBounds.size.x;
 
 	for (std::size_t i = 0; i < m_traps.size(); ++i)
 	{
@@ -1118,10 +1137,18 @@ std::optional<GAME1_TrapPlatformContact> GAME1_Level::findPlatformContact(
 		if (!contact.has_value())
 			continue;
 
-		if (!bestContact.has_value() ||
-			contact->bounds.position.y < bestContact->bounds.position.y)
+		const float platLeft = contact->bounds.position.x;
+		const float platRight = contact->bounds.position.x + contact->bounds.size.x;
+		const float overlap =
+			std::max(0.f, std::min(playerRight, platRight) - std::max(playerLeft, platLeft));
+
+		if (overlap <= 0.f)
+			continue;
+
+		if (!bestContact.has_value() || overlap > bestOverlap)
 		{
 			bestContact = contact;
+			bestOverlap = overlap;
 		}
 	}
 
@@ -1252,6 +1279,19 @@ void GAME1_Level::rebuildTrapRuntime()
 
 	for (GAME1_Trap& trap : m_traps)
 		trap.setAssets(&m_trapAssets);
+
+	m_fireBaseTileCells.clear();
+	for (const GAME1_Trap& trap : m_traps)
+	{
+		if (trap.getType() != GAME1_TrapType::Fire)
+			continue;
+
+		const sf::Vector2i grid = trap.getGridPosition();
+		const long long key =
+			static_cast<long long>(grid.x) * 65536LL +
+			static_cast<long long>(grid.y);
+		m_fireBaseTileCells.insert(key);
+	}
 
 	configureMovingPlatformPaths();
 }
