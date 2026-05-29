@@ -1060,7 +1060,48 @@ const std::vector<GAME1_TrapSpawn>& GAME1_Level::getTrapSpawns() const
 void GAME1_Level::updateTraps(float deltaTime)
 {
 	for (GAME1_Trap& trap : m_traps)
+	{
 		trap.update(deltaTime);
+
+		if (trap.getType() != GAME1_TrapType::FallingPlatform)
+			continue;
+
+		// Clamp falling platforms so they cannot pass through solid floor
+		// tiles below them.  Without this, a platform falls indefinitely
+		// down through the level geometry.
+		if (trap.getDelta().y <= 0.f)
+			continue;
+
+		const sf::FloatRect bounds = trap.getCollisionBounds();
+		if (bounds.size.x <= 0.f || bounds.size.y <= 0.f)
+			continue;
+
+		const int leftTile = static_cast<int>(
+			std::floor(bounds.position.x / static_cast<float>(TileSize)));
+		const int rightTile = static_cast<int>(std::floor(
+			(bounds.position.x + bounds.size.x - 0.1f) /
+			static_cast<float>(TileSize)));
+		const int bottomTile = static_cast<int>(std::floor(
+			(bounds.position.y + bounds.size.y - 0.1f) /
+			static_cast<float>(TileSize)));
+
+		for (int col = leftTile; col <= rightTile; ++col)
+		{
+			if (!isSolidTile(col, bottomTile + 1))
+				continue;
+
+			const float floorTopY =
+				static_cast<float>((bottomTile + 1) * TileSize);
+			const float boundsBottomY = bounds.position.y + bounds.size.y;
+
+			if (boundsBottomY <= floorTopY)
+				continue;
+
+			const float overshoot = boundsBottomY - floorTopY;
+			trap.setPositionY(trap.getPosition().y - overshoot);
+			break;
+		}
+	}
 }
 
 std::optional<GAME1_TrapPlatformContact> GAME1_Level::findPlatformContact(
@@ -1208,6 +1249,9 @@ void GAME1_Level::rebuildTrapRuntime()
 
 	for (const GAME1_TrapSpawn& spawn : m_trapSpawns)
 		m_traps.emplace_back(spawn);
+
+	for (GAME1_Trap& trap : m_traps)
+		trap.setAssets(&m_trapAssets);
 
 	configureMovingPlatformPaths();
 }

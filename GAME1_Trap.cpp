@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -65,6 +66,82 @@ namespace
 	{
 		const sf::Vector2u size = texture.getSize();
 		return size.x > 0 && size.y > 0;
+	}
+
+	bool ComputeTrimmedPixelBounds(const sf::Texture& texture,
+		std::uint8_t alphaThreshold,
+		sf::Vector2u& outMin,
+		sf::Vector2u& outMaxInclusive)
+	{
+		const sf::Image image = texture.copyToImage();
+		const sf::Vector2u size = image.getSize();
+
+		if (size.x == 0 || size.y == 0)
+			return false;
+
+		unsigned int minX = size.x;
+		unsigned int minY = size.y;
+		unsigned int maxX = 0;
+		unsigned int maxY = 0;
+		bool any = false;
+
+		for (unsigned int y = 0; y < size.y; ++y)
+		{
+			for (unsigned int x = 0; x < size.x; ++x)
+			{
+				const sf::Color pixel = image.getPixel({ x, y });
+
+				if (pixel.a <= alphaThreshold)
+					continue;
+
+				if (!any)
+				{
+					minX = maxX = x;
+					minY = maxY = y;
+					any = true;
+				}
+				else
+				{
+					if (x < minX) minX = x;
+					if (y < minY) minY = y;
+					if (x > maxX) maxX = x;
+					if (y > maxY) maxY = y;
+				}
+			}
+		}
+
+		if (!any)
+			return false;
+
+		outMin = { minX, minY };
+		outMaxInclusive = { maxX, maxY };
+		return true;
+	}
+
+	sf::FloatRect ApplyRotationToNormalizedRect(const sf::FloatRect& normalized,
+		GAME1_TrapOrientation orientation)
+	{
+		const float x = normalized.position.x;
+		const float y = normalized.position.y;
+		const float w = normalized.size.x;
+		const float h = normalized.size.y;
+
+		switch (orientation)
+		{
+		case GAME1_TrapOrientation::Right:
+			// Rotate 90 CW: (x,y,w,h) -> (1 - y - h, x, h, w)
+			return sf::FloatRect({ 1.f - y - h, x }, { h, w });
+
+		case GAME1_TrapOrientation::Down:
+			return sf::FloatRect({ 1.f - x - w, 1.f - y - h }, { w, h });
+
+		case GAME1_TrapOrientation::Left:
+			return sf::FloatRect({ y, 1.f - x - w }, { h, w });
+
+		case GAME1_TrapOrientation::Up:
+		default:
+			return normalized;
+		}
 	}
 }
 
@@ -216,6 +293,7 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 	m_fireOnFrames.clear();
 	m_brownPlatformFrames.clear();
 	m_greyPlatformFrames.clear();
+	m_trimmedNormalizedBounds.clear();
 	m_hasChainTexture = false;
 
 	const fs::path trapsDirectory = fs::path(resourcesDirectory) / "Tiles" / "Traps";
@@ -267,7 +345,86 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 		m_chainTexture,
 		m_hasChainTexture);
 
+	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::FallingPlatform, m_fallingPlatformFrames);
+	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::Fan, m_fanFrames);
+	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::BrownMovingPlatform, m_brownPlatformFrames);
+	buildTrimmedNormalizedBoundsForType(GAME1_TrapType::GreyMovingPlatform, m_greyPlatformFrames);
+
 	return true;
+}
+
+void GAME1_TrapAssets::buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
+	const std::vector<sf::Texture>& frames)
+{
+	if (frames.empty())
+		return;
+
+	float minX = 1.f;
+	float minY = 1.f;
+	float maxX = 0.f;
+	float maxY = 0.f;
+	bool any = false;
+
+	for (const sf::Texture& frame : frames)
+	{
+		const sf::Vector2u size = frame.getSize();
+		if (size.x == 0 || size.y == 0)
+			continue;
+
+		sf::Vector2u pixelMin;
+		sf::Vector2u pixelMaxInclusive;
+
+		if (!ComputeTrimmedPixelBounds(frame, 8u, pixelMin, pixelMaxInclusive))
+			continue;
+
+		const float sx = static_cast<float>(size.x);
+		const float sy = static_cast<float>(size.y);
+
+		const float fx = static_cast<float>(pixelMin.x) / sx;
+		const float fy = static_cast<float>(pixelMin.y) / sy;
+		const float fxMax = static_cast<float>(pixelMaxInclusive.x + 1u) / sx;
+		const float fyMax = static_cast<float>(pixelMaxInclusive.y + 1u) / sy;
+
+		if (!any)
+		{
+			minX = fx;
+			minY = fy;
+			maxX = fxMax;
+			maxY = fyMax;
+			any = true;
+		}
+		else
+		{
+			if (fx < minX) minX = fx;
+			if (fy < minY) minY = fy;
+			if (fxMax > maxX) maxX = fxMax;
+			if (fyMax > maxY) maxY = fyMax;
+		}
+	}
+
+	if (!any)
+		return;
+
+	const sf::FloatRect normalized(
+		{ minX, minY },
+		{ std::max(0.001f, maxX - minX), std::max(0.001f, maxY - minY) });
+
+	m_trimmedNormalizedBounds[static_cast<int>(type)] = normalized;
+}
+
+sf::FloatRect GAME1_TrapAssets::getTrimmedNormalizedBounds(GAME1_TrapType type) const
+{
+	const auto found = m_trimmedNormalizedBounds.find(static_cast<int>(type));
+	if (found == m_trimmedNormalizedBounds.end())
+		return sf::FloatRect({ 0.f, 0.f }, { 1.f, 1.f });
+
+	return found->second;
+}
+
+bool GAME1_TrapAssets::hasTrimmedBounds(GAME1_TrapType type) const
+{
+	return m_trimmedNormalizedBounds.find(static_cast<int>(type)) !=
+		m_trimmedNormalizedBounds.end();
 }
 
 void GAME1_TrapAssets::loadFrames(const std::filesystem::path& directory,
@@ -397,6 +554,7 @@ void GAME1_Trap::resetRuntime()
 	m_previousPosition = m_originalPosition;
 	m_delta = { 0.f, 0.f };
 	m_playerStandingThisFrame = false;
+	m_playerStandingLastFrame = false;
 	m_chainPathEnabled = false;
 	m_chainPathHorizontal = true;
 	m_chainPathStart = m_gridPosition;
@@ -419,8 +577,14 @@ void GAME1_Trap::configureChainPath(sf::Vector2i startGrid,
 	m_chainPathEnabled = enabled;
 }
 
+void GAME1_Trap::setAssets(const GAME1_TrapAssets* assets)
+{
+	m_assets = assets;
+}
+
 void GAME1_Trap::update(float deltaTime)
 {
+	m_playerStandingLastFrame = m_playerStandingThisFrame;
 	const bool playerWasStanding = m_playerStandingThisFrame;
 	m_playerStandingThisFrame = false;
 
@@ -432,14 +596,20 @@ void GAME1_Trap::update(float deltaTime)
 	{
 		updateLoopingAnimation(deltaTime, 4);
 
-		const float targetY = playerWasStanding
+		const bool falling = playerWasStanding;
+
+		const float targetY = falling
 			? m_originalPosition.y + GAME1_TrapTuning::FallingPlatformMaxDrop
 			: m_originalPosition.y;
+
+		const float speed = falling
+			? GAME1_TrapTuning::FallingPlatformSpeed
+			: GAME1_TrapTuning::FallingPlatformReturnSpeed;
 
 		m_position.y = moveTowards(
 			m_position.y,
 			targetY,
-			GAME1_TrapTuning::FallingPlatformSpeed * deltaTime);
+			speed * deltaTime);
 		break;
 	}
 
@@ -496,75 +666,106 @@ void GAME1_Trap::update(float deltaTime)
 
 void GAME1_Trap::draw(sf::RenderTarget& target, const GAME1_TrapAssets& assets) const
 {
-	const sf::Texture* texture = nullptr;
-	sf::FloatRect bounds = getTileBounds();
-	GAME1_TrapOrientation drawOrientation = m_orientation;
-
 	switch (m_type)
 	{
 	case GAME1_TrapType::FallingPlatform:
 	{
 		const std::vector<sf::Texture>& frames = assets.getFallingPlatformFrames();
-		texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
-		drawOrientation = GAME1_TrapOrientation::Up;
-		break;
+		const sf::Texture* texture =
+			frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+
+		if (texture != nullptr && TextureIsUsable(*texture))
+			drawTextureFitted(target, *texture, getTileBounds(), GAME1_TrapOrientation::Up);
+		else
+			drawFallback(target, getCollisionBounds(), GAME1_GetTrapFallbackColor(m_type));
+		return;
 	}
 
 	case GAME1_TrapType::Fan:
 	{
 		const std::vector<sf::Texture>& frames = assets.getFanFrames();
-		texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
-		break;
+		const sf::Texture* texture =
+			frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+
+		if (texture != nullptr && TextureIsUsable(*texture))
+		{
+			drawTextureFittedAnchored(target, *texture, getTileBounds(), m_orientation);
+		}
+		else
+		{
+			drawFallback(target, getCollisionBounds(), GAME1_GetTrapFallbackColor(m_type));
+		}
+		return;
 	}
 
 	case GAME1_TrapType::Fire:
 	{
-		if (isActiveFire())
+		// Both reload and active fire share the same 1x2 oriented draw
+		// span so they appear at a consistent visual scale; only the
+		// damage rectangle (the forward tile) is gated on the active
+		// phase.  The sprite art occupies the base tile and extends into
+		// the tile in front of it in the facing direction.
+		const std::vector<sf::Texture>& frames =
+			isActiveFire() ? assets.getFireOnFrames() : assets.getFireReloadFrames();
+
+		const sf::Texture* texture =
+			frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+
+		if (texture != nullptr && TextureIsUsable(*texture))
 		{
-			const std::vector<sf::Texture>& frames = assets.getFireOnFrames();
-			texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
-			bounds = getFireActiveBounds();
+			drawTextureFitted(target, *texture, getFireSpanBounds(), m_orientation);
 		}
 		else
 		{
-			const std::vector<sf::Texture>& frames = assets.getFireReloadFrames();
-			texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+			drawFallback(target,
+				isActiveFire() ? getFireActiveBounds() : getFireBaseBounds(),
+				GAME1_GetTrapFallbackColor(m_type));
 		}
-		break;
+		return;
 	}
 
 	case GAME1_TrapType::Chain:
-		texture = assets.getChainTexture();
-		drawOrientation = GAME1_TrapOrientation::Up;
-		break;
+	{
+		const sf::Texture* texture = assets.getChainTexture();
+
+		if (texture != nullptr && TextureIsUsable(*texture))
+			drawTextureFitted(target, *texture, getTileBounds(), GAME1_TrapOrientation::Up);
+		else
+			drawFallback(target, getTileBounds(), GAME1_GetTrapFallbackColor(m_type));
+		return;
+	}
 
 	case GAME1_TrapType::BrownMovingPlatform:
 	{
 		const std::vector<sf::Texture>& frames = assets.getBrownPlatformFrames();
-		texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
-		drawOrientation = GAME1_TrapOrientation::Up;
-		break;
+		const sf::Texture* texture =
+			frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+
+		if (texture != nullptr && TextureIsUsable(*texture))
+			drawTextureFitted(target, *texture, getTileBounds(), GAME1_TrapOrientation::Up);
+		else
+			drawFallback(target, getCollisionBounds(), GAME1_GetTrapFallbackColor(m_type));
+		return;
 	}
 
 	case GAME1_TrapType::GreyMovingPlatform:
 	{
 		const std::vector<sf::Texture>& frames = assets.getGreyPlatformFrames();
-		texture = frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
-		drawOrientation = GAME1_TrapOrientation::Up;
-		break;
+		const sf::Texture* texture =
+			frames.empty() ? nullptr : &frames[m_frameIndex % frames.size()];
+
+		if (texture != nullptr && TextureIsUsable(*texture))
+			drawTextureFitted(target, *texture, getTileBounds(), GAME1_TrapOrientation::Up);
+		else
+			drawFallback(target, getCollisionBounds(), GAME1_GetTrapFallbackColor(m_type));
+		return;
 	}
 
 	default:
 		break;
 	}
 
-	if (texture != nullptr && TextureIsUsable(*texture))
-	{
-		drawTextureFitted(target, *texture, bounds, drawOrientation);
-		return;
-	}
-
-	drawFallback(target, bounds, GAME1_GetTrapFallbackColor(m_type));
+	drawFallback(target, getTileBounds(), GAME1_GetTrapFallbackColor(m_type));
 }
 
 GAME1_TrapType GAME1_Trap::getType() const
@@ -585,6 +786,16 @@ GAME1_TrapOrientation GAME1_Trap::getOrientation() const
 sf::Vector2f GAME1_Trap::getPosition() const
 {
 	return m_position;
+}
+
+sf::Vector2f GAME1_Trap::getPreviousPosition() const
+{
+	return m_previousPosition;
+}
+
+sf::Vector2f GAME1_Trap::getOriginalPosition() const
+{
+	return m_originalPosition;
 }
 
 sf::Vector2f GAME1_Trap::getDelta() const
@@ -612,9 +823,55 @@ bool GAME1_Trap::isActiveFire() const
 	return m_type == GAME1_TrapType::Fire && m_firePhase == FirePhase::Active;
 }
 
+bool GAME1_Trap::isPlayerStandingThisFrame() const
+{
+	return m_playerStandingThisFrame;
+}
+
 void GAME1_Trap::markPlayerStanding()
 {
 	m_playerStandingThisFrame = true;
+}
+
+sf::FloatRect GAME1_Trap::getCollisionBounds() const
+{
+	const sf::FloatRect tileRect = getTileBounds();
+
+	if (m_assets == nullptr || !m_assets->hasTrimmedBounds(m_type))
+		return tileRect;
+
+	const sf::FloatRect normalizedSource =
+		m_assets->getTrimmedNormalizedBounds(m_type);
+
+	// Moving platforms and falling platforms are drawn unrotated, so no
+	// rotation transform is required on the trimmed rect.  Fan would be
+	// affected here, but collision is not consulted for fan force volumes.
+	const sf::FloatRect normalized =
+		(m_type == GAME1_TrapType::Fan)
+			? ApplyRotationToNormalizedRect(normalizedSource, m_orientation)
+			: normalizedSource;
+
+	return sf::FloatRect(
+		{
+			tileRect.position.x + normalized.position.x * tileRect.size.x,
+			tileRect.position.y + normalized.position.y * tileRect.size.y
+		},
+		{
+			normalized.size.x * tileRect.size.x,
+			normalized.size.y * tileRect.size.y
+		});
+}
+
+void GAME1_Trap::setPositionX(float x)
+{
+	m_position.x = x;
+	m_delta.x = m_position.x - m_previousPosition.x;
+}
+
+void GAME1_Trap::setPositionY(float y)
+{
+	m_position.y = y;
+	m_delta.y = m_position.y - m_previousPosition.y;
 }
 
 std::optional<GAME1_TrapPlatformContact> GAME1_Trap::getPlatformContact(
@@ -628,7 +885,13 @@ std::optional<GAME1_TrapPlatformContact> GAME1_Trap::getPlatformContact(
 	const sf::FloatRect platformBounds = getPlatformBounds();
 	const float playerBottom = playerBounds.position.y + playerBounds.size.y;
 	const float platformTop = platformBounds.position.y;
-	const float previousPlatformTop = m_previousPosition.y;
+
+	// Previous platform top is the previous-frame top of the trimmed
+	// collision rectangle.  m_previousPosition tracks the tile origin, so
+	// we add the trimmed top offset (current frame is fine for an offset
+	// because the trim shape is stable across frames).
+	const float trimmedTopOffset = platformBounds.position.y - m_position.y;
+	const float previousPlatformTop = m_previousPosition.y + trimmedTopOffset;
 
 	const bool horizontalOverlap =
 		playerBounds.position.x < platformBounds.position.x + platformBounds.size.x &&
@@ -663,20 +926,22 @@ std::optional<sf::FloatRect> GAME1_Trap::getFanForceBounds() const
 	const float tile = GAME1_TrapTuning::TileSize;
 	const sf::Vector2f base = m_originalPosition;
 
+	// Fan force area covers the fan's own tile plus the two tiles in front
+	// of it (3 tiles in the facing direction, 1 tile across).
 	switch (m_orientation)
 	{
 	case GAME1_TrapOrientation::Right:
-		return sf::FloatRect({ base.x + tile, base.y }, { tile * 2.f, tile });
+		return sf::FloatRect({ base.x, base.y }, { tile * 3.f, tile });
 
 	case GAME1_TrapOrientation::Down:
-		return sf::FloatRect({ base.x, base.y + tile }, { tile, tile * 2.f });
+		return sf::FloatRect({ base.x, base.y }, { tile, tile * 3.f });
 
 	case GAME1_TrapOrientation::Left:
-		return sf::FloatRect({ base.x - tile * 2.f, base.y }, { tile * 2.f, tile });
+		return sf::FloatRect({ base.x - tile * 2.f, base.y }, { tile * 3.f, tile });
 
 	case GAME1_TrapOrientation::Up:
 	default:
-		return sf::FloatRect({ base.x, base.y - tile * 2.f }, { tile, tile * 2.f });
+		return sf::FloatRect({ base.x, base.y - tile * 2.f }, { tile, tile * 3.f });
 	}
 }
 
@@ -761,21 +1026,57 @@ sf::FloatRect GAME1_Trap::getTileBounds() const
 
 sf::FloatRect GAME1_Trap::getPlatformBounds() const
 {
-	return getTileBounds();
+	// Platforms (falling + moving) collide using the trimmed sprite bounds
+	// so the player stands on the visible solid surface rather than the
+	// transparent tile cell.
+	return getCollisionBounds();
+}
+
+sf::FloatRect GAME1_Trap::getFireBaseBounds() const
+{
+	return sf::FloatRect(
+		m_originalPosition,
+		{ GAME1_TrapTuning::TileSize, GAME1_TrapTuning::TileSize });
 }
 
 sf::FloatRect GAME1_Trap::getFireActiveBounds() const
 {
+	// The active flame damage rectangle is exactly the tile in front of the
+	// placed base tile.  Always a single tile in the facing direction.
 	const float tile = GAME1_TrapTuning::TileSize;
 	const sf::Vector2f base = m_originalPosition;
 
 	switch (m_orientation)
 	{
 	case GAME1_TrapOrientation::Right:
-		return sf::FloatRect({ base.x, base.y }, { tile * 2.f, tile });
+		return sf::FloatRect({ base.x + tile, base.y }, { tile, tile });
 
 	case GAME1_TrapOrientation::Down:
-		return sf::FloatRect({ base.x, base.y }, { tile, tile * 2.f });
+		return sf::FloatRect({ base.x, base.y + tile }, { tile, tile });
+
+	case GAME1_TrapOrientation::Left:
+		return sf::FloatRect({ base.x - tile, base.y }, { tile, tile });
+
+	case GAME1_TrapOrientation::Up:
+	default:
+		return sf::FloatRect({ base.x, base.y - tile }, { tile, tile });
+	}
+}
+
+sf::FloatRect GAME1_Trap::getFireSpanBounds() const
+{
+	// 1x2 oriented rectangle covering base tile plus the tile in front of
+	// it; used as the visual span for the active fire sprite.
+	const float tile = GAME1_TrapTuning::TileSize;
+	const sf::Vector2f base = m_originalPosition;
+
+	switch (m_orientation)
+	{
+	case GAME1_TrapOrientation::Right:
+		return sf::FloatRect(base, { tile * 2.f, tile });
+
+	case GAME1_TrapOrientation::Down:
+		return sf::FloatRect(base, { tile, tile * 2.f });
 
 	case GAME1_TrapOrientation::Left:
 		return sf::FloatRect({ base.x - tile, base.y }, { tile * 2.f, tile });
@@ -818,6 +1119,73 @@ void GAME1_Trap::drawTextureFitted(sf::RenderTarget& target,
 		bounds.position.y + bounds.size.y * 0.5f
 		});
 
+	sprite.setRotation(sf::degrees(static_cast<float>(GAME1_GetTrapOrientationValue(orientation)) * 90.f));
+	sprite.setScale({ scale, scale });
+
+	target.draw(sprite);
+}
+
+void GAME1_Trap::drawTextureFittedAnchored(sf::RenderTarget& target,
+	const sf::Texture& texture,
+	const sf::FloatRect& bounds,
+	GAME1_TrapOrientation orientation) const
+{
+	// Same uniform-scale fit as drawTextureFitted, but anchors the sprite
+	// against the edge opposite the facing direction so it visually sits
+	// mounted on that edge of the tile.  Used by Fan so it rests on the
+	// floor/ceiling/wall of its tile instead of floating in the centre.
+	sf::Sprite sprite(texture);
+	const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+	if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+		return;
+
+	const bool sideways =
+		orientation == GAME1_TrapOrientation::Right ||
+		orientation == GAME1_TrapOrientation::Left;
+
+	const float orientedWidth = sideways ? localBounds.size.y : localBounds.size.x;
+	const float orientedHeight = sideways ? localBounds.size.x : localBounds.size.y;
+
+	const float scale = std::min(
+		bounds.size.x / orientedWidth,
+		bounds.size.y / orientedHeight);
+
+	const float drawnWidth = orientedWidth * scale;
+	const float drawnHeight = orientedHeight * scale;
+
+	float centerX = bounds.position.x + bounds.size.x * 0.5f;
+	float centerY = bounds.position.y + bounds.size.y * 0.5f;
+
+	switch (orientation)
+	{
+	case GAME1_TrapOrientation::Up:
+		// Anchor sprite bottom to tile bottom.
+		centerY = bounds.position.y + bounds.size.y - drawnHeight * 0.5f;
+		break;
+
+	case GAME1_TrapOrientation::Down:
+		// Anchor sprite top to tile top.
+		centerY = bounds.position.y + drawnHeight * 0.5f;
+		break;
+
+	case GAME1_TrapOrientation::Right:
+		// Anchor sprite left to tile left.
+		centerX = bounds.position.x + drawnWidth * 0.5f;
+		break;
+
+	case GAME1_TrapOrientation::Left:
+		// Anchor sprite right to tile right.
+		centerX = bounds.position.x + bounds.size.x - drawnWidth * 0.5f;
+		break;
+	}
+
+	sprite.setOrigin({
+		localBounds.position.x + localBounds.size.x * 0.5f,
+		localBounds.position.y + localBounds.size.y * 0.5f
+		});
+
+	sprite.setPosition({ centerX, centerY });
 	sprite.setRotation(sf::degrees(static_cast<float>(GAME1_GetTrapOrientationValue(orientation)) * 90.f));
 	sprite.setScale({ scale, scale });
 

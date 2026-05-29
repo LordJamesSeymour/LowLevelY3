@@ -613,11 +613,11 @@ void GAME1_LevelEditor::buildTools()
 			break;
 
 		case GAME1_TrapType::Fan:
-			trapTool.description = "Fan - middle-scroll rotates, pushes 2 tiles";
+			trapTool.description = "Fan - SHIFT+scroll rotates, pushes 3 tiles";
 			break;
 
 		case GAME1_TrapType::Fire:
-			trapTool.description = "Fire - middle-scroll rotates, active flame damages";
+			trapTool.description = "Fire - SHIFT+scroll rotates, active flame damages";
 			break;
 
 		case GAME1_TrapType::Chain:
@@ -1057,15 +1057,25 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 
 void GAME1_LevelEditor::handleMouseWheelScrolled(float delta)
 {
-	const Tool* selectedTool = getSelectedTool();
-	const bool rotatingObject =
-		sf::Mouse::isButtonPressed(sf::Mouse::Button::Middle) &&
-		selectedTool != nullptr &&
-		selectedTool->kind == ToolKind::Object &&
-		GAME1_IsRotatableTrapType(selectedTool->objectType);
+	const bool shiftHeld =
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+		sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
 
-	if (rotatingObject)
+	if (shiftHeld)
 	{
+		// SHIFT + wheel rotates the selected rotatable object tool and
+		// never scrolls the hotbar.  Main negates the raw delta before
+		// calling this, so a wheel-down event arrives here as a positive
+		// delta and rotates clockwise.
+		const Tool* selectedTool = getSelectedTool();
+		const bool rotatable =
+			selectedTool != nullptr &&
+			selectedTool->kind == ToolKind::Object &&
+			GAME1_IsRotatableTrapType(selectedTool->objectType);
+
+		if (!rotatable)
+			return;
+
 		if (delta > 0.f)
 			rotateSelectedObjectTool(1);
 		else if (delta < 0.f)
@@ -2633,7 +2643,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 	drawTextCentered(
 		window,
-		"Left Click: place/select | Right Click: erase | Middle Click: pick | Hold Middle + Scroll: rotate Fan/Fire | Scroll: tools | F5: save | F9: load",
+		"Left Click: place/select | Right Click: erase | Middle Click: pick | SHIFT + Scroll: rotate Fan/Fire | Scroll: tools | F5: save | F9: load",
 		14,
 		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
 		sf::Color(230, 230, 230),

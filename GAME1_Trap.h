@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace GAME1_TrapTuning
@@ -14,10 +15,14 @@ namespace GAME1_TrapTuning
 	constexpr float PlayerMoveSpeed = 330.f;
 	constexpr float PlayerJumpForce = 650.f;
 	constexpr float PlayerGravity = 1500.f;
-	constexpr float FallingPlatformSpeed = PlayerGravity * 0.5f;
-	constexpr float FallingPlatformMaxDrop = TileSize * 2.f;
+	// Falling platform descent speed - halved (50% slower than the
+	// previous implementation which was PlayerGravity * 0.5f).
+	constexpr float FallingPlatformSpeed = PlayerGravity * 0.25f;
+	constexpr float FallingPlatformReturnSpeed = PlayerGravity * 0.35f;
+	constexpr float FallingPlatformMaxDrop = TileSize * 6.f;
 	constexpr float BrownPlatformSpeed = PlayerMoveSpeed * 0.5f;
-	constexpr float GreyPlatformSpeed = PlayerMoveSpeed * 1.5f;
+	// Grey moving platform speed - reduced from 150% to 125% of player speed.
+	constexpr float GreyPlatformSpeed = PlayerMoveSpeed * 1.25f;
 	constexpr float TrapAnimationFrameDuration = 0.08f;
 	constexpr float FireFrameDuration = 0.09f;
 	constexpr int FireReloadLoopCount = 3;
@@ -87,6 +92,13 @@ public:
 	const sf::Texture* getEditorIconTexture(GAME1_TrapType type) const;
 	const std::string& getLastWarning() const;
 
+	// Normalized [0..1] alpha-trimmed bounds for the visible pixels of the
+	// representative frames of a given trap type.  Used to build collision
+	// rectangles that match the sprite art rather than the whole tile cell.
+	// Returns { {0,0}, {1,1} } when no trim data is available.
+	sf::FloatRect getTrimmedNormalizedBounds(GAME1_TrapType type) const;
+	bool hasTrimmedBounds(GAME1_TrapType type) const;
+
 private:
 	void loadFrames(const std::filesystem::path& directory,
 		const std::string& prefix,
@@ -97,6 +109,9 @@ private:
 		sf::Texture& outTexture,
 		bool& outLoaded);
 	void warn(const std::string& message);
+
+	void buildTrimmedNormalizedBoundsForType(GAME1_TrapType type,
+		const std::vector<sf::Texture>& frames);
 
 private:
 	std::vector<sf::Texture> m_fallingPlatformFrames;
@@ -109,6 +124,8 @@ private:
 
 	sf::Texture m_chainTexture;
 	bool m_hasChainTexture = false;
+
+	std::unordered_map<int, sf::FloatRect> m_trimmedNormalizedBounds;
 
 	std::string m_lastWarning;
 };
@@ -124,6 +141,7 @@ public:
 		sf::Vector2i endGrid,
 		bool horizontal,
 		bool enabled);
+	void setAssets(const GAME1_TrapAssets* assets);
 	void update(float deltaTime);
 	void draw(sf::RenderTarget& target, const GAME1_TrapAssets& assets) const;
 
@@ -131,14 +149,27 @@ public:
 	sf::Vector2i getGridPosition() const;
 	GAME1_TrapOrientation getOrientation() const;
 	sf::Vector2f getPosition() const;
+	sf::Vector2f getPreviousPosition() const;
+	sf::Vector2f getOriginalPosition() const;
 	sf::Vector2f getDelta() const;
 
 	bool isChain() const;
 	bool isPlatform() const;
 	bool isMovingPlatform() const;
 	bool isActiveFire() const;
+	bool isPlayerStandingThisFrame() const;
 
 	void markPlayerStanding();
+
+	// World-space collision/sprite rectangle for the trap.  Trimmed to the
+	// visible sprite for Fan, FallingPlatform, BrownMovingPlatform and
+	// GreyMovingPlatform.  Falls back to the full tile cell otherwise.
+	sf::FloatRect getCollisionBounds() const;
+
+	// Used by GAME1_Level to clamp a falling platform after it moves down so
+	// it does not penetrate solid floor tiles.
+	void setPositionX(float x);
+	void setPositionY(float y);
 
 	std::optional<GAME1_TrapPlatformContact> getPlatformContact(
 		std::size_t trapIndex,
@@ -163,9 +194,15 @@ private:
 	float getMovingPlatformSpeed() const;
 	sf::FloatRect getTileBounds() const;
 	sf::FloatRect getPlatformBounds() const;
+	sf::FloatRect getFireBaseBounds() const;
 	sf::FloatRect getFireActiveBounds() const;
+	sf::FloatRect getFireSpanBounds() const;
 
 	void drawTextureFitted(sf::RenderTarget& target,
+		const sf::Texture& texture,
+		const sf::FloatRect& bounds,
+		GAME1_TrapOrientation orientation) const;
+	void drawTextureFittedAnchored(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		const sf::FloatRect& bounds,
 		GAME1_TrapOrientation orientation) const;
@@ -187,6 +224,7 @@ private:
 	sf::Vector2f m_delta{ 0.f, 0.f };
 
 	bool m_playerStandingThisFrame = false;
+	bool m_playerStandingLastFrame = false;
 
 	bool m_chainPathEnabled = false;
 	bool m_chainPathHorizontal = true;
@@ -199,4 +237,6 @@ private:
 
 	FirePhase m_firePhase = FirePhase::Reload;
 	int m_fireLoopsCompleted = 0;
+
+	const GAME1_TrapAssets* m_assets = nullptr;
 };

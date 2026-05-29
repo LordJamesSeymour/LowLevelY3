@@ -594,12 +594,12 @@ std::string GAME1_Menu::getControlsPopupBody() const
 
 	return
 		"Falling Platform: stand on it to make it fall; step off and it returns.\n"
-		"Fan: pushes the player in its facing direction; affects 2 tiles.\n"
-		"Fire: cycles between reload and active fire; active fire damages and knocks back.\n"
+		"Fan: pushes the player in its facing direction; affects its tile + 2 ahead (3 total).\n"
+		"Fire: cycles between reload and active fire; active flame damages the tile ahead.\n"
 		"Chain: rail/path used by moving platforms.\n"
 		"Brown Platform: slow moving platform; 50% player speed; must be placed on Chain.\n"
-		"Grey Platform: fast moving platform; 150% player speed; must be placed on Chain.\n\n"
-		"Editor rotation: hold middle mouse/wheel button and scroll to rotate Fan/Fire.\n"
+		"Grey Platform: fast moving platform; 125% player speed; must be placed on Chain.\n\n"
+		"Editor rotation: hold SHIFT and scroll the wheel to rotate Fan/Fire.\n"
 		"Moving platforms can only be placed on Chain.";
 }
 
