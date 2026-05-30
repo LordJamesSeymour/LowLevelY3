@@ -3260,14 +3260,6 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		drawTextCentered(window, ">", 26, m_nextHotbarPageButtonBounds, sf::Color::White, 2.f);
 	}
 
-	drawTextCentered(
-		window,
-		"L-Click: place | Drag: copy area | SPACE+L/R-Click: insert/delete column | R-Click: erase/cancel | Mid: pick | SHIFT+Scroll: rotate | F5: save | F9: load | Esc: cancel/back",
-		14,
-		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
-		sf::Color(230, 230, 230),
-		1.f);
-
 	if (!m_popupMessage.empty() && m_popupTimer > 0.f)
 	{
 		const sf::FloatRect popupRect(

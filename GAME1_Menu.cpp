@@ -591,26 +591,26 @@ std::string GAME1_Menu::getControlsPopupBody() const
 	if (m_controlsPopupPage == 1)
 	{
 		return
-		"Left Click = Place tile / select toolbar button\n"
-		"Right Click = Erase tile\n"
-		"Middle Mouse = Pick tile / tool\n"
-		"Mouse Wheel = Cycle visible tools\n"
-		"1-9 = Select visible hotbar slot\n"
-		"Letter Keys = Select tile by tile letter\n"
-		"F5 = Save level\n"
-		"World arrows = Switch world palette\n"
-		"Load arrows = Choose saved map, Load opens it\n"
-		"Hotbar < / > = Change tool page";
+		"Left Click = Place / select toolbar / paste preview\n"
+		"Left Drag = Select and copy a rectangle\n"
+		"Right Click = Erase / cancel paste preview\n"
+		"Middle Mouse = Pick tile or object tool\n"
+		"Space + Left Click = Insert column\n"
+		"Space + Right Click = Delete column\n"
+		"Mouse Wheel = Cycle tools\n"
+		"Shift + Wheel = Rotate Fan/Fire\n"
+		"1-9 = Select slot | Letters = Select tile\n"
+		"F5 = Save | F9 = Load | Delete = Reset";
 	}
 
 	return
-		"Falling Platform: stand on it to make it fall; step off and it returns.\n"
-		"Fan: pushes the player in its facing direction; affects its tile + 2 ahead (3 total).\n"
-		"Fire: cycles between reload and active fire; active flame damages the tile ahead.\n"
+		"Falling Platform: stand on it; it falls, then returns.\n"
+		"Fan: pushes in its facing direction; affects 3 tiles total.\n"
+		"Fire: reloads, then active flame damages and knocks back.\n"
 		"Chain: rail/path used by moving platforms.\n"
-		"Brown Platform: slow moving platform; 50% player speed; must be placed on Chain.\n"
-		"Grey Platform: fast moving platform; 125% player speed; must be placed on Chain.\n\n"
-		"Editor rotation: hold SHIFT and scroll the wheel to rotate Fan/Fire.\n"
+		"Brown Platform: slow, 50% player speed, place on Chain.\n"
+		"Grey Platform: fast, 125% player speed, place on Chain.\n\n"
+		"Shift + Wheel: rotate Fan/Fire in the editor.\n"
 		"Moving platforms can only be placed on Chain.";
 }
 
@@ -719,7 +719,7 @@ void GAME1_Menu::drawControlsPopup(sf::RenderTarget& target, sf::Vector2u window
 
 	sf::Text bodyText(m_font);
 	bodyText.setString(getControlsPopupBody());
-	bodyText.setCharacterSize(m_controlsPopupPage == 0 ? 19 : (m_controlsPopupPage == 1 ? 18 : 15));
+	bodyText.setCharacterSize(m_controlsPopupPage == 0 ? 19 : (m_controlsPopupPage == 1 ? 16 : 14));
 	bodyText.setFillColor(sf::Color(230, 230, 230));
 	bodyText.setOutlineColor(sf::Color::Black);
 	bodyText.setOutlineThickness(1.25f);
