@@ -2077,7 +2077,10 @@ int main()
 				{
 					if (keyReleased->code == sf::Keyboard::Key::Escape)
 					{
-						SetAppState(AppState::GAME1_Menu);
+						// Escape first cancels an active selection preview; only
+						// leaves the editor when there is nothing to cancel.
+						if (!game1Editor.handleEscape())
+							SetAppState(AppState::GAME1_Menu);
 					}
 					else
 					{
@@ -2093,6 +2096,16 @@ int main()
 					};
 
 					game1Editor.handleMousePressed(mousePressed->button, mousePixelPosition);
+				}
+
+				if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
+				{
+					const sf::Vector2i mousePixelPosition{
+						mouseReleased->position.x,
+						mouseReleased->position.y
+					};
+
+					game1Editor.handleMouseReleased(mouseReleased->button, mousePixelPosition);
 				}
 
 				if (const auto* mouseWheelScrolled = event->getIf<sf::Event::MouseWheelScrolled>())

@@ -433,6 +433,7 @@ void GAME1_LevelEditor::resetEmpty()
 
 	m_rows.assign(TotalRows, std::string(TotalCols, 'O'));
 	m_objects.clear();
+	cancelSelectionPreview();
 	m_viewStartCol = 0;
 	m_viewStartRow = std::max(0, TotalRows - VisibleRows);
 	m_hotbarPage = 0;
@@ -982,8 +983,33 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 		static_cast<float>(mousePixelPosition.x),
 		static_cast<float>(mousePixelPosition.y));
 
+	// SPACE + click is the column insert/delete shortcut and takes priority
+	// over every other left/right click action, including drag selection.
+	const bool spaceHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+
+	if (spaceHeld &&
+		(button == sf::Mouse::Button::Left || button == sf::Mouse::Button::Right))
+	{
+		if (const std::optional<sf::Vector2i> tile = getTileAtPixel(mousePixelPosition))
+		{
+			if (button == sf::Mouse::Button::Left)
+				insertColumnAt(tile->x);
+			else
+				deleteColumnAt(tile->x);
+		}
+
+		return;
+	}
+
 	if (button == sf::Mouse::Button::Right)
 	{
+		// Right click cancels an active paste preview instead of erasing.
+		if (m_inPreviewMode)
+		{
+			cancelSelectionPreview();
+			return;
+		}
+
 		eraseAtPixel(mousePixelPosition);
 		return;
 	}
@@ -996,6 +1022,16 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 
 	if (button != sf::Mouse::Button::Left)
 		return;
+
+	// While previewing a copied selection, a left click pastes it at the tile
+	// under the mouse (top-left aligned), then returns to normal editing.
+	if (m_inPreviewMode)
+	{
+		if (const std::optional<sf::Vector2i> tile = getTileAtPixel(mousePixelPosition))
+			pasteClipboardAt(tile->x, tile->y);
+
+		return;
+	}
 
 	if (containsPoint(m_saveButtonBounds, mousePosition))
 	{
@@ -1081,7 +1117,54 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 		return;
 	}
 
-	paintAtPixel(mousePixelPosition);
+	// A plain left press over the grid arms a potential drag-selection.
+	// Placement is deferred to release so a click that does not move still
+	// places a single tile, while a drag copies a rectangle (see
+	// handleMouseReleased).
+	if (const std::optional<sf::Vector2i> tile = getTileAtPixel(mousePixelPosition))
+	{
+		m_isPotentialDrag = true;
+		m_dragStartTile = tile.value();
+	}
+}
+
+void GAME1_LevelEditor::handleMouseReleased(sf::Mouse::Button button, sf::Vector2i mousePixelPosition)
+{
+	if (button != sf::Mouse::Button::Left)
+		return;
+
+	// Paste is handled on press; release only resolves an armed drag.
+	if (m_inPreviewMode || !m_isPotentialDrag)
+		return;
+
+	m_isPotentialDrag = false;
+
+	const std::optional<sf::Vector2i> releaseTile = clampPixelToTile(mousePixelPosition);
+
+	if (!releaseTile.has_value())
+		return;
+
+	if (releaseTile.value() == m_dragStartTile)
+	{
+		// No movement: behave like a normal single-tile placement.
+		placeSelectedToolAtTile(m_dragStartTile.x, m_dragStartTile.y);
+	}
+	else
+	{
+		// Dragged across tiles: copy the rectangle and enter paste preview.
+		copySelection(m_dragStartTile, releaseTile.value());
+	}
+}
+
+bool GAME1_LevelEditor::handleEscape()
+{
+	if (m_inPreviewMode || m_isPotentialDrag)
+	{
+		cancelSelectionPreview();
+		return true;
+	}
+
+	return false;
 }
 
 void GAME1_LevelEditor::handleMouseWheelScrolled(float delta)
@@ -1580,6 +1663,7 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 	m_rows = std::move(loadedRows);
 	m_objects = std::move(loadedObjects);
+	cancelSelectionPreview();
 	m_viewStartCol = 0;
 	m_viewStartRow = std::max(0, static_cast<int>(m_rows.size()) - VisibleRows);
 	m_hotbarPage = 0;
@@ -2060,6 +2144,298 @@ void GAME1_LevelEditor::eraseObjectAt(int col, int row)
 		if (object.gridPosition.x == col && object.gridPosition.y == row)
 			m_objects.erase(m_objects.begin() + i);
 	}
+}
+
+void GAME1_LevelEditor::placeSelectedToolAtTile(int col, int row)
+{
+	const Tool* tool = getSelectedTool();
+
+	if (tool == nullptr)
+		return;
+
+	if (tool->kind == ToolKind::TrapObject)
+		placeTrapObjectAt(col, row, tool->trapType);
+	else if (tool->kind == ToolKind::LevelObject)
+		placeLevelObjectAt(col, row, tool->levelObjectType);
+	else
+		placeTileAt(col, row, tool->tile);
+}
+
+void GAME1_LevelEditor::insertColumnAt(int col)
+{
+	if (m_rows.empty())
+		return;
+
+	const int width = static_cast<int>(m_rows[0].size());
+	col = std::clamp(col, 0, width);
+
+	cancelSelectionPreview();
+
+	for (std::string& levelRow : m_rows)
+		levelRow.insert(levelRow.begin() + col, 'O');
+
+	for (EditorObject& object : m_objects)
+	{
+		if (object.gridPosition.x >= col)
+			++object.gridPosition.x;
+	}
+
+	clampViewStartColumn();
+
+	m_popupMessage = "Column inserted (width " + std::to_string(width + 1) + ")";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+}
+
+void GAME1_LevelEditor::deleteColumnAt(int col)
+{
+	if (m_rows.empty())
+		return;
+
+	const int width = static_cast<int>(m_rows[0].size());
+
+	if (col < 0 || col >= width)
+		return;
+
+	// Never shrink below the visible editor width.
+	if (width <= VisibleCols)
+	{
+		m_popupMessage = "Minimum width reached";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return;
+	}
+
+	cancelSelectionPreview();
+
+	for (std::string& levelRow : m_rows)
+	{
+		if (col < static_cast<int>(levelRow.size()))
+			levelRow.erase(levelRow.begin() + col);
+	}
+
+	for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
+	{
+		EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+		if (object.gridPosition.x == col)
+			m_objects.erase(m_objects.begin() + i);
+		else if (object.gridPosition.x > col)
+			--object.gridPosition.x;
+	}
+
+	clampViewStartColumn();
+
+	m_popupMessage = "Column deleted (width " + std::to_string(width - 1) + ")";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+}
+
+std::optional<sf::Vector2i> GAME1_LevelEditor::clampPixelToTile(sf::Vector2i mousePixelPosition) const
+{
+	if (m_rows.empty())
+		return std::nullopt;
+
+	const int totalCols = static_cast<int>(m_rows[0].size());
+	const int totalRows = static_cast<int>(m_rows.size());
+
+	if (totalCols <= 0 || totalRows <= 0)
+		return std::nullopt;
+
+	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, totalRows));
+
+	const float localX = static_cast<float>(mousePixelPosition.x) - m_gridOrigin.x;
+	const float localY = static_cast<float>(mousePixelPosition.y) - m_gridOrigin.y;
+
+	int visibleCol = static_cast<int>(std::floor(localX / m_tileSize));
+	int visibleRow = static_cast<int>(std::floor(localY / m_tileSize));
+
+	visibleCol = std::clamp(visibleCol, 0, visibleCols - 1);
+	visibleRow = std::clamp(visibleRow, 0, visibleRows - 1);
+
+	const int worldCol = std::clamp(m_viewStartCol + visibleCol, 0, totalCols - 1);
+	const int worldRow = std::clamp(m_viewStartRow + visibleRow, 0, totalRows - 1);
+
+	return sf::Vector2i{ worldCol, worldRow };
+}
+
+void GAME1_LevelEditor::copySelection(sf::Vector2i startTile, sf::Vector2i endTile)
+{
+	if (m_rows.empty())
+		return;
+
+	const int totalCols = static_cast<int>(m_rows[0].size());
+	const int totalRows = static_cast<int>(m_rows.size());
+
+	const int minCol = std::clamp(std::min(startTile.x, endTile.x), 0, totalCols - 1);
+	const int maxCol = std::clamp(std::max(startTile.x, endTile.x), 0, totalCols - 1);
+	const int minRow = std::clamp(std::min(startTile.y, endTile.y), 0, totalRows - 1);
+	const int maxRow = std::clamp(std::max(startTile.y, endTile.y), 0, totalRows - 1);
+
+	const int width = maxCol - minCol + 1;
+	const int height = maxRow - minRow + 1;
+
+	m_clipboard = ClipboardSelection{};
+	m_clipboard.width = width;
+	m_clipboard.height = height;
+	m_clipboard.tiles.assign(
+		static_cast<std::size_t>(height),
+		std::string(static_cast<std::size_t>(width), 'O'));
+
+	for (int row = minRow; row <= maxRow; ++row)
+	{
+		for (int col = minCol; col <= maxCol; ++col)
+		{
+			if (col < static_cast<int>(m_rows[row].size()))
+				m_clipboard.tiles[row - minRow][col - minCol] = m_rows[row][col];
+		}
+	}
+
+	for (const EditorObject& object : m_objects)
+	{
+		if (object.gridPosition.x < minCol || object.gridPosition.x > maxCol ||
+			object.gridPosition.y < minRow || object.gridPosition.y > maxRow)
+			continue;
+
+		EditorObject copied = object;
+		copied.gridPosition.x -= minCol;
+		copied.gridPosition.y -= minRow;
+		m_clipboard.objects.push_back(copied);
+	}
+
+	m_hasClipboard = true;
+	m_inPreviewMode = true;
+
+	m_popupMessage =
+		"Copied " + std::to_string(width) + "x" + std::to_string(height) +
+		" - click to paste, Esc/right-click to cancel";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+}
+
+void GAME1_LevelEditor::pasteClipboardAt(int destCol, int destRow)
+{
+	if (!m_hasClipboard || m_rows.empty())
+		return;
+
+	const int totalCols = static_cast<int>(m_rows[0].size());
+	const int totalRows = static_cast<int>(m_rows.size());
+
+	// Player spawn is unique: if the clipboard carries one, clear any existing
+	// spawn first so only the pasted 'P' remains.
+	bool clipboardHasPlayerSpawn = false;
+	for (const std::string& clipRow : m_clipboard.tiles)
+	{
+		if (clipRow.find('P') != std::string::npos)
+		{
+			clipboardHasPlayerSpawn = true;
+			break;
+		}
+	}
+
+	if (clipboardHasPlayerSpawn)
+	{
+		for (std::string& levelRow : m_rows)
+			std::replace(levelRow.begin(), levelRow.end(), 'P', 'O');
+	}
+
+	// Start/End level objects are unique per type: drop any existing instance
+	// the clipboard is about to re-create.
+	for (const EditorObject& clipObject : m_clipboard.objects)
+	{
+		if (clipObject.kind != ToolKind::LevelObject)
+			continue;
+
+		for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
+		{
+			const EditorObject& object = m_objects[static_cast<std::size_t>(i)];
+
+			if (object.kind == ToolKind::LevelObject &&
+				object.levelObjectType == clipObject.levelObjectType)
+			{
+				m_objects.erase(m_objects.begin() + i);
+			}
+		}
+	}
+
+	// Stamp tiles (full-rectangle overwrite) and clear destination objects.
+	for (int cr = 0; cr < m_clipboard.height; ++cr)
+	{
+		for (int cc = 0; cc < m_clipboard.width; ++cc)
+		{
+			const int dc = destCol + cc;
+			const int dr = destRow + cr;
+
+			if (dc < 0 || dc >= totalCols || dr < 0 || dr >= totalRows)
+				continue;
+
+			eraseObjectAt(dc, dr);
+			m_rows[dr][dc] =
+				m_clipboard.tiles[static_cast<std::size_t>(cr)][static_cast<std::size_t>(cc)];
+		}
+	}
+
+	// Re-create copied objects at the paste offset, clipped to bounds.
+	for (const EditorObject& clipObject : m_clipboard.objects)
+	{
+		const int dc = destCol + clipObject.gridPosition.x;
+		const int dr = destRow + clipObject.gridPosition.y;
+
+		if (dc < 0 || dc >= totalCols || dr < 0 || dr >= totalRows)
+			continue;
+
+		EditorObject placed = clipObject;
+		placed.gridPosition = { dc, dr };
+		m_objects.push_back(placed);
+	}
+
+	cancelSelectionPreview();
+
+	m_selectedToolIndex = m_tools.empty() ? -1 : 0;
+	ensureSelectedToolVisible();
+
+	m_popupMessage = "Pasted selection";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+}
+
+void GAME1_LevelEditor::cancelSelectionPreview()
+{
+	m_isPotentialDrag = false;
+	m_inPreviewMode = false;
+	m_hasClipboard = false;
+	m_clipboard = ClipboardSelection{};
+}
+
+bool GAME1_LevelEditor::tileToVisibleRect(int worldCol, int worldRow, sf::FloatRect& outRect) const
+{
+	if (m_rows.empty())
+		return false;
+
+	const int totalCols = static_cast<int>(m_rows[0].size());
+	const int totalRows = static_cast<int>(m_rows.size());
+	const int visibleCols = std::min(VisibleCols, std::max(1, totalCols));
+	const int visibleRows = std::min(VisibleRows, std::max(1, totalRows));
+
+	const int visibleCol = worldCol - m_viewStartCol;
+	const int visibleRow = worldRow - m_viewStartRow;
+
+	if (visibleCol < 0 || visibleCol >= visibleCols ||
+		visibleRow < 0 || visibleRow >= visibleRows)
+		return false;
+
+	outRect = sf::FloatRect(
+		{
+			m_gridOrigin.x + static_cast<float>(visibleCol) * m_tileSize,
+			m_gridOrigin.y + static_cast<float>(visibleRow) * m_tileSize
+		},
+		{
+			m_tileSize,
+			m_tileSize
+		});
+
+	return true;
 }
 
 void GAME1_LevelEditor::rotateSelectedObjectTool(int quarterTurnsClockwise)
@@ -2669,7 +3045,14 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			1.f);
 	}
 
-	if (const std::optional<sf::Vector2i> hoveredTile = getTileAtPixel(mousePixelPosition))
+	// The single-tile tool hover preview is suppressed while a selection drag
+	// is in progress or a copied selection is being previewed.
+	const std::optional<sf::Vector2i> hoveredTile =
+		(!m_inPreviewMode && !m_isPotentialDrag)
+			? getTileAtPixel(mousePixelPosition)
+			: std::nullopt;
+
+	if (hoveredTile.has_value())
 	{
 		const int visibleCol = hoveredTile->x - m_viewStartCol;
 		const int visibleRow = hoveredTile->y - m_viewStartRow;
@@ -2708,6 +3091,107 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		hoverRect.setOutlineColor(sf::Color::Yellow);
 		hoverRect.setOutlineThickness(3.f);
 		window.draw(hoverRect);
+	}
+
+	// Live drag-selection rectangle (semi-transparent fill clipped to view).
+	if (m_isPotentialDrag)
+	{
+		if (const std::optional<sf::Vector2i> current = clampPixelToTile(mousePixelPosition))
+		{
+			const int minCol = std::min(m_dragStartTile.x, current->x);
+			const int maxCol = std::max(m_dragStartTile.x, current->x);
+			const int minRow = std::min(m_dragStartTile.y, current->y);
+			const int maxRow = std::max(m_dragStartTile.y, current->y);
+
+			const int clipMinCol = std::max(minCol, m_viewStartCol);
+			const int clipMaxCol = std::min(maxCol, m_viewStartCol + visibleCols - 1);
+			const int clipMinRow = std::max(minRow, m_viewStartRow);
+			const int clipMaxRow = std::min(maxRow, m_viewStartRow + visibleRows - 1);
+
+			if (clipMinCol <= clipMaxCol && clipMinRow <= clipMaxRow)
+			{
+				const sf::FloatRect selectionRect(
+					{
+						m_gridOrigin.x + static_cast<float>(clipMinCol - m_viewStartCol) * m_tileSize,
+						m_gridOrigin.y + static_cast<float>(clipMinRow - m_viewStartRow) * m_tileSize
+					},
+					{
+						static_cast<float>(clipMaxCol - clipMinCol + 1) * m_tileSize,
+						static_cast<float>(clipMaxRow - clipMinRow + 1) * m_tileSize
+					});
+
+				sf::RectangleShape selectionShape;
+				selectionShape.setPosition(selectionRect.position);
+				selectionShape.setSize(selectionRect.size);
+				selectionShape.setFillColor(sf::Color(255, 235, 120, 70));
+				selectionShape.setOutlineColor(sf::Color(255, 235, 120));
+				selectionShape.setOutlineThickness(2.f);
+				window.draw(selectionShape);
+			}
+		}
+	}
+	// Copied selection ghost following the mouse (top-left aligned).
+	else if (m_inPreviewMode && m_hasClipboard)
+	{
+		if (const std::optional<sf::Vector2i> destTile = getTileAtPixel(mousePixelPosition))
+		{
+			const int destCol = destTile->x;
+			const int destRow = destTile->y;
+
+			for (int cr = 0; cr < m_clipboard.height; ++cr)
+			{
+				for (int cc = 0; cc < m_clipboard.width; ++cc)
+				{
+					sf::FloatRect cellRect;
+					if (!tileToVisibleRect(destCol + cc, destRow + cr, cellRect))
+						continue;
+
+					const char tile =
+						m_clipboard.tiles[static_cast<std::size_t>(cr)][static_cast<std::size_t>(cc)];
+
+					if (tile != 'O')
+						drawTilePreview(window, tile, cellRect, 130);
+				}
+			}
+
+			for (const EditorObject& object : m_clipboard.objects)
+			{
+				sf::FloatRect cellRect;
+				if (!tileToVisibleRect(destCol + object.gridPosition.x, destRow + object.gridPosition.y, cellRect))
+					continue;
+
+				if (object.kind == ToolKind::TrapObject)
+					drawObjectPreview(window, object.trapType, object.orientation, cellRect, 150);
+				else if (object.kind == ToolKind::LevelObject)
+					drawLevelObjectPreview(window, object.levelObjectType, cellRect, 150);
+			}
+
+			const int clipMinCol = std::max(destCol, m_viewStartCol);
+			const int clipMaxCol = std::min(destCol + m_clipboard.width - 1, m_viewStartCol + visibleCols - 1);
+			const int clipMinRow = std::max(destRow, m_viewStartRow);
+			const int clipMaxRow = std::min(destRow + m_clipboard.height - 1, m_viewStartRow + visibleRows - 1);
+
+			if (clipMinCol <= clipMaxCol && clipMinRow <= clipMaxRow)
+			{
+				const sf::FloatRect ghostRect(
+					{
+						m_gridOrigin.x + static_cast<float>(clipMinCol - m_viewStartCol) * m_tileSize,
+						m_gridOrigin.y + static_cast<float>(clipMinRow - m_viewStartRow) * m_tileSize
+					},
+					{
+						static_cast<float>(clipMaxCol - clipMinCol + 1) * m_tileSize,
+						static_cast<float>(clipMaxRow - clipMinRow + 1) * m_tileSize
+					});
+
+				sf::RectangleShape ghostOutline;
+				ghostOutline.setPosition(ghostRect.position);
+				ghostOutline.setSize(ghostRect.size);
+				ghostOutline.setFillColor(sf::Color::Transparent);
+				ghostOutline.setOutlineColor(sf::Color(120, 230, 255));
+				ghostOutline.setOutlineThickness(2.f);
+				window.draw(ghostOutline);
+			}
+		}
 	}
 
 	{
@@ -2778,7 +3262,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 	drawTextCentered(
 		window,
-		"Left Click: place/select | Right Click: erase | Middle Click: pick | SHIFT + Scroll: rotate Fan/Fire | Scroll: tools | F5: save | F9: load",
+		"L-Click: place | Drag: copy area | SPACE+L/R-Click: insert/delete column | R-Click: erase/cancel | Mid: pick | SHIFT+Scroll: rotate | F5: save | F9: load | Esc: cancel/back",
 		14,
 		sf::FloatRect({ 0.f, windowHeight - 26.f }, { windowWidth, 22.f }),
 		sf::Color(230, 230, 230),
@@ -2906,14 +3390,15 @@ void GAME1_LevelEditor::drawToolPreview(sf::RenderTarget& target,
 
 void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
 	char tile,
-	const sf::FloatRect& bounds) const
+	const sf::FloatRect& bounds,
+	std::uint8_t alpha) const
 {
 	if (tile == 'O')
 	{
 		sf::RectangleShape empty;
 		empty.setPosition(bounds.position);
 		empty.setSize(bounds.size);
-		empty.setFillColor(sf::Color(70, 150, 210));
+		empty.setFillColor(sf::Color(70, 150, 210, alpha));
 		target.draw(empty);
 		return;
 	}
@@ -2925,14 +3410,17 @@ void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
 
 	if (tool->hasTexture)
 	{
-		drawTextureFitted(target, tool->texture, bounds);
+		drawTextureFitted(target, tool->texture, bounds, alpha);
 	}
 	else
 	{
+		sf::Color fallbackColor = tool->fallbackColor;
+		fallbackColor.a = alpha;
+
 		sf::RectangleShape fallback;
 		fallback.setPosition(bounds.position);
 		fallback.setSize(bounds.size);
-		fallback.setFillColor(tool->fallbackColor);
+		fallback.setFillColor(fallbackColor);
 		target.draw(fallback);
 	}
 }
@@ -2940,52 +3428,61 @@ void GAME1_LevelEditor::drawTilePreview(sf::RenderTarget& target,
 void GAME1_LevelEditor::drawObjectPreview(sf::RenderTarget& target,
 	GAME1_TrapType type,
 	GAME1_TrapOrientation orientation,
-	const sf::FloatRect& bounds) const
+	const sf::FloatRect& bounds,
+	std::uint8_t alpha) const
 {
 	const sf::Texture* texture = m_trapAssets.getEditorIconTexture(type);
 
 	if (texture != nullptr)
 	{
-		drawTextureFittedRotated(target, *texture, bounds, orientation);
+		drawTextureFittedRotated(target, *texture, bounds, orientation, alpha);
 		return;
 	}
+
+	sf::Color fillColor = GAME1_GetTrapFallbackColor(type);
+	fillColor.a = alpha;
 
 	sf::RectangleShape fallback;
 	fallback.setPosition(bounds.position);
 	fallback.setSize(bounds.size);
-	fallback.setFillColor(GAME1_GetTrapFallbackColor(type));
-	fallback.setOutlineColor(sf::Color::White);
+	fallback.setFillColor(fillColor);
+	fallback.setOutlineColor(sf::Color(255, 255, 255, alpha));
 	fallback.setOutlineThickness(1.f);
 	target.draw(fallback);
 }
 
 void GAME1_LevelEditor::drawLevelObjectPreview(sf::RenderTarget& target,
 	GAME1_LevelObjectType type,
-	const sf::FloatRect& bounds) const
+	const sf::FloatRect& bounds,
+	std::uint8_t alpha) const
 {
 	const Tool* tool = getToolForLevelObject(type);
 
 	if (tool != nullptr && tool->hasTexture)
 	{
-		drawTextureFitted(target, tool->texture, bounds);
+		drawTextureFitted(target, tool->texture, bounds, alpha);
 		return;
 	}
+
+	sf::Color fillColor =
+		type == GAME1_LevelObjectType::StartTile
+		? sf::Color(70, 150, 255)
+		: sf::Color(70, 210, 110);
+	fillColor.a = alpha;
 
 	sf::RectangleShape fallback;
 	fallback.setPosition(bounds.position);
 	fallback.setSize(bounds.size);
-	fallback.setFillColor(
-		type == GAME1_LevelObjectType::StartTile
-		? sf::Color(70, 150, 255)
-		: sf::Color(70, 210, 110));
-	fallback.setOutlineColor(sf::Color::White);
+	fallback.setFillColor(fillColor);
+	fallback.setOutlineColor(sf::Color(255, 255, 255, alpha));
 	fallback.setOutlineThickness(1.f);
 	target.draw(fallback);
 }
 
 void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 	const sf::Texture& texture,
-	const sf::FloatRect& bounds) const
+	const sf::FloatRect& bounds,
+	std::uint8_t alpha) const
 {
 	sf::Sprite sprite(texture);
 
@@ -2999,6 +3496,7 @@ void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 		bounds.size.y / localBounds.size.y
 		});
 
+	sprite.setColor(sf::Color(255, 255, 255, alpha));
 	sprite.setPosition(bounds.position);
 	target.draw(sprite);
 }
@@ -3006,7 +3504,8 @@ void GAME1_LevelEditor::drawTextureFitted(sf::RenderTarget& target,
 void GAME1_LevelEditor::drawTextureFittedRotated(sf::RenderTarget& target,
 	const sf::Texture& texture,
 	const sf::FloatRect& bounds,
-	GAME1_TrapOrientation orientation) const
+	GAME1_TrapOrientation orientation,
+	std::uint8_t alpha) const
 {
 	sf::Sprite sprite(texture);
 
@@ -3038,6 +3537,7 @@ void GAME1_LevelEditor::drawTextureFittedRotated(sf::RenderTarget& target,
 
 	sprite.setRotation(sf::degrees(static_cast<float>(GAME1_GetTrapOrientationValue(orientation)) * 90.f));
 	sprite.setScale({ scale, scale });
+	sprite.setColor(sf::Color(255, 255, 255, alpha));
 
 	target.draw(sprite);
 }

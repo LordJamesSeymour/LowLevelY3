@@ -5,6 +5,7 @@
 #include "GAME1_LevelObject.h"
 #include "GAME1_Trap.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -54,8 +55,14 @@ public:
 	void update(float deltaTime, sf::Vector2u windowSize);
 
 	void handleMousePressed(sf::Mouse::Button button, sf::Vector2i mousePixelPosition);
+	void handleMouseReleased(sf::Mouse::Button button, sf::Vector2i mousePixelPosition);
 	void handleMouseWheelScrolled(float delta);
 	void handleKeyReleased(sf::Keyboard::Key key);
+
+	// Returns true if Escape was consumed by the editor (e.g. it cancelled an
+	// active selection preview). When it returns false the caller should leave
+	// the editor as before.
+	bool handleEscape();
 
 	// Kept public so the existing main.cpp can still call these directly.
 	void selectToolbarSlot(int oneBasedVisibleSlot);
@@ -103,6 +110,16 @@ private:
 		GAME1_TrapOrientation orientation = GAME1_TrapOrientation::Up;
 	};
 
+	// Rectangular block of tiles + objects copied by the drag-selection tool.
+	// Object grid positions are stored relative to the selection's top-left.
+	struct ClipboardSelection
+	{
+		int width = 0;
+		int height = 0;
+		std::vector<std::string> tiles;
+		std::vector<EditorObject> objects;
+	};
+
 private:
 	bool initialise(const std::string& fontPath,
 		const std::filesystem::path& rootDirectory,
@@ -143,7 +160,19 @@ private:
 	void placeTileAt(int col, int row, char tile);
 	void placeTrapObjectAt(int col, int row, GAME1_TrapType type);
 	void placeLevelObjectAt(int col, int row, GAME1_LevelObjectType type);
+	void placeSelectedToolAtTile(int col, int row);
 	void eraseObjectAt(int col, int row);
+
+	// SPACE + click column editing.
+	void insertColumnAt(int col);
+	void deleteColumnAt(int col);
+
+	// Drag selection / copy / paste tool.
+	std::optional<sf::Vector2i> clampPixelToTile(sf::Vector2i mousePixelPosition) const;
+	void copySelection(sf::Vector2i startTile, sf::Vector2i endTile);
+	void pasteClipboardAt(int destCol, int destRow);
+	void cancelSelectionPreview();
+	bool tileToVisibleRect(int worldCol, int worldRow, sf::FloatRect& outRect) const;
 	void rotateSelectedObjectTool(int quarterTurnsClockwise);
 	bool hasChainAt(int col, int row) const;
 	int findObjectIndexAt(int col, int row, std::optional<GAME1_TrapType> type = std::nullopt) const;
@@ -188,25 +217,30 @@ private:
 
 	void drawTilePreview(sf::RenderTarget& target,
 		char tile,
-		const sf::FloatRect& bounds) const;
+		const sf::FloatRect& bounds,
+		std::uint8_t alpha = 255) const;
 
 	void drawObjectPreview(sf::RenderTarget& target,
 		GAME1_TrapType type,
 		GAME1_TrapOrientation orientation,
-		const sf::FloatRect& bounds) const;
+		const sf::FloatRect& bounds,
+		std::uint8_t alpha = 255) const;
 
 	void drawLevelObjectPreview(sf::RenderTarget& target,
 		GAME1_LevelObjectType type,
-		const sf::FloatRect& bounds) const;
+		const sf::FloatRect& bounds,
+		std::uint8_t alpha = 255) const;
 
 	void drawTextureFitted(sf::RenderTarget& target,
 		const sf::Texture& texture,
-		const sf::FloatRect& bounds) const;
+		const sf::FloatRect& bounds,
+		std::uint8_t alpha = 255) const;
 
 	void drawTextureFittedRotated(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		const sf::FloatRect& bounds,
-		GAME1_TrapOrientation orientation) const;
+		GAME1_TrapOrientation orientation,
+		std::uint8_t alpha = 255) const;
 
 	const Tool* getSelectedTool() const;
 	const Tool* getToolForTile(char tile) const;
@@ -243,6 +277,16 @@ private:
 	int m_viewStartCol = 0;
 	int m_viewStartRow = 0;
 	GAME1_TrapOrientation m_objectPreviewOrientation = GAME1_TrapOrientation::Up;
+
+	// Drag-selection / clipboard state. A left press over the grid arms a
+	// potential drag (placement is deferred to release); if the mouse releases
+	// on a different tile the rectangle is copied and the editor enters a paste
+	// preview that follows the mouse until clicked or cancelled.
+	bool m_isPotentialDrag = false;
+	sf::Vector2i m_dragStartTile{ 0, 0 };
+	bool m_hasClipboard = false;
+	bool m_inPreviewMode = false;
+	ClipboardSelection m_clipboard;
 
 	sf::Texture m_backgroundTexture;
 	bool m_hasBackgroundTexture = false;
