@@ -128,6 +128,7 @@ private:
 		const std::string& ignoredLegacyTexturePath);
 
 	bool loadWorldFloorTextures(const std::filesystem::path& worldTilesDirectory);
+	void loadWorldBackgroundTileTextures(const std::filesystem::path& worldTilesDirectory);
 	void loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory);
 	void loadCheckpointTextures(const std::filesystem::path& resourcesDirectory);
 	void loadGoalTileTextures(const std::filesystem::path& resourcesDirectory);
@@ -146,12 +147,19 @@ private:
 	void rebuildTrapRuntime();
 	void configureMovingPlatformPaths();
 	bool hasChainAt(sf::Vector2i gridPosition) const;
+	// Decoration-only background tiles. Drawn after the parallax background but
+	// behind every solid/foreground tile. They have no collision or gameplay
+	// effect (gameplay queries only read m_rows).
+	void drawBackgroundTiles(sf::RenderWindow& window) const;
 	void drawTraps(sf::RenderWindow& window) const;
 	void drawGoalTiles(sf::RenderWindow& window) const;
 	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
 
 private:
 	std::vector<std::string> m_rows;
+	// Parallel grid of background-decoration tile codes ('O' = empty). Same
+	// dimensions as m_rows. Saved in a separate #BACKGROUND map section.
+	std::vector<std::string> m_bgRows;
 
 	std::string m_resourcesDirectory;
 	int m_worldNumber = 1;
@@ -166,6 +174,7 @@ private:
 	GAME1_TrapAssets m_trapAssets;
 
 	std::unordered_map<char, sf::Texture> m_floorTextures;
+	std::unordered_map<char, sf::Texture> m_backgroundTileTextures;
 	std::unordered_map<char, sf::Texture> m_specialTileTextures;
 
 	enum class CheckpointPhase

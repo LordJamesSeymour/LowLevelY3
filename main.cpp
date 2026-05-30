@@ -74,11 +74,18 @@ namespace
 	{
 		int score = 0;
 		std::vector<GAME1_FruitType> collectedFruits;
+		// Per-player completion time (multiplayer). Recorded when this player
+		// reaches the End Tile, or set to the level end time if the multiplayer
+		// countdown expires before they get there.
+		float completionTimeSeconds = 0.f;
+		bool reachedEnd = false;
 
 		void reset()
 		{
 			score = 0;
 			collectedFruits.clear();
+			completionTimeSeconds = 0.f;
+			reachedEnd = false;
 		}
 	};
 
@@ -627,6 +634,14 @@ int main()
 	sf::FloatRect game1VictoryRetryBounds;
 	sf::FloatRect game1VictoryNextBounds;
 
+	// Surfers Quest multiplayer end-tile countdown. Only used in co-op:
+	// when the first player reaches the End Tile, the other player gets a
+	// fixed window to reach it too before the level finishes.
+	const float kGame1EndCountdownDuration = 10.f;
+	bool game1EndCountdownActive = false;
+	float game1EndCountdownSeconds = 0.f;
+	int game1EndCountdownFirstFinisher = -1;
+
 	// Vertical camera state for Surfers Quest: persistent across frames,
 	// snapped on level load, smoothly follows player with margin-pinning.
 	float game1CameraCenterY = 0.f;
@@ -838,6 +853,14 @@ int main()
 			game1VictoryPopupOpen = false;
 			game1TriggeredEndTileIndex = -1;
 			game1VictorySelectedButton = 0;
+			game1EndCountdownActive = false;
+			game1EndCountdownSeconds = 0.f;
+			game1EndCountdownFirstFinisher = -1;
+			for (GAME1_PlayerScoreState& scoreState : game1Scores)
+			{
+				scoreState.completionTimeSeconds = 0.f;
+				scoreState.reachedEnd = false;
+			}
 			game1Level.resetGoalTiles();
 		};
 
@@ -957,14 +980,32 @@ int main()
 		{
 			const float windowWidth = static_cast<float>(window.getSize().x);
 			const float windowHeight = static_cast<float>(window.getSize().y);
-			const int collectedRows = game1RunCollectedFruits.empty()
-				? 1
-				: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
+			const bool multiplayer = game1Player2Joined;
 
-			const float panelWidth = std::min(760.f, std::max(520.f, windowWidth - 180.f));
-			const float desiredHeight = 350.f + static_cast<float>(collectedRows) * 58.f;
+			auto FruitRows = [](std::size_t count) -> int
+				{
+					return count == 0 ? 1 : static_cast<int>((count + 3) / 4);
+				};
+
+			int collectedRows;
+			if (multiplayer)
+			{
+				collectedRows = std::max(
+					FruitRows(game1Scores[0].collectedFruits.size()),
+					FruitRows(game1Scores[1].collectedFruits.size()));
+			}
+			else
+			{
+				collectedRows = FruitRows(game1RunCollectedFruits.size());
+			}
+
+			const float panelWidth = multiplayer
+				? std::min(940.f, std::max(720.f, windowWidth - 120.f))
+				: std::min(760.f, std::max(520.f, windowWidth - 180.f));
+			const float desiredHeight = (multiplayer ? 380.f : 350.f) +
+				static_cast<float>(collectedRows) * (multiplayer ? 46.f : 58.f);
 			const float panelHeight = std::min(
-				std::max(390.f, desiredHeight),
+				std::max(multiplayer ? 420.f : 390.f, desiredHeight),
 				std::max(360.f, windowHeight - 80.f));
 
 			const sf::FloatRect panelBounds(
@@ -2662,27 +2703,74 @@ int main()
 					game1VictoryPopupOpen = false;
 					game1TriggeredEndTileIndex = endTileIndex;
 					game1VictorySelectedButton = 0;
+					game1EndCountdownActive = false;
+					game1EndCountdownSeconds = 0.f;
 					ArcadeInput::consumePressedState();
 				};
 
-			auto TryTriggerEndTileForPlayer = [&](const GAME1_Player& player)
+			// Returns the index of an End Tile the player's bounds overlap, or
+			// -1 if none. Unlike the old loop this does NOT skip already-
+			// triggered tiles, so in co-op the second player is still detected
+			// reaching the same tile the first player triggered.
+			auto FindOverlappingEndTile = [&](const GAME1_Player& player) -> int
 				{
-					if (game1RunFinished || !player.isActive())
-						return;
-
 					const sf::FloatRect playerBounds = player.getBounds();
 
 					for (int i = 0; i < game1Level.getEndTileCount(); ++i)
 					{
-						if (game1Level.isEndTileTriggered(i))
-							continue;
+						if (RectsOverlap(playerBounds, game1Level.getEndTileBounds(i)))
+							return i;
+					}
 
-						if (!RectsOverlap(playerBounds, game1Level.getEndTileBounds(i)))
-							continue;
+					return -1;
+				};
 
-						game1Level.triggerEndTile(i);
-						FinishGame1Run(i);
+			auto TryTriggerEndTileForPlayer = [&](const GAME1_Player& player, int playerIndex)
+				{
+					if (game1RunFinished || !player.isActive())
 						return;
+
+					if (playerIndex >= 0 &&
+						playerIndex < static_cast<int>(game1Scores.size()) &&
+						game1Scores[static_cast<std::size_t>(playerIndex)].reachedEnd)
+						return;
+
+					const int tileIndex = FindOverlappingEndTile(player);
+					if (tileIndex < 0)
+						return;
+
+					if (!game1Level.isEndTileTriggered(tileIndex))
+						game1Level.triggerEndTile(tileIndex);
+
+					if (playerIndex >= 0 &&
+						playerIndex < static_cast<int>(game1Scores.size()))
+					{
+						GAME1_PlayerScoreState& scoreState =
+							game1Scores[static_cast<std::size_t>(playerIndex)];
+						scoreState.reachedEnd = true;
+						scoreState.completionTimeSeconds = game1RunTimerSeconds;
+					}
+
+					if (!p2Joined)
+					{
+						// Single player: finish the level immediately.
+						FinishGame1Run(tileIndex);
+						return;
+					}
+
+					if (!game1EndCountdownActive)
+					{
+						// First player to reach the End Tile starts the countdown;
+						// the run keeps running so the other player can still arrive.
+						game1EndCountdownActive = true;
+						game1EndCountdownSeconds = kGame1EndCountdownDuration;
+						game1EndCountdownFirstFinisher = playerIndex;
+						game1TriggeredEndTileIndex = tileIndex;
+					}
+					else
+					{
+						// Second player arrived before the countdown expired.
+						FinishGame1Run(game1TriggeredEndTileIndex);
 					}
 				};
 
@@ -2717,6 +2805,27 @@ int main()
 				if (game1RunTimerStarted && !game1RunFinished)
 					game1RunTimerSeconds += deltaTime;
 
+				// Tick the co-op end-tile countdown. The run timer keeps running
+				// so a late-arriving second player still gets an accurate time.
+				if (p2Joined && game1EndCountdownActive && !game1RunFinished)
+				{
+					game1EndCountdownSeconds -= deltaTime;
+					if (game1EndCountdownSeconds <= 0.f)
+					{
+						game1EndCountdownSeconds = 0.f;
+
+						// Any player who never reached the End Tile gets the level
+						// end time recorded (shown as their completion time).
+						for (GAME1_PlayerScoreState& scoreState : game1Scores)
+						{
+							if (!scoreState.reachedEnd)
+								scoreState.completionTimeSeconds = game1RunTimerSeconds;
+						}
+
+						FinishGame1Run(game1TriggeredEndTileIndex);
+					}
+				}
+
 				game1Level.updateTraps(deltaTime);
 
 				const bool game1PlayerWasRespawning = game1Player.isRespawning();
@@ -2738,14 +2847,14 @@ int main()
 				}
 				TriggerCheckpointsForPlayer(game1Player);
 				TryCollectPickupsForPlayer(game1Player, 0);
-				TryTriggerEndTileForPlayer(game1Player);
+				TryTriggerEndTileForPlayer(game1Player, 0);
 
 				if (p2Joined && !game1Player2.isGameOver())
 				{
 					game1Player2.update(deltaTime, game1Level);
 					TriggerCheckpointsForPlayer(game1Player2);
 					TryCollectPickupsForPlayer(game1Player2, 1);
-					TryTriggerEndTileForPlayer(game1Player2);
+					TryTriggerEndTileForPlayer(game1Player2, 1);
 				}
 
 				game1Level.updateCheckpoints(deltaTime);
@@ -3177,72 +3286,170 @@ int main()
 
 					DrawCenteredText("VICTORY!", 46, panelBounds.position.y + 34.f, sf::Color(80, 235, 120));
 
+					if (!game1Player2Joined)
 					{
-						sf::Text label(game1UiFont);
-						label.setString("Score:");
-						label.setCharacterSize(25);
-						label.setFillColor(sf::Color::White);
-						label.setOutlineColor(sf::Color::Black);
-						label.setOutlineThickness(2.f);
+						// Single-player: combined score / fruits / time.
+						{
+							sf::Text label(game1UiFont);
+							label.setString("Score:");
+							label.setCharacterSize(25);
+							label.setFillColor(sf::Color::White);
+							label.setOutlineColor(sf::Color::Black);
+							label.setOutlineThickness(2.f);
 
-						sf::Text value(game1UiFont);
-						value.setString(std::to_string(game1RunScore));
-						value.setCharacterSize(25);
-						value.setFillColor(GetGame1RainbowColor(totalAppTime));
-						value.setOutlineColor(sf::Color::Black);
-						value.setOutlineThickness(2.f);
+							sf::Text value(game1UiFont);
+							value.setString(std::to_string(game1RunScore));
+							value.setCharacterSize(25);
+							value.setFillColor(GetGame1RainbowColor(totalAppTime));
+							value.setOutlineColor(sf::Color::Black);
+							value.setOutlineThickness(2.f);
 
-						const sf::FloatRect labelBounds = label.getLocalBounds();
-						const sf::FloatRect valueBounds = value.getLocalBounds();
-						const float gap = 10.f;
-						const float totalWidth = labelBounds.size.x + gap + valueBounds.size.x;
-						const float startX = panelBounds.position.x + (panelBounds.size.x - totalWidth) * 0.5f;
-						const float y = panelBounds.position.y + 104.f;
+							const sf::FloatRect labelBounds = label.getLocalBounds();
+							const sf::FloatRect valueBounds = value.getLocalBounds();
+							const float gap = 10.f;
+							const float totalWidth = labelBounds.size.x + gap + valueBounds.size.x;
+							const float startX = panelBounds.position.x + (panelBounds.size.x - totalWidth) * 0.5f;
+							const float y = panelBounds.position.y + 104.f;
 
-						label.setPosition({ startX - labelBounds.position.x, y - labelBounds.position.y });
-						value.setPosition({
-							startX + labelBounds.size.x + gap - valueBounds.position.x,
-							y - valueBounds.position.y
-							});
-						window.draw(label);
-						window.draw(value);
-					}
+							label.setPosition({ startX - labelBounds.position.x, y - labelBounds.position.y });
+							value.setPosition({
+								startX + labelBounds.size.x + gap - valueBounds.position.x,
+								y - valueBounds.position.y
+								});
+							window.draw(label);
+							window.draw(value);
+						}
 
-					DrawCenteredText("Collected:", 23, panelBounds.position.y + 146.f, sf::Color::White);
+						DrawCenteredText("Collected:", 23, panelBounds.position.y + 146.f, sf::Color::White);
 
-					const float iconSize = 50.f;
-					const float iconGap = 8.f;
-					const int collectedRows = game1RunCollectedFruits.empty()
-						? 1
-						: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
-					const float iconsBlockWidth = 4.f * iconSize + 3.f * iconGap;
-					const float iconsTop = panelBounds.position.y + 184.f;
-					const float iconsLeft = panelBounds.position.x + (panelBounds.size.x - iconsBlockWidth) * 0.5f;
+						const float iconSize = 50.f;
+						const float iconGap = 8.f;
+						const int collectedRows = game1RunCollectedFruits.empty()
+							? 1
+							: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
+						const float iconsBlockWidth = 4.f * iconSize + 3.f * iconGap;
+						const float iconsTop = panelBounds.position.y + 184.f;
+						const float iconsLeft = panelBounds.position.x + (panelBounds.size.x - iconsBlockWidth) * 0.5f;
 
-					if (game1RunCollectedFruits.empty())
-					{
-						DrawCenteredText("None", 21, iconsTop + 4.f, sf::Color(210, 210, 210));
+						if (game1RunCollectedFruits.empty())
+						{
+							DrawCenteredText("None", 21, iconsTop + 4.f, sf::Color(210, 210, 210));
+						}
+						else
+						{
+							DrawGame1FruitIconList(
+								game1RunCollectedFruits,
+								{ iconsLeft, iconsTop },
+								iconSize,
+								iconGap);
+						}
+
+						const float iconsHeight =
+							static_cast<float>(collectedRows) * iconSize +
+							static_cast<float>(std::max(0, collectedRows - 1)) * iconGap;
+						const float timeY = std::min(
+							iconsTop + iconsHeight + 26.f,
+							game1VictoryRetryBounds.position.y - 44.f);
+						DrawCenteredText(
+							"Time: " + FormatGame1RunTime(game1FinalRunTimerSeconds),
+							24,
+							timeY,
+							sf::Color::White);
 					}
 					else
 					{
-						DrawGame1FruitIconList(
-							game1RunCollectedFruits,
-							{ iconsLeft, iconsTop },
-							iconSize,
-							iconGap);
-					}
+						// Multiplayer: split the stats area in half, one column
+						// per player, each showing that player's own stats.
+						const float columnCenters[2] = {
+							panelBounds.position.x + panelBounds.size.x * 0.25f,
+							panelBounds.position.x + panelBounds.size.x * 0.75f
+						};
 
-					const float iconsHeight =
-						static_cast<float>(collectedRows) * iconSize +
-						static_cast<float>(std::max(0, collectedRows - 1)) * iconGap;
-					const float timeY = std::min(
-						iconsTop + iconsHeight + 26.f,
-						game1VictoryRetryBounds.position.y - 44.f);
-					DrawCenteredText(
-						"Time: " + FormatGame1RunTime(game1FinalRunTimerSeconds),
-						24,
-						timeY,
-						sf::Color::White);
+						{
+							const float dividerTop = panelBounds.position.y + 80.f;
+							const float dividerBottom = game1VictoryRetryBounds.position.y - 16.f;
+
+							sf::RectangleShape divider;
+							divider.setSize({ 2.f, std::max(0.f, dividerBottom - dividerTop) });
+							divider.setPosition({
+								panelBounds.position.x + panelBounds.size.x * 0.5f - 1.f,
+								dividerTop
+								});
+							divider.setFillColor(sf::Color(90, 95, 115, 220));
+							window.draw(divider);
+						}
+
+						auto DrawColumnCentered = [&](float centerX,
+							const std::string& value,
+							unsigned int size,
+							float y,
+							sf::Color fill)
+							{
+								sf::Text text(game1UiFont);
+								text.setString(value);
+								text.setCharacterSize(size);
+								text.setFillColor(fill);
+								text.setOutlineColor(sf::Color::Black);
+								text.setOutlineThickness(2.f);
+
+								const sf::FloatRect b = text.getLocalBounds();
+								text.setPosition({
+									centerX - b.size.x * 0.5f - b.position.x,
+									y - b.position.y
+									});
+								window.draw(text);
+							};
+
+						for (int playerIndex = 0; playerIndex < 2; ++playerIndex)
+						{
+							const GAME1_PlayerScoreState& stats =
+								game1Scores[static_cast<std::size_t>(playerIndex)];
+							const float cx = columnCenters[playerIndex];
+
+							float y = panelBounds.position.y + 92.f;
+							DrawColumnCentered(cx, playerIndex == 0 ? "P1:" : "P2:",
+								28, y, sf::Color(255, 224, 60));
+							y += 42.f;
+
+							DrawColumnCentered(cx, "Score", 18, y, sf::Color::White);
+							y += 24.f;
+							DrawColumnCentered(cx, std::to_string(stats.score),
+								24, y, GetGame1RainbowColor(totalAppTime));
+							y += 40.f;
+
+							DrawColumnCentered(cx, "Collected:", 18, y, sf::Color::White);
+							y += 28.f;
+
+							const float mpIconSize = 36.f;
+							const float mpIconGap = 6.f;
+							if (stats.collectedFruits.empty())
+							{
+								DrawColumnCentered(cx, "None", 18, y + 4.f, sf::Color(210, 210, 210));
+							}
+							else
+							{
+								const float blockWidth = 4.f * mpIconSize + 3.f * mpIconGap;
+								DrawGame1FruitIconList(
+									stats.collectedFruits,
+									{ cx - blockWidth * 0.5f, y },
+									mpIconSize,
+									mpIconGap);
+							}
+
+							const int rows = stats.collectedFruits.empty()
+								? 1
+								: static_cast<int>((stats.collectedFruits.size() + 3) / 4);
+							const float iconsHeight =
+								static_cast<float>(rows) * mpIconSize +
+								static_cast<float>(std::max(0, rows - 1)) * mpIconGap;
+							const float timeY = std::min(
+								y + iconsHeight + 22.f,
+								game1VictoryRetryBounds.position.y - 38.f);
+							DrawColumnCentered(cx,
+								"Time: " + FormatGame1RunTime(stats.completionTimeSeconds),
+								18, timeY, sf::Color::White);
+						}
+					}
 
 					auto DrawVictoryButton = [&](const sf::FloatRect& bounds,
 						const std::string& label,
@@ -3458,6 +3665,80 @@ int main()
 
 				// Restore single-player default size for the next respawn render.
 				respawnText.setCharacterSize(34);
+			}
+
+			// Co-op end-tile countdown number. Screen-space UI layer, drawn above
+			// gameplay so the waiting player can see how long they have left.
+			if (p2Joined && game1EndCountdownActive && !game1VictoryPopupOpen)
+			{
+				// Flicker visible/invisible like the stomp score popups.
+				const int flickerIndex = static_cast<int>(totalAppTime * 34.f);
+				if (flickerIndex % 2 == 0)
+				{
+					const float secs = game1EndCountdownSeconds;
+					const int shownNumber =
+						std::clamp(static_cast<int>(std::ceil(secs)), 1, 10);
+
+					// Local progress through the current number: 0 when it first
+					// appears, approaching 1 just before the next number.
+					float localTime = static_cast<float>(shownNumber) - secs;
+					localTime = std::clamp(localTime, 0.f, 1.f);
+
+					const float growPhase = 0.75f;
+					float growT = 1.f;
+					float alpha = 1.f;
+					if (localTime < growPhase)
+					{
+						// Float up and rapidly grow.
+						growT = localTime / growPhase;
+						alpha = 1.f;
+					}
+					else
+					{
+						// Final quarter second: fade out to invisible.
+						growT = 1.f;
+						alpha = 1.f - (localTime - growPhase) / (1.f - growPhase);
+					}
+
+					const float windowWidth = static_cast<float>(window.getSize().x);
+					const float windowHeight = static_cast<float>(window.getSize().y);
+
+					const float floatUp = growT * 70.f;
+					const float centerX = windowWidth * 0.5f;
+					// Slightly above the exact centre.
+					const float centerY = windowHeight * 0.42f - floatUp;
+
+					const unsigned int minSize = 80;
+					const unsigned int maxSize = 190;
+					const unsigned int charSize = minSize +
+						static_cast<unsigned int>(
+							static_cast<float>(maxSize - minSize) * growT);
+
+					// Flash between red and white.
+					const bool useWhite =
+						(static_cast<int>(totalAppTime * 12.f) % 2) == 0;
+					const std::uint8_t a = static_cast<std::uint8_t>(
+						std::clamp(static_cast<int>(alpha * 255.f), 0, 255));
+
+					sf::Color fill = useWhite
+						? sf::Color(255, 255, 255, a)
+						: sf::Color(235, 40, 40, a);
+					sf::Color outline(0, 0, 0, a);
+
+					sf::Text countdownText(game1UiFont);
+					countdownText.setString(std::to_string(shownNumber));
+					countdownText.setCharacterSize(charSize);
+					countdownText.setFillColor(fill);
+					countdownText.setOutlineColor(outline);
+					countdownText.setOutlineThickness(5.f);
+
+					const sf::FloatRect bounds = countdownText.getLocalBounds();
+					countdownText.setPosition({
+						centerX - bounds.size.x * 0.5f - bounds.position.x,
+						centerY - bounds.size.y * 0.5f - bounds.position.y
+						});
+					window.draw(countdownText);
+				}
 			}
 
 			DrawGame1VictoryPopup();

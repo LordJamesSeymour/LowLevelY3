@@ -32,7 +32,7 @@ class GAME1_LevelEditor
 {
 public:
 	static constexpr int VisibleRows = 10;
-	static constexpr int TotalRows = 20;
+	static constexpr int TotalRows = 40;
 	static constexpr int VisibleCols = 16;
 	static constexpr int TotalCols = 48;
 	static constexpr int GameplayTileSize = 64;
@@ -99,6 +99,9 @@ private:
 
 		sf::Color fallbackColor = sf::Color::White;
 		bool isEraser = false;
+		// Tile tools that paint into the decoration-only background layer
+		// (m_bgRows) instead of the foreground collision layer (m_rows).
+		bool isBackgroundTile = false;
 	};
 
 	struct EditorObject
@@ -134,6 +137,7 @@ private:
 
 	bool loadRowsFromFile(const std::string& mapPath);
 	bool validateTileCharacter(char tile) const;
+	bool validateBackgroundTileCharacter(char tile) const;
 	bool parseObjectLine(const std::string& line, EditorObject& outObject) const;
 
 	void refreshSavedLevelList();
@@ -158,6 +162,9 @@ private:
 	int findToolIndexForTile(char tile) const;
 
 	void placeTileAt(int col, int row, char tile);
+	void placeBackgroundTileAt(int col, int row, char tile);
+	bool isBackgroundToolSelected() const;
+	void syncBackgroundLayerSize();
 	void placeTrapObjectAt(int col, int row, GAME1_TrapType type);
 	void placeLevelObjectAt(int col, int row, GAME1_LevelObjectType type);
 	void placeSelectedToolAtTile(int col, int row);
@@ -263,6 +270,9 @@ private:
 	sf::Font m_font;
 
 	std::vector<std::string> m_rows;
+	// Decoration-only background layer, kept the same size as m_rows. Saved in a
+	// separate #BACKGROUND section. 'O' = empty.
+	std::vector<std::string> m_bgRows;
 	std::vector<EditorObject> m_objects;
 	std::vector<Tool> m_tools;
 	std::vector<int> m_visibleToolbarToolIndices;

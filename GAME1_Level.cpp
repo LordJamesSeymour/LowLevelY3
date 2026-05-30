@@ -162,6 +162,50 @@ namespace
 		if (stem == "grass_topleft") return 'Q';
 		if (stem == "grass_topright") return 'Y';
 
+		// Solid terrain blocks. These share one logical id per shape across all
+		// worlds; only the texture folder changes with the level's #WORLD tag.
+		if (stem == "solidsingle") return 'S';
+		if (stem == "solidlong_left") return 'T';
+		if (stem == "solidlong_center") return 'U';
+		if (stem == "solidlong_right") return 'V';
+		if (stem == "solidtall_top") return 'W';
+		if (stem == "solidtall_center") return 'A';
+		if (stem == "solidtall_bot") return 'E';
+		if (stem == "solid2x2_topleft") return 'F';
+		if (stem == "solid2x2_topright") return 'I';
+		if (stem == "solid2x2_botleft") return 'M';
+		if (stem == "solid2x2_botright") return 'N';
+
+		return std::nullopt;
+	}
+
+	bool IsBackgroundTileStem(const std::string& rawStem)
+	{
+		return ToLower(rawStem).rfind("bg_", 0) == 0;
+	}
+
+	// Logical code for each background-decoration tile. The background layer is
+	// its own map section / grid, so these lowercase codes are deliberately
+	// disjoint from the foreground tile codes and never collide with them.
+	// Must stay in sync with the editor's copy in GAME1_LevelEditor.cpp.
+	std::optional<char> KnownBackgroundTileCodeForStem(const std::string& rawStem)
+	{
+		const std::string stem = ToLower(rawStem);
+
+		if (stem == "bg_topleft") return 'd';
+		if (stem == "bg_topcenter") return 'f';
+		if (stem == "bg_topright") return 'g';
+		if (stem == "bg_leftcenter") return 'h';
+		if (stem == "bg_rightcenter") return 'i';
+		if (stem == "bg_botleft") return 'j';
+		if (stem == "bg_botcenter") return 'l';
+		if (stem == "bg_botright") return 'n';
+		if (stem == "bg_topleftend") return 'q';
+		if (stem == "bg_toprightend") return 'r';
+		if (stem == "bg_botleftend") return 't';
+		if (stem == "bg_botrightend") return 'u';
+		if (stem == "bg_empty") return 'v';
+
 		return std::nullopt;
 	}
 
@@ -205,6 +249,11 @@ namespace
 		{
 			if (entry.is_regular_file() && IsPngFile(entry.path()))
 			{
+				// Background-decoration tiles share this folder but belong to a
+				// separate layer; keep them out of the foreground tile codes.
+				if (IsBackgroundTileStem(entry.path().stem().string()))
+					continue;
+
 				pngPaths.push_back(entry.path());
 			}
 		}
@@ -344,8 +393,10 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	(void)ignoredLegacyTexturePath;
 
 	m_rows.clear();
+	m_bgRows.clear();
 	m_lastError.clear();
 	m_floorTextures.clear();
+	m_backgroundTileTextures.clear();
 	m_specialTileTextures.clear();
 	m_enemySpawns.clear();
 	m_pickupSpawns.clear();
@@ -374,9 +425,11 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	}
 
 	std::vector<std::string> rawRows;
+	std::vector<std::string> rawBgRows;
 	std::string line;
 	std::size_t expectedWidth = 0;
 	bool objectSectionStarted = false;
+	bool backgroundSectionStarted = false;
 
 	while (std::getline(file, line))
 	{
@@ -389,14 +442,29 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 		if (TryParseWorldMetadata(line, m_worldNumber))
 			continue;
 
+		if (line == "#BACKGROUND")
+		{
+			backgroundSectionStarted = true;
+			continue;
+		}
+
 		if (line == "#OBJECTS")
 		{
 			objectSectionStarted = true;
+			backgroundSectionStarted = false;
 			continue;
 		}
 
 		if (!line.empty() && line[0] == '#')
 			continue;
+
+		// Background-layer rows are captured verbatim and aligned to the
+		// foreground grid after the map body is fully parsed.
+		if (backgroundSectionStarted)
+		{
+			rawBgRows.push_back(line);
+			continue;
+		}
 
 		if (objectSectionStarted || line.rfind("OBJECT ", 0) == 0)
 		{
@@ -469,6 +537,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 
 	if (!loadWorldFloorTextures(worldTilesDirectory))
 		return false;
+
+	loadWorldBackgroundTileTextures(worldTilesDirectory);
 
 	m_trapAssets.load(resourcesPath.string());
 	loadSpecialTileTextures(resourcesPath);
@@ -569,6 +639,32 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 
 	m_rows = std::move(rawRows);
 
+	// Build the background-decoration grid so it exactly matches the foreground
+	// dimensions. Unknown / unsupported characters are treated as empty so old
+	// maps (and maps authored for a different world set) still load cleanly.
+	{
+		const std::size_t height = m_rows.size();
+		const std::size_t width = m_rows.empty() ? 0 : m_rows[0].size();
+
+		m_bgRows.assign(height, std::string(width, 'O'));
+
+		for (std::size_t row = 0; row < rawBgRows.size() && row < height; ++row)
+		{
+			const std::string& source = rawBgRows[row];
+
+			for (std::size_t col = 0; col < source.size() && col < width; ++col)
+			{
+				const char code = source[col];
+
+				if (code != 'O' &&
+					m_backgroundTileTextures.find(code) != m_backgroundTileTextures.end())
+				{
+					m_bgRows[row][col] = code;
+				}
+			}
+		}
+	}
+
 	std::sort(m_checkpoints.begin(), m_checkpoints.end(),
 		[](const CheckpointInstance& a, const CheckpointInstance& b)
 		{
@@ -613,6 +709,35 @@ bool GAME1_Level::loadWorldFloorTextures(const std::filesystem::path& worldTiles
 	}
 
 	return true;
+}
+
+void GAME1_Level::loadWorldBackgroundTileTextures(const std::filesystem::path& worldTilesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	m_backgroundTileTextures.clear();
+
+	if (!fs::exists(worldTilesDirectory) || !fs::is_directory(worldTilesDirectory))
+		return;
+
+	for (const auto& entry : fs::directory_iterator(worldTilesDirectory))
+	{
+		if (!entry.is_regular_file() || !IsPngFile(entry.path()))
+			continue;
+
+		if (!IsBackgroundTileStem(entry.path().stem().string()))
+			continue;
+
+		const std::optional<char> code =
+			KnownBackgroundTileCodeForStem(entry.path().stem().string());
+
+		if (!code.has_value())
+			continue;
+
+		sf::Texture texture;
+		if (texture.loadFromFile(entry.path().string()))
+			m_backgroundTileTextures[code.value()] = std::move(texture);
+	}
 }
 
 void GAME1_Level::loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory)
@@ -1190,6 +1315,10 @@ const sf::Texture* GAME1_Level::getEndTileCurrentTexture(std::size_t endIndex) c
 
 void GAME1_Level::draw(sf::RenderWindow& window) const
 {
+	// Background decoration first: above the parallax (drawn separately by the
+	// caller) but behind every foreground/solid tile drawn below.
+	drawBackgroundTiles(window);
+
 	for (int row = 0; row < static_cast<int>(m_rows.size()); ++row)
 	{
 		for (int col = 0; col < static_cast<int>(m_rows[row].size()); ++col)
@@ -1304,11 +1433,28 @@ GAME1_SurfaceTag GAME1_Level::getSurfaceTagForTile(int col, int row) const
 	if (isOneWayPlatformCode(tile))
 		return GAME1_SurfaceTag::Floor;
 
-	// Current SurfersQuest world tiles all use grass footsteps.
-	// Rock is implemented as a future surface tag and can be assigned here later
-	// when rock-specific walkable tiles are introduced.
 	if (isFloorTile(tile))
-		return GAME1_SurfaceTag::Grass;
+	{
+		// Surface tag follows the logical tile code (stable across all worlds,
+		// see KnownTileCodeForStem). Grass-topped tiles keep grass footsteps,
+		// Floor_* tiles use the Floor tag, and the Solid* terrain blocks use
+		// the Rock tag. Anything else falls back to Grass.
+		switch (tile)
+		{
+		case 'G': case 'H': case 'J': case 'Q': case 'Y':
+			return GAME1_SurfaceTag::Grass;
+
+		case 'X': case 'D': case 'Z': case 'C': case 'L': case 'R':
+			return GAME1_SurfaceTag::Floor;
+
+		case 'S': case 'T': case 'U': case 'V': case 'W':
+		case 'A': case 'E': case 'F': case 'I': case 'M': case 'N':
+			return GAME1_SurfaceTag::Rock;
+
+		default:
+			return GAME1_SurfaceTag::Grass;
+		}
+	}
 
 	return GAME1_SurfaceTag::Grass;
 }
@@ -1633,6 +1779,42 @@ bool GAME1_Level::hasChainAt(sf::Vector2i gridPosition) const
 	}
 
 	return false;
+}
+
+void GAME1_Level::drawBackgroundTiles(sf::RenderWindow& window) const
+{
+	for (int row = 0; row < static_cast<int>(m_bgRows.size()); ++row)
+	{
+		for (int col = 0; col < static_cast<int>(m_bgRows[row].size()); ++col)
+		{
+			const char tile = m_bgRows[row][col];
+
+			if (tile == 'O')
+				continue;
+
+			const auto found = m_backgroundTileTextures.find(tile);
+			if (found == m_backgroundTileTextures.end())
+				continue;
+
+			sf::Sprite sprite(found->second);
+
+			const sf::FloatRect localBounds = sprite.getLocalBounds();
+			if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f)
+				continue;
+
+			sprite.setScale({
+				static_cast<float>(TileSize) / localBounds.size.x,
+				static_cast<float>(TileSize) / localBounds.size.y
+				});
+
+			sprite.setPosition({
+				static_cast<float>(col * TileSize),
+				static_cast<float>(row * TileSize)
+				});
+
+			window.draw(sprite);
+		}
+	}
 }
 
 void GAME1_Level::drawTraps(sf::RenderWindow& window) const

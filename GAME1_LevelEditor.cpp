@@ -142,6 +142,21 @@ namespace
 		if (stem == "grass_topleft") return 'Q';
 		if (stem == "grass_topright") return 'Y';
 
+		// Solid terrain blocks. These share one logical id per shape across all
+		// worlds; only the texture folder changes with the level's #WORLD tag.
+		// Must stay in sync with KnownTileCodeForStem in GAME1_Level.cpp.
+		if (stem == "solidsingle") return 'S';
+		if (stem == "solidlong_left") return 'T';
+		if (stem == "solidlong_center") return 'U';
+		if (stem == "solidlong_right") return 'V';
+		if (stem == "solidtall_top") return 'W';
+		if (stem == "solidtall_center") return 'A';
+		if (stem == "solidtall_bot") return 'E';
+		if (stem == "solid2x2_topleft") return 'F';
+		if (stem == "solid2x2_topright") return 'I';
+		if (stem == "solid2x2_botleft") return 'M';
+		if (stem == "solid2x2_botright") return 'N';
+
 		return std::nullopt;
 	}
 
@@ -213,6 +228,36 @@ namespace
 
 		std::sort(paths.begin(), paths.end(), NaturalFrameSort);
 		return paths;
+	}
+
+	bool IsBackgroundTileStem(const std::string& rawStem)
+	{
+		return ToLower(rawStem).rfind("bg_", 0) == 0;
+	}
+
+	// Logical code for each background-decoration tile. Must stay in sync with
+	// KnownBackgroundTileCodeForStem in GAME1_Level.cpp. The background layer is
+	// a separate grid/section, so these lowercase codes are intentionally
+	// disjoint from the foreground tile codes.
+	std::optional<char> KnownBackgroundTileCodeForStem(const std::string& rawStem)
+	{
+		const std::string stem = ToLower(rawStem);
+
+		if (stem == "bg_topleft") return 'd';
+		if (stem == "bg_topcenter") return 'f';
+		if (stem == "bg_topright") return 'g';
+		if (stem == "bg_leftcenter") return 'h';
+		if (stem == "bg_rightcenter") return 'i';
+		if (stem == "bg_botleft") return 'j';
+		if (stem == "bg_botcenter") return 'l';
+		if (stem == "bg_botright") return 'n';
+		if (stem == "bg_topleftend") return 'q';
+		if (stem == "bg_toprightend") return 'r';
+		if (stem == "bg_botleftend") return 't';
+		if (stem == "bg_botrightend") return 'u';
+		if (stem == "bg_empty") return 'v';
+
+		return std::nullopt;
 	}
 
 	std::string LabelFromFileStem(std::string stem)
@@ -432,6 +477,7 @@ void GAME1_LevelEditor::resetEmpty()
 		m_worldNumber = 1;
 
 	m_rows.assign(TotalRows, std::string(TotalCols, 'O'));
+	m_bgRows.assign(TotalRows, std::string(TotalCols, 'O'));
 	m_objects.clear();
 	cancelSelectionPreview();
 	m_viewStartCol = 0;
@@ -707,7 +753,13 @@ void GAME1_LevelEditor::buildTools()
 		for (const auto& entry : fs::directory_iterator(worldTilesDirectory))
 		{
 			if (entry.is_regular_file() && IsPngFile(entry.path()))
+			{
+				// Background-decoration tiles are handled separately below.
+				if (IsBackgroundTileStem(entry.path().stem().string()))
+					continue;
+
 				pngPaths.push_back(entry.path());
+			}
 		}
 	}
 
@@ -808,6 +860,55 @@ void GAME1_LevelEditor::buildTools()
 		tileTool.hasTexture = loadTexture(tileTool.texture, definition.second.string());
 
 		addTool(std::move(tileTool));
+	}
+
+	// Background-decoration tile tools. These paint into the separate background
+	// layer (m_bgRows) and never collide. Grouped together at the end of the
+	// tool list so they fall onto their own hotbar page(s). The icon uses the
+	// currently selected world's texture, so changing the world re-skins them.
+	{
+		if (fs::exists(worldTilesDirectory) && fs::is_directory(worldTilesDirectory))
+		{
+			std::vector<fs::path> bgPaths;
+
+			for (const auto& entry : fs::directory_iterator(worldTilesDirectory))
+			{
+				if (!entry.is_regular_file() || !IsPngFile(entry.path()))
+					continue;
+
+				if (!IsBackgroundTileStem(entry.path().stem().string()))
+					continue;
+
+				if (KnownBackgroundTileCodeForStem(entry.path().stem().string()).has_value())
+					bgPaths.push_back(entry.path());
+			}
+
+			std::sort(bgPaths.begin(), bgPaths.end(), NaturalFrameSort);
+
+			for (const fs::path& path : bgPaths)
+			{
+				const std::optional<char> code =
+					KnownBackgroundTileCodeForStem(path.stem().string());
+
+				if (!code.has_value())
+					continue;
+
+				Tool bgTool;
+				bgTool.tile = code.value();
+				bgTool.isBackgroundTile = true;
+				bgTool.label = "bg " + std::string(1, code.value());
+				bgTool.description =
+					"World " +
+					std::to_string(m_worldNumber) +
+					" background (no collision) - " +
+					LabelFromFileStem(path.stem().string());
+
+				bgTool.fallbackColor = sf::Color(70, 90, 130);
+				bgTool.hasTexture = loadTexture(bgTool.texture, path.string());
+
+				addTool(std::move(bgTool));
+			}
+		}
 	}
 
 	rebuildVisibleToolbar();
@@ -1395,6 +1496,10 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 	{
 		placeLevelObjectAt(tilePosition->x, tilePosition->y, tool->levelObjectType);
 	}
+	else if (tool->isBackgroundTile)
+	{
+		placeBackgroundTileAt(tilePosition->x, tilePosition->y, tool->tile);
+	}
 	else
 	{
 		placeTileAt(tilePosition->x, tilePosition->y, tool->tile);
@@ -1408,6 +1513,16 @@ void GAME1_LevelEditor::eraseAtPixel(sf::Vector2i mousePixelPosition)
 	if (!tilePosition.has_value())
 		return;
 
+	// In background-tile mode (a background tool is selected) right-click erases
+	// only the background layer and leaves the foreground tile/objects intact.
+	if (isBackgroundToolSelected())
+	{
+		placeBackgroundTileAt(tilePosition->x, tilePosition->y, 'O');
+		return;
+	}
+
+	// Otherwise erase the foreground tile and any objects, leaving background
+	// decoration untouched.
 	eraseObjectAt(tilePosition->x, tilePosition->y);
 	placeTileAt(tilePosition->x, tilePosition->y, 'O');
 }
@@ -1441,7 +1556,23 @@ void GAME1_LevelEditor::pickAtPixel(sf::Vector2i mousePixelPosition)
 		}
 	}
 
-	selectToolByTile(m_rows[tilePosition->y][tilePosition->x]);
+	// Foreground tile takes priority when a cell has both layers; if the cell
+	// has only a background decoration tile, pick that instead. (Background and
+	// foreground tile codes are disjoint, so selectToolByTile resolves either.)
+	const char foregroundTile = m_rows[tilePosition->y][tilePosition->x];
+	const char backgroundTile =
+		(tilePosition->y < static_cast<int>(m_bgRows.size()) &&
+			tilePosition->x < static_cast<int>(m_bgRows[tilePosition->y].size()))
+		? m_bgRows[tilePosition->y][tilePosition->x]
+		: 'O';
+
+	if (foregroundTile == 'O' && backgroundTile != 'O')
+	{
+		selectToolByTile(backgroundTile);
+		return;
+	}
+
+	selectToolByTile(foregroundTile);
 }
 
 bool GAME1_LevelEditor::saveToNextLevelFile()
@@ -1483,6 +1614,8 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 			return false;
 		}
 
+		syncBackgroundLayerSize();
+
 		file << "#WORLD=" << m_worldNumber << '\n';
 
 		for (std::size_t row = 0; row < m_rows.size(); ++row)
@@ -1491,6 +1624,31 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 
 			if (row + 1 < m_rows.size())
 				file << '\n';
+		}
+
+		// Background-decoration layer, written only when at least one tile is
+		// placed so existing-style maps stay byte-identical when unused.
+		bool hasBackgroundTiles = false;
+		for (const std::string& bgRow : m_bgRows)
+		{
+			if (bgRow.find_first_not_of('O') != std::string::npos)
+			{
+				hasBackgroundTiles = true;
+				break;
+			}
+		}
+
+		if (hasBackgroundTiles)
+		{
+			file << '\n' << "#BACKGROUND" << '\n';
+
+			for (std::size_t row = 0; row < m_bgRows.size(); ++row)
+			{
+				file << m_bgRows[row];
+
+				if (row + 1 < m_bgRows.size())
+					file << '\n';
+			}
 		}
 
 		if (!m_objects.empty())
@@ -1557,11 +1715,13 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 	}
 
 	std::vector<std::string> rawLines;
+	std::vector<std::string> rawBgLines;
 	std::vector<EditorObject> loadedObjects;
 	std::string line;
 	std::size_t widestLine = 0;
 	int loadedWorldNumber = 1;
 	bool objectSectionStarted = false;
+	bool backgroundSectionStarted = false;
 
 	while (std::getline(file, line))
 	{
@@ -1574,14 +1734,28 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 		if (TryParseWorldMetadata(line, loadedWorldNumber))
 			continue;
 
+		if (line == "#BACKGROUND")
+		{
+			backgroundSectionStarted = true;
+			continue;
+		}
+
 		if (line == "#OBJECTS")
 		{
 			objectSectionStarted = true;
+			backgroundSectionStarted = false;
 			continue;
 		}
 
 		if (!line.empty() && line[0] == '#')
 			continue;
+
+		if (backgroundSectionStarted)
+		{
+			widestLine = std::max(widestLine, line.size());
+			rawBgLines.push_back(line);
+			continue;
+		}
 
 		if (objectSectionStarted || line.rfind("OBJECT ", 0) == 0)
 		{
@@ -1663,6 +1837,40 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 	m_rows = std::move(loadedRows);
 	m_objects = std::move(loadedObjects);
+
+	// Build the background layer to match the final foreground dimensions.
+	// Background rows are bottom-anchored just like the foreground, and unknown
+	// characters are skipped so old maps (no #BACKGROUND) just yield an empty
+	// background layer.
+	{
+		const std::size_t finalHeight = m_rows.size();
+		const std::size_t finalWidth = m_rows.empty() ? 0 : m_rows[0].size();
+
+		m_bgRows.assign(finalHeight, std::string(finalWidth, 'O'));
+
+		const int bgPad =
+			static_cast<int>(finalHeight) - static_cast<int>(rawBgLines.size());
+
+		for (std::size_t r = 0; r < rawBgLines.size(); ++r)
+		{
+			const int target = static_cast<int>(r) + bgPad;
+
+			if (target < 0 || target >= static_cast<int>(finalHeight))
+				continue;
+
+			std::string source = rawBgLines[r];
+			source.resize(finalWidth, 'O');
+
+			for (std::size_t c = 0; c < finalWidth; ++c)
+			{
+				const char code = source[c];
+
+				if (code != 'O' && validateBackgroundTileCharacter(code))
+					m_bgRows[static_cast<std::size_t>(target)][c] = code;
+			}
+		}
+	}
+
 	cancelSelectionPreview();
 	m_viewStartCol = 0;
 	m_viewStartRow = std::max(0, static_cast<int>(m_rows.size()) - VisibleRows);
@@ -1675,7 +1883,17 @@ bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
 
 bool GAME1_LevelEditor::validateTileCharacter(char tile) const
 {
-	return findToolIndexForTile(tile) >= 0;
+	const int index = findToolIndexForTile(tile);
+	return index >= 0 && !m_tools[static_cast<std::size_t>(index)].isBackgroundTile;
+}
+
+bool GAME1_LevelEditor::validateBackgroundTileCharacter(char tile) const
+{
+	if (tile == 'O')
+		return true;
+
+	const int index = findToolIndexForTile(tile);
+	return index >= 0 && m_tools[static_cast<std::size_t>(index)].isBackgroundTile;
 }
 
 bool GAME1_LevelEditor::parseObjectLine(const std::string& line, EditorObject& outObject) const
@@ -2027,6 +2245,45 @@ void GAME1_LevelEditor::placeTileAt(int col, int row, char tile)
 	m_rows[row][col] = tile;
 }
 
+void GAME1_LevelEditor::placeBackgroundTileAt(int col, int row, char tile)
+{
+	if (row < 0 || row >= static_cast<int>(m_rows.size()))
+		return;
+
+	if (col < 0 || col >= static_cast<int>(m_rows[row].size()))
+		return;
+
+	if (tile != 'O' && !validateBackgroundTileCharacter(tile))
+		return;
+
+	syncBackgroundLayerSize();
+
+	m_bgRows[row][col] = tile;
+}
+
+bool GAME1_LevelEditor::isBackgroundToolSelected() const
+{
+	const Tool* tool = getSelectedTool();
+	return tool != nullptr && tool->kind == ToolKind::Tile && tool->isBackgroundTile;
+}
+
+void GAME1_LevelEditor::syncBackgroundLayerSize()
+{
+	// The background layer must always match the foreground grid dimensions so
+	// the two stay aligned through resizing, loading and saving.
+	const std::size_t height = m_rows.size();
+	const std::size_t width = m_rows.empty() ? 0 : m_rows[0].size();
+
+	if (m_bgRows.size() != height)
+		m_bgRows.resize(height, std::string(width, 'O'));
+
+	for (std::string& bgRow : m_bgRows)
+	{
+		if (bgRow.size() != width)
+			bgRow.resize(width, 'O');
+	}
+}
+
 void GAME1_LevelEditor::placeTrapObjectAt(int col, int row, GAME1_TrapType type)
 {
 	if (row < 0 || row >= static_cast<int>(m_rows.size()))
@@ -2157,6 +2414,8 @@ void GAME1_LevelEditor::placeSelectedToolAtTile(int col, int row)
 		placeTrapObjectAt(col, row, tool->trapType);
 	else if (tool->kind == ToolKind::LevelObject)
 		placeLevelObjectAt(col, row, tool->levelObjectType);
+	else if (tool->isBackgroundTile)
+		placeBackgroundTileAt(col, row, tool->tile);
 	else
 		placeTileAt(col, row, tool->tile);
 }
@@ -2171,8 +2430,13 @@ void GAME1_LevelEditor::insertColumnAt(int col)
 
 	cancelSelectionPreview();
 
+	syncBackgroundLayerSize();
+
 	for (std::string& levelRow : m_rows)
 		levelRow.insert(levelRow.begin() + col, 'O');
+
+	for (std::string& bgRow : m_bgRows)
+		bgRow.insert(bgRow.begin() + std::min<std::size_t>(col, bgRow.size()), 'O');
 
 	for (EditorObject& object : m_objects)
 	{
@@ -2208,10 +2472,18 @@ void GAME1_LevelEditor::deleteColumnAt(int col)
 
 	cancelSelectionPreview();
 
+	syncBackgroundLayerSize();
+
 	for (std::string& levelRow : m_rows)
 	{
 		if (col < static_cast<int>(levelRow.size()))
 			levelRow.erase(levelRow.begin() + col);
+	}
+
+	for (std::string& bgRow : m_bgRows)
+	{
+		if (col < static_cast<int>(bgRow.size()))
+			bgRow.erase(bgRow.begin() + col);
 	}
 
 	for (int i = static_cast<int>(m_objects.size()) - 1; i >= 0; --i)
@@ -2898,6 +3170,17 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 
 				if (!m_hasBackgroundTexture)
 					drawTilePreview(window, 'O', tileRect);
+
+				// Background-decoration layer renders first, behind the
+				// foreground tile in the same cell.
+				if (worldRow < static_cast<int>(m_bgRows.size()) &&
+					worldCol < static_cast<int>(m_bgRows[worldRow].size()))
+				{
+					const char bgTile = m_bgRows[worldRow][worldCol];
+
+					if (bgTile != 'O')
+						drawTilePreview(window, bgTile, tileRect);
+				}
 
 				const char tile = m_rows[worldRow][worldCol];
 
