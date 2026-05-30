@@ -2,6 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include "GAME1_LevelObject.h"
 #include "GAME1_Trap.h"
 
 #include <filesystem>
@@ -73,14 +74,16 @@ private:
 	enum class ToolKind
 	{
 		Tile,
-		Object
+		TrapObject,
+		LevelObject
 	};
 
 	struct Tool
 	{
 		ToolKind kind = ToolKind::Tile;
 		char tile = 'O';
-		GAME1_TrapType objectType = GAME1_TrapType::FallingPlatform;
+		GAME1_TrapType trapType = GAME1_TrapType::FallingPlatform;
+		GAME1_LevelObjectType levelObjectType = GAME1_LevelObjectType::StartTile;
 		std::string label;
 		std::string description;
 
@@ -93,7 +96,9 @@ private:
 
 	struct EditorObject
 	{
-		GAME1_TrapType type = GAME1_TrapType::FallingPlatform;
+		ToolKind kind = ToolKind::TrapObject;
+		GAME1_TrapType trapType = GAME1_TrapType::FallingPlatform;
+		GAME1_LevelObjectType levelObjectType = GAME1_LevelObjectType::StartTile;
 		sf::Vector2i gridPosition{ 0, 0 };
 		GAME1_TrapOrientation orientation = GAME1_TrapOrientation::Up;
 	};
@@ -136,7 +141,8 @@ private:
 	int findToolIndexForTile(char tile) const;
 
 	void placeTileAt(int col, int row, char tile);
-	void placeObjectAt(int col, int row, GAME1_TrapType type);
+	void placeTrapObjectAt(int col, int row, GAME1_TrapType type);
+	void placeLevelObjectAt(int col, int row, GAME1_LevelObjectType type);
 	void eraseObjectAt(int col, int row);
 	void rotateSelectedObjectTool(int quarterTurnsClockwise);
 	bool hasChainAt(int col, int row) const;
@@ -189,6 +195,10 @@ private:
 		GAME1_TrapOrientation orientation,
 		const sf::FloatRect& bounds) const;
 
+	void drawLevelObjectPreview(sf::RenderTarget& target,
+		GAME1_LevelObjectType type,
+		const sf::FloatRect& bounds) const;
+
 	void drawTextureFitted(sf::RenderTarget& target,
 		const sf::Texture& texture,
 		const sf::FloatRect& bounds) const;
@@ -200,7 +210,8 @@ private:
 
 	const Tool* getSelectedTool() const;
 	const Tool* getToolForTile(char tile) const;
-	const Tool* getToolForObject(GAME1_TrapType type) const;
+	const Tool* getToolForTrapObject(GAME1_TrapType type) const;
+	const Tool* getToolForLevelObject(GAME1_LevelObjectType type) const;
 
 	std::filesystem::path getResourcesDirectory() const;
 	std::filesystem::path getMapsDirectory() const;

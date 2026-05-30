@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iostream>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -135,6 +136,11 @@ namespace
 			return false;
 
 		return texture.loadFromFile(path.string());
+	}
+
+	void WarnLevelAsset(const std::string& message)
+	{
+		std::cerr << message << '\n';
 	}
 
 	std::optional<char> KnownTileCodeForStem(const std::string& rawStem)
@@ -349,6 +355,12 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_checkpointActivationFrames.clear();
 	m_checkpointLoopFrames.clear();
 	m_hasCheckpointNoFlagTexture = false;
+	m_startTiles.clear();
+	m_endTiles.clear();
+	m_startMovingFrames.clear();
+	m_endLoopFrames.clear();
+	m_hasStartIdleTexture = false;
+	m_hasEndIdleTexture = false;
 	m_hasBackgroundTexture = false;
 	m_worldNumber = 1;
 	m_playerSpawnPosition = { 100.f, 100.f };
@@ -388,6 +400,29 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 
 		if (objectSectionStarted || line.rfind("OBJECT ", 0) == 0)
 		{
+			GAME1_LevelObjectSpawn levelObjectSpawn;
+			if (GAME1_TryParseLevelObjectLine(line, levelObjectSpawn))
+			{
+				const sf::Vector2f position(
+					static_cast<float>(levelObjectSpawn.gridPosition.x * TileSize),
+					static_cast<float>(levelObjectSpawn.gridPosition.y * TileSize));
+
+				if (levelObjectSpawn.type == GAME1_LevelObjectType::StartTile)
+				{
+					StartTileInstance instance;
+					instance.tilePosition = position;
+					m_startTiles.push_back(instance);
+				}
+				else if (levelObjectSpawn.type == GAME1_LevelObjectType::EndTile)
+				{
+					EndTileInstance instance;
+					instance.tilePosition = position;
+					m_endTiles.push_back(instance);
+				}
+
+				continue;
+			}
+
 			GAME1_TrapSpawn trapSpawn;
 			if (!GAME1_TryParseTrapObjectLine(line, trapSpawn))
 			{
@@ -438,6 +473,7 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_trapAssets.load(resourcesPath.string());
 	loadSpecialTileTextures(resourcesPath);
 	loadCheckpointTextures(resourcesPath);
+	loadGoalTileTextures(resourcesPath);
 	loadWorldBackgroundTexture(resourcesPath);
 	loadParallaxBackground(resourcesPath);
 
@@ -728,6 +764,62 @@ void GAME1_Level::loadCheckpointTextures(const std::filesystem::path& resourcesD
 	loadFrames(checkpointDirectory / "FlagOut", m_checkpointLoopFrames);
 }
 
+void GAME1_Level::loadGoalTileTextures(const std::filesystem::path& resourcesDirectory)
+{
+	namespace fs = std::filesystem;
+
+	m_hasStartIdleTexture = false;
+	m_hasEndIdleTexture = false;
+	m_startMovingFrames.clear();
+	m_endLoopFrames.clear();
+
+	const fs::path startDirectory = resourcesDirectory / "Tiles" / "Start";
+	const fs::path endDirectory = resourcesDirectory / "Tiles" / "End";
+
+	auto loadTextureWithWarning = [](sf::Texture& texture, const fs::path& path)
+		{
+			if (!fs::exists(path) || !fs::is_regular_file(path))
+			{
+				WarnLevelAsset("SurfersQuest goal tile texture missing: " + path.string());
+				return false;
+			}
+
+			if (!texture.loadFromFile(path.string()))
+			{
+				WarnLevelAsset("SurfersQuest goal tile texture failed to load: " + path.string());
+				return false;
+			}
+
+			return true;
+		};
+
+	m_hasStartIdleTexture =
+		loadTextureWithWarning(m_startIdleTexture, startDirectory / "StartIdle.png");
+
+	for (int i = 0; i <= 16; ++i)
+	{
+		const fs::path framePath =
+			startDirectory / ("Start_(Moving)_" + std::to_string(i) + ".png");
+
+		sf::Texture texture;
+		if (loadTextureWithWarning(texture, framePath))
+			m_startMovingFrames.push_back(std::move(texture));
+	}
+
+	m_hasEndIdleTexture =
+		loadTextureWithWarning(m_endIdleTexture, endDirectory / "EndIdle.png");
+
+	for (int i = 0; i <= 7; ++i)
+	{
+		const fs::path framePath =
+			endDirectory / ("frame_" + std::to_string(i) + ".png");
+
+		sf::Texture texture;
+		if (loadTextureWithWarning(texture, framePath))
+			m_endLoopFrames.push_back(std::move(texture));
+	}
+}
+
 void GAME1_Level::loadWorldBackgroundTexture(const std::filesystem::path& resourcesDirectory)
 {
 	namespace fs = std::filesystem;
@@ -848,6 +940,80 @@ void GAME1_Level::resetTraps()
 	rebuildTrapRuntime();
 }
 
+void GAME1_Level::updateGoalTiles(float deltaTime)
+{
+	for (StartTileInstance& startTile : m_startTiles)
+	{
+		if (startTile.phase == StartTilePhase::Idle)
+			continue;
+
+		if (m_startMovingFrames.empty())
+		{
+			startTile.phase = StartTilePhase::Idle;
+			startTile.frameIndex = 0;
+			startTile.frameTimer = 0.f;
+			continue;
+		}
+
+		startTile.frameTimer += deltaTime;
+
+		while (startTile.frameTimer >= m_goalTileFrameDuration)
+		{
+			startTile.frameTimer -= m_goalTileFrameDuration;
+
+			if (startTile.frameIndex + 1 < m_startMovingFrames.size())
+			{
+				++startTile.frameIndex;
+			}
+			else
+			{
+				startTile.phase = StartTilePhase::Idle;
+				startTile.frameIndex = 0;
+				startTile.frameTimer = 0.f;
+				break;
+			}
+		}
+	}
+
+	for (EndTileInstance& endTile : m_endTiles)
+	{
+		if (!endTile.triggered || m_endLoopFrames.empty())
+			continue;
+
+		endTile.frameTimer += deltaTime;
+
+		while (endTile.frameTimer >= m_goalTileFrameDuration)
+		{
+			endTile.frameTimer -= m_goalTileFrameDuration;
+			++endTile.frameIndex;
+
+			if (endTile.frameIndex >= m_endLoopFrames.size())
+			{
+				endTile.frameIndex = 0;
+				++endTile.completedAnimationCycles;
+			}
+		}
+	}
+}
+
+void GAME1_Level::resetGoalTiles()
+{
+	for (StartTileInstance& startTile : m_startTiles)
+	{
+		startTile.phase = StartTilePhase::Moving;
+		startTile.frameIndex = 0;
+		startTile.frameTimer = 0.f;
+	}
+
+	for (EndTileInstance& endTile : m_endTiles)
+	{
+		endTile.triggered = false;
+		endTile.frameIndex = 0;
+		endTile.frameTimer = 0.f;
+		endTile.completedAnimationCycles = 0;
+	}
+}
+
 int GAME1_Level::getCheckpointCount() const
 {
 	return static_cast<int>(m_checkpoints.size());
@@ -905,6 +1071,62 @@ void GAME1_Level::triggerCheckpoint(int index)
 	checkpoint.frameTimer = 0.f;
 }
 
+int GAME1_Level::getEndTileCount() const
+{
+	return static_cast<int>(m_endTiles.size());
+}
+
+sf::FloatRect GAME1_Level::getEndTileBounds(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_endTiles.size()))
+		return sf::FloatRect({ 0.f, 0.f }, { 0.f, 0.f });
+
+	const float doubleTileSize = static_cast<float>(TileSize) * 2.f;
+	return sf::FloatRect(
+		m_endTiles[static_cast<std::size_t>(index)].tilePosition,
+		{ doubleTileSize, doubleTileSize });
+}
+
+bool GAME1_Level::isEndTileTriggered(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(m_endTiles.size()))
+		return false;
+
+	return m_endTiles[static_cast<std::size_t>(index)].triggered;
+}
+
+bool GAME1_Level::hasEndTileCompletedAnimationCycles(int index, int cycleCount) const
+{
+	if (index < 0 || index >= static_cast<int>(m_endTiles.size()))
+		return true;
+
+	const EndTileInstance& endTile = m_endTiles[static_cast<std::size_t>(index)];
+
+	if (!endTile.triggered)
+		return false;
+
+	if (m_endLoopFrames.empty())
+		return true;
+
+	return endTile.completedAnimationCycles >= cycleCount;
+}
+
+void GAME1_Level::triggerEndTile(int index)
+{
+	if (index < 0 || index >= static_cast<int>(m_endTiles.size()))
+		return;
+
+	EndTileInstance& endTile = m_endTiles[static_cast<std::size_t>(index)];
+
+	if (endTile.triggered)
+		return;
+
+	endTile.triggered = true;
+	endTile.frameIndex = 0;
+	endTile.frameTimer = 0.f;
+	endTile.completedAnimationCycles = 0;
+}
+
 const sf::Texture* GAME1_Level::getCheckpointCurrentTexture(std::size_t checkpointIndex) const
 {
 	if (checkpointIndex >= m_checkpoints.size())
@@ -934,6 +1156,36 @@ const sf::Texture* GAME1_Level::getCheckpointCurrentTexture(std::size_t checkpoi
 
 	const std::size_t safeIndex = checkpoint.frameIndex % m_checkpointLoopFrames.size();
 	return &m_checkpointLoopFrames[safeIndex];
+}
+
+const sf::Texture* GAME1_Level::getStartTileCurrentTexture(std::size_t startIndex) const
+{
+	if (startIndex >= m_startTiles.size())
+		return nullptr;
+
+	const StartTileInstance& startTile = m_startTiles[startIndex];
+
+	if (startTile.phase == StartTilePhase::Moving && !m_startMovingFrames.empty())
+	{
+		const std::size_t safeIndex =
+			std::min(startTile.frameIndex, m_startMovingFrames.size() - 1);
+		return &m_startMovingFrames[safeIndex];
+	}
+
+	return m_hasStartIdleTexture ? &m_startIdleTexture : nullptr;
+}
+
+const sf::Texture* GAME1_Level::getEndTileCurrentTexture(std::size_t endIndex) const
+{
+	if (endIndex >= m_endTiles.size())
+		return nullptr;
+
+	const EndTileInstance& endTile = m_endTiles[endIndex];
+
+	if (endTile.triggered && !m_endLoopFrames.empty())
+		return &m_endLoopFrames[endTile.frameIndex % m_endLoopFrames.size()];
+
+	return m_hasEndIdleTexture ? &m_endIdleTexture : nullptr;
 }
 
 void GAME1_Level::draw(sf::RenderWindow& window) const
@@ -997,6 +1249,8 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 
 		window.draw(sprite);
 	}
+
+	drawGoalTiles(window);
 }
 
 bool GAME1_Level::isSolidTile(int col, int row) const
@@ -1393,6 +1647,59 @@ void GAME1_Level::drawTraps(sf::RenderWindow& window) const
 	{
 		if (!trap.isChain())
 			trap.draw(window, m_trapAssets);
+	}
+}
+
+void GAME1_Level::drawGoalTiles(sf::RenderWindow& window) const
+{
+	const float doubleTileSize = static_cast<float>(TileSize) * 2.f;
+
+	auto drawGoalSprite = [&](const sf::Texture* texture,
+		sf::Vector2f position,
+		sf::Color fallbackColor)
+		{
+			const sf::FloatRect bounds(position, { doubleTileSize, doubleTileSize });
+
+			if (texture != nullptr)
+			{
+				sf::Sprite sprite(*texture);
+				const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+				if (localBounds.size.x > 0.f && localBounds.size.y > 0.f)
+				{
+					sprite.setScale({
+						bounds.size.x / localBounds.size.x,
+						bounds.size.y / localBounds.size.y
+						});
+					sprite.setPosition(bounds.position);
+					window.draw(sprite);
+					return;
+				}
+			}
+
+			sf::RectangleShape fallback;
+			fallback.setPosition(bounds.position);
+			fallback.setSize(bounds.size);
+			fallback.setFillColor(fallbackColor);
+			fallback.setOutlineColor(sf::Color::White);
+			fallback.setOutlineThickness(2.f);
+			window.draw(fallback);
+		};
+
+	for (std::size_t i = 0; i < m_startTiles.size(); ++i)
+	{
+		drawGoalSprite(
+			getStartTileCurrentTexture(i),
+			m_startTiles[i].tilePosition,
+			sf::Color(70, 150, 255, 210));
+	}
+
+	for (std::size_t i = 0; i < m_endTiles.size(); ++i)
+	{
+		drawGoalSprite(
+			getEndTileCurrentTexture(i),
+			m_endTiles[i].tilePosition,
+			sf::Color(60, 210, 110, 210));
 	}
 }
 

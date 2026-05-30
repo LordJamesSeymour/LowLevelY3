@@ -3,6 +3,7 @@
 #include <SFML/Graphics.hpp>
 
 #include "GAME1_ParallaxBackground.h"
+#include "GAME1_LevelObject.h"
 #include "GAME1_Pickup.h"
 #include "GAME1_Trap.h"
 
@@ -75,6 +76,8 @@ public:
 
 	void updateCheckpoints(float deltaTime);
 	void resetTraps();
+	void updateGoalTiles(float deltaTime);
+	void resetGoalTiles();
 
 	int getCheckpointCount() const;
 	sf::FloatRect getCheckpointBounds(int index) const;
@@ -82,6 +85,12 @@ public:
 	int getCheckpointOrderIndex(int index) const;
 	bool isCheckpointTriggered(int index) const;
 	void triggerCheckpoint(int index);
+
+	int getEndTileCount() const;
+	sf::FloatRect getEndTileBounds(int index) const;
+	bool isEndTileTriggered(int index) const;
+	bool hasEndTileCompletedAnimationCycles(int index, int cycleCount) const;
+	void triggerEndTile(int index);
 
 	// Full solid tiles are the normal world/floor tiles.
 	// Spike traps and one-way platforms are queried separately.
@@ -121,9 +130,12 @@ private:
 	bool loadWorldFloorTextures(const std::filesystem::path& worldTilesDirectory);
 	void loadSpecialTileTextures(const std::filesystem::path& resourcesDirectory);
 	void loadCheckpointTextures(const std::filesystem::path& resourcesDirectory);
+	void loadGoalTileTextures(const std::filesystem::path& resourcesDirectory);
 	void loadWorldBackgroundTexture(const std::filesystem::path& resourcesDirectory);
 	void loadParallaxBackground(const std::filesystem::path& resourcesDirectory);
 	const sf::Texture* getCheckpointCurrentTexture(std::size_t checkpointIndex) const;
+	const sf::Texture* getStartTileCurrentTexture(std::size_t startIndex) const;
+	const sf::Texture* getEndTileCurrentTexture(std::size_t endIndex) const;
 
 	bool isInside(int col, int row) const;
 	bool isFloorTile(char tile) const;
@@ -135,6 +147,7 @@ private:
 	void configureMovingPlatformPaths();
 	bool hasChainAt(sf::Vector2i gridPosition) const;
 	void drawTraps(sf::RenderWindow& window) const;
+	void drawGoalTiles(sf::RenderWindow& window) const;
 	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
 
 private:
@@ -183,6 +196,41 @@ private:
 	float m_checkpointFrameDuration = 0.06f;
 
 	std::vector<CheckpointInstance> m_checkpoints;
+
+	enum class StartTilePhase
+	{
+		Moving,
+		Idle
+	};
+
+	struct StartTileInstance
+	{
+		sf::Vector2f tilePosition{ 0.f, 0.f };
+		StartTilePhase phase = StartTilePhase::Moving;
+		std::size_t frameIndex = 0;
+		float frameTimer = 0.f;
+	};
+
+	struct EndTileInstance
+	{
+		sf::Vector2f tilePosition{ 0.f, 0.f };
+		bool triggered = false;
+		std::size_t frameIndex = 0;
+		float frameTimer = 0.f;
+		int completedAnimationCycles = 0;
+	};
+
+	sf::Texture m_startIdleTexture;
+	bool m_hasStartIdleTexture = false;
+	std::vector<sf::Texture> m_startMovingFrames;
+
+	sf::Texture m_endIdleTexture;
+	bool m_hasEndIdleTexture = false;
+	std::vector<sf::Texture> m_endLoopFrames;
+
+	float m_goalTileFrameDuration = 0.08f;
+	std::vector<StartTileInstance> m_startTiles;
+	std::vector<EndTileInstance> m_endTiles;
 
 	std::string m_lastError;
 };

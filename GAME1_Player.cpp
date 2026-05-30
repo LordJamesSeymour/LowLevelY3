@@ -106,6 +106,21 @@ namespace
 		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y - 0.1f) / static_cast<float>(GAME1_Level::TileSize)));
 	}
 
+	// Logical Surfers Quest rows use row 0 as the normal base row.
+	// SFML Y grows downward, so logical rows below the base are negative.
+	constexpr int kGameplayBaseRow = 18;
+	constexpr int kFallKillRow = -5;
+
+	float RowToWorldY(int row)
+	{
+		return static_cast<float>((kGameplayBaseRow - row) * GAME1_Level::TileSize);
+	}
+
+	float GetFallKillY()
+	{
+		return RowToWorldY(kFallKillRow);
+	}
+
 	float SignNonZero(float value)
 	{
 		return value < 0.f ? -1.f : 1.f;
@@ -388,7 +403,7 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 	updateAnimation(deltaTime);
 	updateMovementSounds(deltaTime, level);
 
-	if (m_position.y > 1200.f)
+	if (m_position.y > GetFallKillY())
 	{
 		loseLifeAndRespawn();
 	}

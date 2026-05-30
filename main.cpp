@@ -3,9 +3,12 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -86,6 +89,50 @@ namespace
 		float age = 0.f;
 		float lifetime = 0.75f;
 	};
+
+	std::string FormatGame1RunTime(float seconds)
+	{
+		const int totalSeconds = std::max(0, static_cast<int>(std::floor(seconds)));
+		const int minutes = totalSeconds / 60;
+		const int remainingSeconds = totalSeconds % 60;
+
+		std::ostringstream stream;
+		stream << std::setw(2) << std::setfill('0') << minutes
+			<< ':'
+			<< std::setw(2) << std::setfill('0') << remainingSeconds;
+
+		return stream.str();
+	}
+
+	sf::Color GetGame1RainbowColor(float timeSeconds)
+	{
+		auto channel = [timeSeconds](float phase)
+			{
+				const float value = 0.5f + 0.5f * std::sin(timeSeconds * 3.2f + phase);
+				return static_cast<std::uint8_t>(80 + static_cast<int>(value * 175.f));
+			};
+
+		return sf::Color(
+			channel(0.f),
+			channel(2.0943951f),
+			channel(4.1887902f));
+	}
+
+	bool RectsOverlap(const sf::FloatRect& a, const sf::FloatRect& b)
+	{
+		return a.position.x < b.position.x + b.size.x &&
+			a.position.x + a.size.x > b.position.x &&
+			a.position.y < b.position.y + b.size.y &&
+			a.position.y + a.size.y > b.position.y;
+	}
+
+	bool PointInRect(const sf::FloatRect& rect, sf::Vector2f point)
+	{
+		return point.x >= rect.position.x &&
+			point.x <= rect.position.x + rect.size.x &&
+			point.y >= rect.position.y &&
+			point.y <= rect.position.y + rect.size.y;
+	}
 
 	enum class AppState
 	{
@@ -567,6 +614,18 @@ int main()
 	std::vector<GAME1_Pickup> game1Pickups;
 	std::array<GAME1_PlayerScoreState, 2> game1Scores;
 	std::vector<GAME1_FloatingScorePopup> game1ScorePopups;
+	std::string game1CurrentLevelPath;
+	int game1RunScore = 0;
+	std::vector<GAME1_FruitType> game1RunCollectedFruits;
+	float game1RunTimerSeconds = 0.f;
+	float game1FinalRunTimerSeconds = 0.f;
+	bool game1RunTimerStarted = false;
+	bool game1RunFinished = false;
+	bool game1VictoryPopupOpen = false;
+	int game1TriggeredEndTileIndex = -1;
+	int game1VictorySelectedButton = 0;
+	sf::FloatRect game1VictoryRetryBounds;
+	sf::FloatRect game1VictoryNextBounds;
 
 	// Vertical camera state for Surfers Quest: persistent across frames,
 	// snapped on level load, smoothly follows player with margin-pinning.
@@ -689,6 +748,13 @@ int main()
 			}
 
 			appState = newState;
+			if (appState != AppState::GAME1_Game)
+			{
+				game1VictoryPopupOpen = false;
+				game1RunFinished = false;
+				game1TriggeredEndTileIndex = -1;
+			}
+
 			window.setMouseCursorVisible(
 				appState != AppState::GAME1_Bomberman &&
 				appState != AppState::GAME1_Game);
@@ -758,7 +824,21 @@ int main()
 				scoreState.reset();
 			}
 
+			game1RunScore = 0;
+			game1RunCollectedFruits.clear();
 			game1ScorePopups.clear();
+		};
+
+	auto ResetGame1RunState = [&]()
+		{
+			game1RunTimerSeconds = 0.f;
+			game1FinalRunTimerSeconds = 0.f;
+			game1RunTimerStarted = false;
+			game1RunFinished = false;
+			game1VictoryPopupOpen = false;
+			game1TriggeredEndTileIndex = -1;
+			game1VictorySelectedButton = 0;
+			game1Level.resetGoalTiles();
 		};
 
 	auto ResetGame1PickupsFromLevel = [&]()
@@ -797,11 +877,173 @@ int main()
 				game1Scores[static_cast<std::size_t>(playerIndex)];
 
 			scoreState.score += points;
+			game1RunScore += points;
 
 			if (collectedFruit.has_value())
+			{
 				scoreState.collectedFruits.push_back(collectedFruit.value());
+				game1RunCollectedFruits.push_back(collectedFruit.value());
+			}
 
 			AddGame1ScorePopup(worldPosition, points);
+		};
+
+	auto TryLoadGame1Level = [&](const std::string& mapPath) -> bool
+		{
+			if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, mapPath))
+				return false;
+
+			game1CurrentLevelPath = mapPath;
+			ResetGame1Scores();
+			ResetGame1RunState();
+			return true;
+		};
+
+	auto GetGame1CurrentLevelIndex = [&]() -> int
+		{
+			const std::vector<std::string> levelPaths = GetAllGame1LevelPaths();
+
+			for (int i = 0; i < static_cast<int>(levelPaths.size()); ++i)
+			{
+				if (levelPaths[static_cast<std::size_t>(i)] == game1CurrentLevelPath)
+					return i;
+			}
+
+			return -1;
+		};
+
+	auto Game1HasNextLevel = [&]() -> bool
+		{
+			const std::vector<std::string> levelPaths = GetAllGame1LevelPaths();
+			const int currentIndex = GetGame1CurrentLevelIndex();
+			return !levelPaths.empty() && currentIndex >= 0;
+		};
+
+	auto TryRestartGame1CurrentLevel = [&]() -> bool
+		{
+			if (game1CurrentLevelPath.empty())
+				return false;
+
+			if (!TryLoadGame1Level(game1CurrentLevelPath))
+				return false;
+
+			SetAppState(AppState::GAME1_Game);
+			ArcadeInput::consumePressedState();
+			return true;
+		};
+
+	auto TryStartGame1NextLevel = [&]() -> bool
+		{
+			const std::vector<std::string> levelPaths = GetAllGame1LevelPaths();
+			const int currentIndex = GetGame1CurrentLevelIndex();
+
+			if (levelPaths.empty() || currentIndex < 0)
+			{
+				return false;
+			}
+
+			const std::size_t nextIndex =
+				(static_cast<std::size_t>(currentIndex) + 1U) % levelPaths.size();
+
+			if (!TryLoadGame1Level(levelPaths[nextIndex]))
+				return false;
+
+			SetAppState(AppState::GAME1_Game);
+			ArcadeInput::consumePressedState();
+			return true;
+		};
+
+	auto LayoutGame1VictoryPopup = [&]() -> sf::FloatRect
+		{
+			const float windowWidth = static_cast<float>(window.getSize().x);
+			const float windowHeight = static_cast<float>(window.getSize().y);
+			const int collectedRows = game1RunCollectedFruits.empty()
+				? 1
+				: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
+
+			const float panelWidth = std::min(760.f, std::max(520.f, windowWidth - 180.f));
+			const float desiredHeight = 350.f + static_cast<float>(collectedRows) * 58.f;
+			const float panelHeight = std::min(
+				std::max(390.f, desiredHeight),
+				std::max(360.f, windowHeight - 80.f));
+
+			const sf::FloatRect panelBounds(
+				{ (windowWidth - panelWidth) * 0.5f, (windowHeight - panelHeight) * 0.5f },
+				{ panelWidth, panelHeight });
+
+			const float buttonWidth = std::min(190.f, (panelWidth - 120.f) * 0.5f);
+			const float buttonHeight = 54.f;
+			const float buttonGap = 28.f;
+			const float buttonsY = panelBounds.position.y + panelBounds.size.y - buttonHeight - 34.f;
+			const float buttonsX = panelBounds.position.x + (panelWidth - (buttonWidth * 2.f + buttonGap)) * 0.5f;
+
+			game1VictoryRetryBounds = sf::FloatRect(
+				{ buttonsX, buttonsY },
+				{ buttonWidth, buttonHeight });
+
+			game1VictoryNextBounds = sf::FloatRect(
+				{ buttonsX + buttonWidth + buttonGap, buttonsY },
+				{ buttonWidth, buttonHeight });
+
+			if (!Game1HasNextLevel() && game1VictorySelectedButton == 1)
+				game1VictorySelectedButton = 0;
+
+			return panelBounds;
+		};
+
+	auto ActivateGame1VictoryButton = [&](int buttonIndex) -> bool
+		{
+			if (buttonIndex == 0)
+			{
+				ArcadeUISounds::playUIClick();
+				return TryRestartGame1CurrentLevel();
+			}
+
+			if (buttonIndex == 1 && Game1HasNextLevel())
+			{
+				ArcadeUISounds::playUIClick();
+				return TryStartGame1NextLevel();
+			}
+
+			return true;
+		};
+
+	auto SelectGame1VictoryButton = [&](int buttonIndex)
+		{
+			game1VictorySelectedButton = Game1HasNextLevel()
+				? std::clamp(buttonIndex, 0, 1)
+				: 0;
+		};
+
+	auto HandleGame1VictoryMenuInput = [&]() -> bool
+		{
+			if (!game1VictoryPopupOpen)
+				return true;
+
+			LayoutGame1VictoryPopup();
+
+			if (ArcadeInput::isMoveLeftPressed() ||
+				ArcadeInput::isMoveUpPressed())
+			{
+				SelectGame1VictoryButton(0);
+				ArcadeInput::consumePressedState();
+			}
+			else if (ArcadeInput::isMoveRightPressed() ||
+				ArcadeInput::isMoveDownPressed())
+			{
+				SelectGame1VictoryButton(1);
+				ArcadeInput::consumePressedState();
+			}
+			else if (ArcadeInput::isConfirmPressed() ||
+				ArcadeInput::isPrimaryPressed())
+			{
+				if (!ActivateGame1VictoryButton(game1VictorySelectedButton))
+					return false;
+
+				ArcadeInput::consumePressedState();
+			}
+
+			return true;
 		};
 
 	auto TryLaunchSelectedHubGame = [&]()
@@ -1063,6 +1305,7 @@ int main()
 			game1CameraNeedsSnap = true;
 			ResetGame1CollectiblesAndScores();
 			game1Level.resetTraps();
+			ResetGame1RunState();
 
 			GAME1_SurfersQuestAudio::playGameplay();
 		};
@@ -1502,7 +1745,48 @@ int main()
 						pauseMenu.handleMouseMoved({
 							static_cast<float>(mouseMoved->position.x),
 							static_cast<float>(mouseMoved->position.y)
-							});
+						});
+					}
+				}
+				else if (game1VictoryPopupOpen)
+				{
+					LayoutGame1VictoryPopup();
+
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							const sf::Vector2f mousePosition(
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y));
+
+							if (PointInRect(game1VictoryRetryBounds, mousePosition))
+							{
+								SelectGame1VictoryButton(0);
+								if (!ActivateGame1VictoryButton(0))
+									return -1;
+							}
+							else if (Game1HasNextLevel() &&
+								PointInRect(game1VictoryNextBounds, mousePosition))
+							{
+								SelectGame1VictoryButton(1);
+								if (!ActivateGame1VictoryButton(1))
+									return -1;
+							}
+						}
+					}
+
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y));
+
+						if (PointInRect(game1VictoryRetryBounds, mousePosition))
+							SelectGame1VictoryButton(0);
+						else if (Game1HasNextLevel() &&
+							PointInRect(game1VictoryNextBounds, mousePosition))
+							SelectGame1VictoryButton(1);
 					}
 				}
 				else
@@ -1597,10 +1881,9 @@ int main()
 						if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 						{
 							ArcadeUISounds::playUIClick();
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
+							if (!TryLoadGame1Level(game1LevelSelect.getSelectedLevelPath()))
 								return -1;
 
-							ResetGame1Scores();
 							SetAppState(AppState::GAME1_Game);
 						}
 					}
@@ -1625,10 +1908,9 @@ int main()
 						else if (slotIndex >= 0 && game1LevelSelect.hasLevelAt(slotIndex))
 						{
 							ArcadeUISounds::playUIClick();
-							if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getLevelPathAt(slotIndex)))
+							if (!TryLoadGame1Level(game1LevelSelect.getLevelPathAt(slotIndex)))
 								return -1;
 
-							ResetGame1Scores();
 							SetAppState(AppState::GAME1_Game);
 						}
 					}
@@ -1711,6 +1993,51 @@ int main()
 							static_cast<float>(mouseMoved->position.y)
 							});
 					}
+				}
+				else if (game1VictoryPopupOpen)
+				{
+					LayoutGame1VictoryPopup();
+
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							const sf::Vector2f mousePosition(
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y));
+
+							if (PointInRect(game1VictoryRetryBounds, mousePosition))
+							{
+								SelectGame1VictoryButton(0);
+								if (!ActivateGame1VictoryButton(0))
+									return -1;
+							}
+							else if (Game1HasNextLevel() &&
+								PointInRect(game1VictoryNextBounds, mousePosition))
+							{
+								SelectGame1VictoryButton(1);
+								if (!ActivateGame1VictoryButton(1))
+									return -1;
+							}
+						}
+					}
+
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y));
+
+						if (PointInRect(game1VictoryRetryBounds, mousePosition))
+							SelectGame1VictoryButton(0);
+						else if (Game1HasNextLevel() &&
+							PointInRect(game1VictoryNextBounds, mousePosition))
+							SelectGame1VictoryButton(1);
+					}
+				}
+				else if (game1RunFinished)
+				{
+					// Wait for the End Tile animation to finish before accepting menu input.
 				}
 				else
 				{
@@ -1992,10 +2319,9 @@ int main()
 				if (slotIndex >= 0 && !game1LevelSelect.getSelectedLevelPath().empty())
 				{
 					ArcadeUISounds::playUIClick();
-					if (!LoadGame1(game1Level, game1Player, game1Enemies, game1Pickups, game1LevelSelect.getSelectedLevelPath()))
+					if (!TryLoadGame1Level(game1LevelSelect.getSelectedLevelPath()))
 						return -1;
 
-					ResetGame1Scores();
 					ArcadeInput::consumePressedState();
 					SetAppState(AppState::GAME1_Game);
 				}
@@ -2022,6 +2348,15 @@ int main()
 			else if (pauseMenu.isOpen())
 			{
 				HandlePauseAction(pauseMenu.handleControllerInput());
+			}
+			else if (game1VictoryPopupOpen)
+			{
+				if (!HandleGame1VictoryMenuInput())
+					return -1;
+			}
+			else if (game1RunFinished)
+			{
+				ArcadeInput::consumePressedState();
 			}
 			else if (ArcadeInput::isControllerBackPressed())
 			{
@@ -2181,8 +2516,9 @@ int main()
 		else if (appState == AppState::GAME1_Game)
 		{
 			const bool p2Joined = game1Player2Joined;
-			const bool game1Paused = pauseMenu.isOpen() || hubOptions.isOpen();
-			window.setMouseCursorVisible(game1Paused);
+			const bool game1OverlayPaused = pauseMenu.isOpen() || hubOptions.isOpen();
+			const bool game1Paused = game1OverlayPaused || game1RunFinished || game1VictoryPopupOpen;
+			window.setMouseCursorVisible(game1OverlayPaused || game1VictoryPopupOpen);
 
 			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player)
 				{
@@ -2292,6 +2628,63 @@ int main()
 					}
 				};
 
+			auto HasGame1RunStartInput = [&]()
+				{
+					return ArcadeInput::isMoveLeftHeld() ||
+						ArcadeInput::isMoveRightHeld() ||
+						ArcadeInput::isMoveUpHeld() ||
+						ArcadeInput::isMoveDownHeld() ||
+						ArcadeInput::isPrimaryHeld() ||
+						ArcadeInput::isSecondaryHeld();
+				};
+
+			auto FinishGame1Run = [&](int endTileIndex)
+				{
+					if (game1RunFinished)
+						return;
+
+					game1RunFinished = true;
+					game1RunTimerStarted = false;
+					game1FinalRunTimerSeconds = game1RunTimerSeconds;
+					game1VictoryPopupOpen = false;
+					game1TriggeredEndTileIndex = endTileIndex;
+					game1VictorySelectedButton = 0;
+					ArcadeInput::consumePressedState();
+				};
+
+			auto TryTriggerEndTileForPlayer = [&](const GAME1_Player& player)
+				{
+					if (game1RunFinished || !player.isActive())
+						return;
+
+					const sf::FloatRect playerBounds = player.getBounds();
+
+					for (int i = 0; i < game1Level.getEndTileCount(); ++i)
+					{
+						if (game1Level.isEndTileTriggered(i))
+							continue;
+
+						if (!RectsOverlap(playerBounds, game1Level.getEndTileBounds(i)))
+							continue;
+
+						game1Level.triggerEndTile(i);
+						FinishGame1Run(i);
+						return;
+					}
+				};
+
+			if (!game1OverlayPaused)
+				game1Level.updateGoalTiles(deltaTime);
+
+			if (game1RunFinished &&
+				!game1VictoryPopupOpen &&
+				game1Level.hasEndTileCompletedAnimationCycles(game1TriggeredEndTileIndex, 2))
+			{
+				game1VictoryPopupOpen = true;
+				game1VictorySelectedButton = 0;
+				ArcadeInput::consumePressedState();
+			}
+
 			if (!game1Paused)
 			{
 				if (p2Joined && !game1TeamGameOver)
@@ -2299,23 +2692,47 @@ int main()
 					GAME1_SurfersQuestAudio::playGameplay();
 				}
 
+				if (!game1RunTimerStarted &&
+					!game1RunFinished &&
+					!game1TeamGameOver &&
+					(game1Player.isActive() || (p2Joined && game1Player2.isActive())) &&
+					HasGame1RunStartInput())
+				{
+					game1RunTimerStarted = true;
+				}
+
+				if (game1RunTimerStarted && !game1RunFinished)
+					game1RunTimerSeconds += deltaTime;
+
 				game1Level.updateTraps(deltaTime);
 
+				const bool game1PlayerWasRespawning = game1Player.isRespawning();
 				const bool game1PlayerWasGameOver = game1Player.isGameOver();
 				game1Player.update(deltaTime, game1Level);
+				if (!p2Joined && !game1PlayerWasRespawning && game1Player.isRespawning())
+				{
+					ResetGame1RunState();
+				}
+				if (!p2Joined && !game1PlayerWasGameOver && game1Player.isGameOver())
+				{
+					ResetGame1RunState();
+				}
 				if (!p2Joined && game1PlayerWasGameOver && !game1Player.isGameOver())
 				{
 					ResetGame1CollectiblesAndScores();
 					game1Level.resetTraps();
+					ResetGame1RunState();
 				}
 				TriggerCheckpointsForPlayer(game1Player);
 				TryCollectPickupsForPlayer(game1Player, 0);
+				TryTriggerEndTileForPlayer(game1Player);
 
 				if (p2Joined && !game1Player2.isGameOver())
 				{
 					game1Player2.update(deltaTime, game1Level);
 					TriggerCheckpointsForPlayer(game1Player2);
 					TryCollectPickupsForPlayer(game1Player2, 1);
+					TryTriggerEndTileForPlayer(game1Player2);
 				}
 
 				game1Level.updateCheckpoints(deltaTime);
@@ -2337,29 +2754,32 @@ int main()
 
 				UpdateGame1ScorePopups(deltaTime);
 
-				for (GAME1_Enemy& enemy : game1Enemies)
+				if (!game1RunFinished)
 				{
-					enemy.update(deltaTime, game1Level, game1Player,
-						p2Joined ? &game1Player2 : nullptr);
+					for (GAME1_Enemy& enemy : game1Enemies)
+					{
+						enemy.update(deltaTime, game1Level, game1Player,
+							p2Joined ? &game1Player2 : nullptr);
+					}
+
+					for (GAME1_Enemy& enemy : game1Enemies)
+					{
+						HandleEnemyCollisionForPlayer(enemy, game1Player, 0);
+
+						if (p2Joined)
+							HandleEnemyCollisionForPlayer(enemy, game1Player2, 1);
+					}
+
+					game1Enemies.erase(
+						std::remove_if(
+							game1Enemies.begin(),
+							game1Enemies.end(),
+							[](const GAME1_Enemy& enemy)
+							{
+								return !enemy.isActive();
+							}),
+						game1Enemies.end());
 				}
-
-				for (GAME1_Enemy& enemy : game1Enemies)
-				{
-					HandleEnemyCollisionForPlayer(enemy, game1Player, 0);
-
-					if (p2Joined)
-						HandleEnemyCollisionForPlayer(enemy, game1Player2, 1);
-				}
-
-				game1Enemies.erase(
-					std::remove_if(
-						game1Enemies.begin(),
-						game1Enemies.end(),
-						[](const GAME1_Enemy& enemy)
-						{
-							return !enemy.isActive();
-						}),
-					game1Enemies.end());
 			}
 
 			sf::View worldView = window.getDefaultView();
@@ -2542,6 +2962,7 @@ int main()
 				if (game1Player.isGameOver() && game1Player2.isGameOver())
 				{
 					game1TeamGameOver = true;
+					ResetGame1RunState();
 					GAME1_SurfersQuestAudio::playDeath();
 				}
 			}
@@ -2619,13 +3040,12 @@ int main()
 					window.draw(sprite);
 				};
 
-			auto DrawGame1FruitIcons = [&](const GAME1_PlayerScoreState& scoreState,
-				sf::Vector2f topLeft)
+			auto DrawGame1FruitIconList = [&](const std::vector<GAME1_FruitType>& fruits,
+				sf::Vector2f topLeft,
+				float iconSize,
+				float iconGap)
 				{
-					const float iconSize = 66.f;
-					const float iconGap = 6.f;
-
-					for (std::size_t i = 0; i < scoreState.collectedFruits.size(); ++i)
+					for (std::size_t i = 0; i < fruits.size(); ++i)
 					{
 						const int col = static_cast<int>(i % 4);
 						const int row = static_cast<int>(i / 4);
@@ -2637,7 +3057,7 @@ int main()
 							},
 							{ iconSize, iconSize });
 
-						const GAME1_FruitType fruitType = scoreState.collectedFruits[i];
+						const GAME1_FruitType fruitType = fruits[i];
 						const sf::Texture* iconTexture = game1PickupAssets.getIconTexture(fruitType);
 
 						if (iconTexture != nullptr)
@@ -2657,6 +3077,12 @@ int main()
 					}
 				};
 
+			auto DrawGame1FruitIcons = [&](const GAME1_PlayerScoreState& scoreState,
+				sf::Vector2f topLeft)
+				{
+					DrawGame1FruitIconList(scoreState.collectedFruits, topLeft, 66.f, 6.f);
+				};
+
 			auto DrawGame1ScoreHud = [&](const GAME1_PlayerScoreState& scoreState,
 				sf::Vector2f topLeft)
 				{
@@ -2671,6 +3097,223 @@ int main()
 
 					DrawGame1FruitIcons(scoreState, { topLeft.x, topLeft.y + 28.f });
 				};
+
+			auto DrawGame1TimerHud = [&]()
+				{
+					sf::Text timerText(game1UiFont);
+					timerText.setString(FormatGame1RunTime(game1RunFinished
+						? game1FinalRunTimerSeconds
+						: game1RunTimerSeconds));
+					timerText.setCharacterSize(28);
+					timerText.setFillColor(sf::Color::White);
+					timerText.setOutlineColor(sf::Color::Black);
+					timerText.setOutlineThickness(2.f);
+
+					const sf::FloatRect bounds = timerText.getLocalBounds();
+					timerText.setPosition({
+						(static_cast<float>(window.getSize().x) - bounds.size.x) * 0.5f - bounds.position.x,
+						14.f - bounds.position.y
+						});
+					window.draw(timerText);
+				};
+
+			auto DrawGame1VictoryPopup = [&]()
+				{
+					if (!game1VictoryPopupOpen)
+						return;
+
+					const sf::FloatRect panelBounds = LayoutGame1VictoryPopup();
+					const bool hasNextLevel = Game1HasNextLevel();
+
+					sf::RectangleShape dim;
+					dim.setPosition({ 0.f, 0.f });
+					dim.setSize({
+						static_cast<float>(window.getSize().x),
+						static_cast<float>(window.getSize().y)
+						});
+					dim.setFillColor(sf::Color(0, 0, 0, 165));
+					window.draw(dim);
+
+					sf::RectangleShape panel;
+					panel.setPosition(panelBounds.position);
+					panel.setSize(panelBounds.size);
+					panel.setFillColor(sf::Color(20, 22, 32, 245));
+					panel.setOutlineColor(sf::Color(230, 230, 230));
+					panel.setOutlineThickness(3.f);
+					window.draw(panel);
+
+					auto DrawCenteredText = [&](const std::string& value,
+						unsigned int size,
+						float y,
+						sf::Color fill)
+						{
+							sf::Text text(game1UiFont);
+							text.setString(value);
+							text.setCharacterSize(size);
+							text.setFillColor(fill);
+							text.setOutlineColor(sf::Color::Black);
+							text.setOutlineThickness(2.f);
+
+							const sf::FloatRect bounds = text.getLocalBounds();
+							text.setPosition({
+								panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+								y - bounds.position.y
+								});
+							window.draw(text);
+						};
+
+					DrawCenteredText("VICTORY!", 46, panelBounds.position.y + 34.f, sf::Color(80, 235, 120));
+
+					{
+						sf::Text label(game1UiFont);
+						label.setString("Score:");
+						label.setCharacterSize(25);
+						label.setFillColor(sf::Color::White);
+						label.setOutlineColor(sf::Color::Black);
+						label.setOutlineThickness(2.f);
+
+						sf::Text value(game1UiFont);
+						value.setString(std::to_string(game1RunScore));
+						value.setCharacterSize(25);
+						value.setFillColor(GetGame1RainbowColor(totalAppTime));
+						value.setOutlineColor(sf::Color::Black);
+						value.setOutlineThickness(2.f);
+
+						const sf::FloatRect labelBounds = label.getLocalBounds();
+						const sf::FloatRect valueBounds = value.getLocalBounds();
+						const float gap = 10.f;
+						const float totalWidth = labelBounds.size.x + gap + valueBounds.size.x;
+						const float startX = panelBounds.position.x + (panelBounds.size.x - totalWidth) * 0.5f;
+						const float y = panelBounds.position.y + 104.f;
+
+						label.setPosition({ startX - labelBounds.position.x, y - labelBounds.position.y });
+						value.setPosition({
+							startX + labelBounds.size.x + gap - valueBounds.position.x,
+							y - valueBounds.position.y
+							});
+						window.draw(label);
+						window.draw(value);
+					}
+
+					DrawCenteredText("Collected:", 23, panelBounds.position.y + 146.f, sf::Color::White);
+
+					const float iconSize = 50.f;
+					const float iconGap = 8.f;
+					const int collectedRows = game1RunCollectedFruits.empty()
+						? 1
+						: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
+					const float iconsBlockWidth = 4.f * iconSize + 3.f * iconGap;
+					const float iconsTop = panelBounds.position.y + 184.f;
+					const float iconsLeft = panelBounds.position.x + (panelBounds.size.x - iconsBlockWidth) * 0.5f;
+
+					if (game1RunCollectedFruits.empty())
+					{
+						DrawCenteredText("None", 21, iconsTop + 4.f, sf::Color(210, 210, 210));
+					}
+					else
+					{
+						DrawGame1FruitIconList(
+							game1RunCollectedFruits,
+							{ iconsLeft, iconsTop },
+							iconSize,
+							iconGap);
+					}
+
+					const float iconsHeight =
+						static_cast<float>(collectedRows) * iconSize +
+						static_cast<float>(std::max(0, collectedRows - 1)) * iconGap;
+					const float timeY = std::min(
+						iconsTop + iconsHeight + 26.f,
+						game1VictoryRetryBounds.position.y - 44.f);
+					DrawCenteredText(
+						"Time: " + FormatGame1RunTime(game1FinalRunTimerSeconds),
+						24,
+						timeY,
+						sf::Color::White);
+
+					auto DrawVictoryButton = [&](const sf::FloatRect& bounds,
+						const std::string& label,
+						sf::Color baseColor,
+						bool selected,
+						bool enabled)
+						{
+							const sf::Color disabledColor(
+								static_cast<std::uint8_t>(std::max(25, static_cast<int>(baseColor.r) / 3)),
+								static_cast<std::uint8_t>(std::max(45, static_cast<int>(baseColor.g) / 2)),
+								static_cast<std::uint8_t>(std::max(35, static_cast<int>(baseColor.b) / 2)),
+								210);
+
+							sf::RectangleShape box;
+							box.setPosition(bounds.position);
+							box.setSize(bounds.size);
+							box.setFillColor(enabled ? baseColor : disabledColor);
+							box.setOutlineColor(enabled ? sf::Color(230, 230, 230) : sf::Color(120, 145, 125));
+							box.setOutlineThickness(2.f);
+							window.draw(box);
+
+							sf::Text text(game1UiFont);
+							text.setString(label);
+							text.setCharacterSize(27);
+							text.setFillColor(enabled ? sf::Color::White : sf::Color(155, 180, 160));
+							text.setOutlineColor(sf::Color::Black);
+							text.setOutlineThickness(2.f);
+
+							const sf::FloatRect textBounds = text.getLocalBounds();
+							text.setPosition({
+								bounds.position.x + (bounds.size.x - textBounds.size.x) * 0.5f - textBounds.position.x,
+								bounds.position.y + (bounds.size.y - textBounds.size.y) * 0.5f - textBounds.position.y
+								});
+							window.draw(text);
+
+							if (!selected)
+								return;
+
+							const float pulse = (std::sin(totalAppTime * 4.6f) + 1.f) * 0.5f;
+							const float offset = 5.f + pulse * 8.f;
+							const float length = 25.f;
+							const float thickness = 4.f;
+							const sf::Color cornerColor(255, 224, 82);
+
+							auto DrawCornerSegment = [&](sf::Vector2f position, sf::Vector2f size)
+								{
+									sf::RectangleShape segment;
+									segment.setPosition(position);
+									segment.setSize(size);
+									segment.setFillColor(cornerColor);
+									window.draw(segment);
+								};
+
+							const float left = bounds.position.x - offset;
+							const float top = bounds.position.y - offset;
+							const float right = bounds.position.x + bounds.size.x + offset;
+							const float bottom = bounds.position.y + bounds.size.y + offset;
+
+							DrawCornerSegment({ left, top }, { length, thickness });
+							DrawCornerSegment({ left, top }, { thickness, length });
+							DrawCornerSegment({ right - length, top }, { length, thickness });
+							DrawCornerSegment({ right - thickness, top }, { thickness, length });
+							DrawCornerSegment({ left, bottom - thickness }, { length, thickness });
+							DrawCornerSegment({ left, bottom - length }, { thickness, length });
+							DrawCornerSegment({ right - length, bottom - thickness }, { length, thickness });
+							DrawCornerSegment({ right - thickness, bottom - length }, { thickness, length });
+						};
+
+					DrawVictoryButton(
+						game1VictoryRetryBounds,
+						"Retry",
+						sf::Color(210, 105, 35, 235),
+						game1VictorySelectedButton == 0,
+						true);
+
+					DrawVictoryButton(
+						game1VictoryNextBounds,
+						"Next",
+						sf::Color(35, 170, 75, 245),
+						game1VictorySelectedButton == 1,
+						hasNextLevel);
+				};
+
+			DrawGame1TimerHud();
 
 			if (!p2Joined)
 			{
@@ -2803,6 +3446,8 @@ int main()
 				// Restore single-player default size for the next respawn render.
 				respawnText.setCharacterSize(34);
 			}
+
+			DrawGame1VictoryPopup();
 
 			pauseMenu.layout(window);
 			hubOptions.layout(window);

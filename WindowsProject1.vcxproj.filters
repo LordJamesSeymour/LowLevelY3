@@ -57,6 +57,9 @@
     <ClInclude Include="GAME1_LevelEditor.h">
       <Filter>Header Files\Platformer</Filter>
     </ClInclude>
+    <ClInclude Include="GAME1_LevelObject.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
     <ClInclude Include="GAME1_LevelSelect.h">
       <Filter>Header Files\Platformer</Filter>
     </ClInclude>
