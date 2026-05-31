@@ -38,7 +38,18 @@ enum class GAME1_TrapType
 	Fire,
 	Chain,
 	BrownMovingPlatform,
-	GreyMovingPlatform
+	GreyMovingPlatform,
+	// 2x2 slam trap. Registered here so the editor/level format treat it as a
+	// normal trap object (icon, placement, "OBJECT SpikeHead col row 0"), but
+	// its runtime lives in GAME1_SpikeHead, not GAME1_Trap. GAME1_Level routes
+	// SpikeHead spawns to its own runtime list and never builds a GAME1_Trap of
+	// this type.
+	SpikeHead,
+	// 2x2 moving hazard that rides a horizontal chain segment. Like SpikeHead it
+	// is registered for the editor/level format ("OBJECT Saw col row 0") but its
+	// runtime lives in GAME1_Saw. It is placed on top of a Chain object without
+	// replacing it.
+	Saw
 };
 
 enum class GAME1_TrapOrientation
@@ -128,6 +139,16 @@ private:
 
 	sf::Texture m_chainTexture;
 	bool m_hasChainTexture = false;
+
+	// Idle sprite used only as the editor hotbar/preview icon for the SpikeHead
+	// trap object. The gameplay animation set is owned by GAME1_SpikeHeadAssets.
+	sf::Texture m_spikeHeadIdleTexture;
+	bool m_hasSpikeHeadIdleTexture = false;
+
+	// First Saw frame, used only as the editor hotbar/preview icon. The looping
+	// gameplay frames are owned by GAME1_SawAssets.
+	sf::Texture m_sawIconTexture;
+	bool m_hasSawIconTexture = false;
 
 	struct TrimmedBoundsEntry
 	{

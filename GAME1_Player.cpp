@@ -106,19 +106,12 @@ namespace
 		return static_cast<int>(std::floor((bounds.position.y + bounds.size.y - 0.1f) / static_cast<float>(GAME1_Level::TileSize)));
 	}
 
-	// Logical Surfers Quest rows use row 0 as the normal base row.
-	// SFML Y grows downward, so logical rows below the base are negative.
-	constexpr int kGameplayBaseRow = 18;
-	constexpr int kFallKillRow = -5;
-
-	float RowToWorldY(int row)
+	float GetFallKillY(const GAME1_Level& level)
 	{
-		return static_cast<float>((kGameplayBaseRow - row) * GAME1_Level::TileSize);
-	}
-
-	float GetFallKillY()
-	{
-		return RowToWorldY(kFallKillRow);
+		// Old 20-row maps killed the player three tiles below the level bottom:
+		// 20 * 64 + 3 * 64 = 1472. Keep that feel, but base it on the loaded
+		// level height so editor-expanded 40-row maps do not kill on spawn.
+		return level.getPixelHeight() + static_cast<float>(GAME1_Level::TileSize * 3);
 	}
 
 	float SignNonZero(float value)
@@ -275,6 +268,8 @@ bool GAME1_Player::load(const std::string& playerIdleDirectory, sf::Vector2f sta
 
 	m_respawning = false;
 	m_respawnTimer = 0.f;
+	resetRespawnFlash();
+	clearLevelFinishState();
 
 	m_pendingRespawnPosition.reset();
 
@@ -349,12 +344,6 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 		if (!m_coopMode)
 		{
 			GAME1_SurfersQuestAudio::playDeath();
-
-			if (ArcadeInput::isConfirmHeld())
-			{
-				resetGame();
-				return;
-			}
 		}
 
 		setAnimationState(AnimationState::Idle);
@@ -365,6 +354,14 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 	if (!m_coopMode)
 	{
 		GAME1_SurfersQuestAudio::playGameplay();
+	}
+
+	if (m_levelFinished || m_levelFinishFailed)
+	{
+		setAnimationState(AnimationState::Idle);
+		updateAnimation(deltaTime);
+		resetMovementSoundTimers();
+		return;
 	}
 
 	if (m_respawning)
@@ -398,12 +395,14 @@ void GAME1_Player::update(float deltaTime, GAME1_Level& level)
 
 	checkSpikeTrapCollisions(level);
 	checkFireTrapCollisions(level);
+	checkSpikeHeadCollisions(level);
+	checkSawCollisions(level);
 
 	updateAnimationState();
 	updateAnimation(deltaTime);
 	updateMovementSounds(deltaTime, level);
 
-	if (m_position.y > GetFallKillY())
+	if (m_position.y > GetFallKillY(level))
 	{
 		loseLifeAndRespawn();
 	}
@@ -972,7 +971,7 @@ void GAME1_Player::checkFireTrapCollisions(GAME1_Level& level)
 		return;
 
 	const std::optional<sf::FloatRect> fireBounds =
-		level.getActiveFireDamageBounds(getBounds());
+		level.getActiveFireDamageBounds(getDamageBounds());
 
 	if (!fireBounds.has_value())
 		return;
@@ -980,9 +979,41 @@ void GAME1_Player::checkFireTrapCollisions(GAME1_Level& level)
 	takeTrapDamage(fireBounds.value(), GAME1_TrapTuning::FireDamage);
 }
 
-void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
+void GAME1_Player::checkSpikeHeadCollisions(GAME1_Level& level)
 {
 	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	const std::optional<sf::FloatRect> spikeHeadBounds =
+		level.getSpikeHeadDamageBounds(getDamageBounds());
+
+	if (!spikeHeadBounds.has_value())
+		return;
+
+	takeTrapDamage(spikeHeadBounds.value(), GAME1_SpikeHeadTuning::SlamContactDamage);
+}
+
+void GAME1_Player::checkSawCollisions(GAME1_Level& level)
+{
+	if (m_damageCooldownTimer > 0.f)
+		return;
+
+	const std::optional<sf::FloatRect> sawBounds =
+		level.getSawDamageBounds(getDamageBounds());
+
+	if (!sawBounds.has_value())
+		return;
+
+	takeTrapDamage(sawBounds.value(), GAME1_SawTuning::ContactDamage);
+}
+
+void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
+{
+	if (m_damageCooldownTimer > 0.f ||
+		m_gameOver ||
+		m_respawning ||
+		m_levelFinished ||
+		m_levelFinishFailed)
 		return;
 
 	playDamageOrDeathSoundForDamage(m_spikeDamage);
@@ -1000,7 +1031,14 @@ void GAME1_Player::takeSpikeDamage(const sf::FloatRect& spikeBounds)
 
 void GAME1_Player::takeTrapDamage(const sf::FloatRect& trapBounds, int damage)
 {
-	if (m_damageCooldownTimer > 0.f)
+	if (m_damageCooldownTimer > 0.f ||
+		m_gameOver ||
+		m_respawning ||
+		m_levelFinished ||
+		m_levelFinishFailed)
+		return;
+
+	if (!rectsIntersect(getDamageBounds(), trapBounds))
 		return;
 
 	const int resolvedDamage = std::max(0, damage);
@@ -1347,7 +1385,7 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 {
 	const sf::Texture* texture = getCurrentTexture();
 
-	if (texture != nullptr)
+	if (texture != nullptr && (!m_respawning || m_respawnVisible))
 	{
 		sf::Sprite sprite(*texture);
 
@@ -1460,6 +1498,11 @@ sf::FloatRect GAME1_Player::getBounds() const
 	);
 }
 
+sf::FloatRect GAME1_Player::getDamageBounds() const
+{
+	return getBounds();
+}
+
 sf::Vector2f GAME1_Player::getPosition() const
 {
 	return m_position;
@@ -1521,7 +1564,11 @@ void GAME1_Player::bounceAfterEnemyStomp()
 
 void GAME1_Player::takeEnemyDamage(const sf::FloatRect& enemyBounds, int damage)
 {
-	if (m_damageCooldownTimer > 0.f || m_gameOver)
+	if (m_damageCooldownTimer > 0.f ||
+		m_gameOver ||
+		m_respawning ||
+		m_levelFinished ||
+		m_levelFinishFailed)
 		return;
 
 	const int resolvedDamage = std::max(0, damage);
@@ -1553,9 +1600,48 @@ bool GAME1_Player::isGameOver() const
 	return m_gameOver;
 }
 
+void GAME1_Player::setLevelFinished(bool finished)
+{
+	m_levelFinished = finished;
+
+	if (m_levelFinished)
+	{
+		m_levelFinishFailed = false;
+		freezeForLevelEnd();
+	}
+}
+
+bool GAME1_Player::isLevelFinished() const
+{
+	return m_levelFinished;
+}
+
+void GAME1_Player::setLevelFinishFailed(bool failed)
+{
+	m_levelFinishFailed = failed;
+
+	if (m_levelFinishFailed)
+	{
+		m_levelFinished = false;
+		m_health = 0;
+		freezeForLevelEnd();
+	}
+}
+
+bool GAME1_Player::hasLevelFinishFailed() const
+{
+	return m_levelFinishFailed;
+}
+
+void GAME1_Player::clearLevelFinishState()
+{
+	m_levelFinished = false;
+	m_levelFinishFailed = false;
+}
+
 bool GAME1_Player::isActive() const
 {
-	return !m_gameOver && !m_respawning;
+	return !m_gameOver && !m_respawning && !m_levelFinished && !m_levelFinishFailed;
 }
 
 void GAME1_Player::setBinding(GAME1_PlayerBinding binding)
@@ -1585,12 +1671,23 @@ void GAME1_Player::setNextRespawnPosition(sf::Vector2f position)
 
 void GAME1_Player::forceDeath()
 {
-	if (m_gameOver || m_respawning)
+	if (m_gameOver || m_respawning || m_levelFinished || m_levelFinishFailed)
 		return;
 
 	m_health = 0;
 	playDamageOrDeathSoundForDamage(m_spikeDamage);
 	loseLifeAndRespawn();
+}
+
+void GAME1_Player::reviveWithOneLifeAt(sf::Vector2f respawnPosition)
+{
+	if (!m_gameOver && m_lives > 0)
+		return;
+
+	m_gameOver = false;
+	m_lives = 1;
+	m_pendingRespawnPosition = respawnPosition;
+	startRespawn();
 }
 
 void GAME1_Player::resetGame()
@@ -1603,6 +1700,8 @@ void GAME1_Player::resetGame()
 
 	m_respawning = false;
 	m_respawnTimer = 0.f;
+	resetRespawnFlash();
+	clearLevelFinishState();
 
 	m_dropThroughTimer = 0.f;
 	m_wallGrabActive = false;
@@ -1663,6 +1762,8 @@ void GAME1_Player::beginGameOver()
 	m_gameOver = true;
 	m_respawning = false;
 	m_respawnTimer = 0.f;
+	resetRespawnFlash();
+	clearLevelFinishState();
 	m_health = 0;
 	m_velocity = { 0.f, 0.f };
 	m_damageCooldownTimer = 0.f;
@@ -1695,6 +1796,8 @@ void GAME1_Player::startRespawn()
 
 	m_respawning = true;
 	m_respawnTimer = m_respawnDuration;
+	resetRespawnFlash();
+	clearLevelFinishState();
 
 	m_health = m_maxHealth;
 	m_damageCooldownTimer = 0.f;
@@ -1735,12 +1838,14 @@ void GAME1_Player::updateRespawn(float deltaTime)
 	if (!m_respawning)
 		return;
 
+	updateRespawnFlash(deltaTime);
 	m_respawnTimer -= deltaTime;
 
 	if (m_respawnTimer <= 0.f)
 	{
 		m_respawning = false;
 		m_respawnTimer = 0.f;
+		resetRespawnFlash();
 
 		m_health = m_maxHealth;
 		m_damageCooldownTimer = 0.f;
@@ -1773,6 +1878,56 @@ void GAME1_Player::updateRespawn(float deltaTime)
 
 		setAnimationState(AnimationState::Idle);
 	}
+}
+
+void GAME1_Player::updateRespawnFlash(float deltaTime)
+{
+	if (m_respawnFlashInterval <= 0.f)
+	{
+		m_respawnVisible = true;
+		m_respawnFlashTimer = 0.f;
+		return;
+	}
+
+	m_respawnFlashTimer += std::max(0.f, deltaTime);
+
+	while (m_respawnFlashTimer >= m_respawnFlashInterval)
+	{
+		m_respawnFlashTimer -= m_respawnFlashInterval;
+		m_respawnVisible = !m_respawnVisible;
+	}
+}
+
+void GAME1_Player::resetRespawnFlash()
+{
+	m_respawnVisible = true;
+	m_respawnFlashTimer = 0.f;
+}
+
+void GAME1_Player::freezeForLevelEnd()
+{
+	m_respawning = false;
+	m_respawnTimer = 0.f;
+	resetRespawnFlash();
+	m_pendingRespawnPosition.reset();
+
+	m_velocity = { 0.f, 0.f };
+	m_damageCooldownTimer = 0.f;
+	m_hitAnimationPlaying = false;
+	m_wallGrabActive = false;
+	m_touchingWallLeft = false;
+	m_touchingWallRight = false;
+	m_wallJumpControlLockTimer = 0.f;
+	m_dropThroughTimer = 0.f;
+	m_groundedOnOneWayPlatform = false;
+	m_onGround = false;
+	m_coyoteTimer = 0.f;
+	m_jumpBufferTimer = 0.f;
+	m_variableJumpActive = false;
+	m_releasedJumpGravityActive = false;
+	resetMovementSoundTimers();
+
+	setAnimationState(AnimationState::Idle);
 }
 
 sf::Vector2f GAME1_Player::resolveRespawnPosition()

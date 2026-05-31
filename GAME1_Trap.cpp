@@ -27,7 +27,9 @@ namespace
 			{ GAME1_TrapType::Fire, "Fire", "Fire", sf::Color(240, 90, 35) },
 			{ GAME1_TrapType::Chain, "Chain", "Chain", sf::Color(190, 190, 190) },
 			{ GAME1_TrapType::BrownMovingPlatform, "BrownMovingPlatform", "Brown", sf::Color(150, 90, 45) },
-			{ GAME1_TrapType::GreyMovingPlatform, "GreyMovingPlatform", "Grey", sf::Color(150, 160, 170) }
+			{ GAME1_TrapType::GreyMovingPlatform, "GreyMovingPlatform", "Grey", sf::Color(150, 160, 170) },
+			{ GAME1_TrapType::SpikeHead, "SpikeHead", "Head", sf::Color(150, 150, 160) },
+			{ GAME1_TrapType::Saw, "Saw", "Saw", sf::Color(190, 190, 200) }
 		};
 
 		return definitions;
@@ -129,7 +131,9 @@ const std::vector<GAME1_TrapType>& GAME1_GetAllTrapTypes()
 		GAME1_TrapType::Fire,
 		GAME1_TrapType::Chain,
 		GAME1_TrapType::BrownMovingPlatform,
-		GAME1_TrapType::GreyMovingPlatform
+		GAME1_TrapType::GreyMovingPlatform,
+		GAME1_TrapType::SpikeHead,
+		GAME1_TrapType::Saw
 	};
 
 	return types;
@@ -270,6 +274,8 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 	m_greyPlatformFrames.clear();
 	m_trimmedBounds.clear();
 	m_hasChainTexture = false;
+	m_hasSpikeHeadIdleTexture = false;
+	m_hasSawIconTexture = false;
 
 	const fs::path trapsDirectory = fs::path(resourcesDirectory) / "Tiles" / "Traps";
 
@@ -319,6 +325,16 @@ bool GAME1_TrapAssets::load(const std::string& resourcesDirectory)
 		trapsDirectory / "MovablePlat" / "Chain.png",
 		m_chainTexture,
 		m_hasChainTexture);
+
+	loadSingleTexture(
+		trapsDirectory / "SpikeHead" / "Idle.png",
+		m_spikeHeadIdleTexture,
+		m_hasSpikeHeadIdleTexture);
+
+	loadSingleTexture(
+		trapsDirectory / "Saw" / "On_0.png",
+		m_sawIconTexture,
+		m_hasSawIconTexture);
 
 	buildTrimmedPixelBoundsForType(GAME1_TrapType::FallingPlatform, m_fallingPlatformFrames);
 	buildTrimmedPixelBoundsForType(GAME1_TrapType::Fan, m_fanFrames);
@@ -509,6 +525,12 @@ const sf::Texture* GAME1_TrapAssets::getEditorIconTexture(GAME1_TrapType type) c
 
 	case GAME1_TrapType::GreyMovingPlatform:
 		return m_greyPlatformFrames.empty() ? nullptr : &m_greyPlatformFrames.front();
+
+	case GAME1_TrapType::SpikeHead:
+		return m_hasSpikeHeadIdleTexture ? &m_spikeHeadIdleTexture : nullptr;
+
+	case GAME1_TrapType::Saw:
+		return m_hasSawIconTexture ? &m_sawIconTexture : nullptr;
 
 	default:
 		return nullptr;

@@ -30,6 +30,7 @@ public:
 	void draw(sf::RenderTarget& target) const;
 
 	bool handlePlayerCollision(GAME1_Player& player);
+	void killInstantly();
 
 	bool isActive() const;
 	bool isAlive() const;
@@ -80,6 +81,7 @@ private:
 	bool hasGroundAhead(float newX, const GAME1_Level& level) const;
 	void snapToGround(const GAME1_Level& level);
 	void takeStompDamage();
+	void beginDeath();
 
 	const AnimationSet& getCurrentAnimationSet() const;
 	const sf::Texture* getCurrentTexture() const;

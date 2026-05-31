@@ -75,6 +75,12 @@
     <ClInclude Include="GAME1_ParallaxBackground.h">
       <Filter>Header Files\Platformer</Filter>
     </ClInclude>
+    <ClInclude Include="GAME1_Saw.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
+    <ClInclude Include="GAME1_SpikeHead.h">
+      <Filter>Header Files\Platformer</Filter>
+    </ClInclude>
     <ClInclude Include="GAME1_Trap.h">
       <Filter>Header Files\Platformer</Filter>
     </ClInclude>
@@ -162,6 +168,12 @@
       <Filter>Source Files\Platformer</Filter>
     </ClCompile>
     <ClCompile Include="GAME1_ParallaxBackground.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_Saw.cpp">
+      <Filter>Source Files\Platformer</Filter>
+    </ClCompile>
+    <ClCompile Include="GAME1_SpikeHead.cpp">
       <Filter>Source Files\Platformer</Filter>
     </ClCompile>
     <ClCompile Include="GAME1_Trap.cpp">

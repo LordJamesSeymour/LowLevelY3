@@ -79,6 +79,7 @@ namespace
 		// countdown expires before they get there.
 		float completionTimeSeconds = 0.f;
 		bool reachedEnd = false;
+		bool forceStatsNA = false;
 
 		void reset()
 		{
@@ -86,6 +87,7 @@ namespace
 			collectedFruits.clear();
 			completionTimeSeconds = 0.f;
 			reachedEnd = false;
+			forceStatsNA = false;
 		}
 	};
 
@@ -828,6 +830,8 @@ int main()
 				game1Player.setBinding(GAME1_PlayerBinding{});
 				game1Player.setCoopMode(false);
 				game1Player.setDrawHud(true);
+				game1Player.clearLevelFinishState();
+				game1Player2.clearLevelFinishState();
 				game1Player1DetectedSource = GAME1_PlayerBinding{};
 			}
 		};
@@ -860,7 +864,11 @@ int main()
 			{
 				scoreState.completionTimeSeconds = 0.f;
 				scoreState.reachedEnd = false;
+				scoreState.forceStatsNA = false;
 			}
+			game1Player.clearLevelFinishState();
+			if (game1Player2Joined)
+				game1Player2.clearLevelFinishState();
 			game1Level.resetGoalTiles();
 		};
 
@@ -878,6 +886,27 @@ int main()
 		{
 			ResetGame1Scores();
 			ResetGame1PickupsFromLevel();
+		};
+
+	auto ResetGame1CheckpointProgress = [&]()
+		{
+			game1LastCheckpointOrder = -1;
+			game1Level.resetCheckpoints();
+
+			const sf::Vector2f startPosition = game1Level.getPlayerSpawnPosition();
+			game1Player.setSpawnPosition(startPosition);
+			if (game1Player2Joined)
+				game1Player2.setSpawnPosition(startPosition);
+		};
+
+	auto ResetGame1FullAttemptState = [&]()
+		{
+			game1TeamGameOver = false;
+			game1CameraNeedsSnap = true;
+			ResetGame1CheckpointProgress();
+			ResetGame1CollectiblesAndScores();
+			game1Level.resetTraps();
+			ResetGame1RunState();
 		};
 
 	auto AddGame1ScorePopup = [&](sf::Vector2f position, int points)
@@ -917,8 +946,7 @@ int main()
 				return false;
 
 			game1CurrentLevelPath = mapPath;
-			ResetGame1Scores();
-			ResetGame1RunState();
+			ResetGame1FullAttemptState();
 			return true;
 		};
 
@@ -947,10 +975,55 @@ int main()
 			if (game1CurrentLevelPath.empty())
 				return false;
 
+			const bool wasCoop = game1Player2Joined;
+			const GAME1_PlayerBinding p1Binding = game1Player.getBinding();
+			const GAME1_PlayerBinding p2Binding = game1Player2.getBinding();
+
 			if (!TryLoadGame1Level(game1CurrentLevelPath))
 				return false;
 
 			SetAppState(AppState::GAME1_Game);
+
+			if (wasCoop)
+			{
+				const std::string player2IdleDirectory =
+					(kGame1ResourcesDirectory / "Player2" / "PlayerIdle").string();
+				const sf::Vector2f startPosition = game1Level.getPlayerSpawnPosition();
+				const float playerWidth = game1Player.getBounds().size.x;
+				const float maxX = std::max(0.f, game1Level.getPixelWidth() - playerWidth);
+				sf::Vector2f p2StartPosition = startPosition;
+				p2StartPosition.x -= kGame1CoopJoinSpawnOffsetX;
+				if (p2StartPosition.x < 0.f || p2StartPosition.x > maxX)
+					p2StartPosition.x = startPosition.x + kGame1CoopJoinSpawnOffsetX;
+				p2StartPosition.x = std::clamp(p2StartPosition.x, 0.f, maxX);
+
+				if (!game1Player2.load(player2IdleDirectory, p2StartPosition))
+				{
+					const std::string msg =
+						"Surfers Quest Player 2 failed to load.\n\n" +
+						game1Player2.getLastError() +
+						"\n\nCurrent working directory:\n" +
+						std::filesystem::current_path().string();
+
+					ShowError(msg);
+					return false;
+				}
+
+				game1Player.setBinding(p1Binding);
+				game1Player.setCoopMode(true);
+				game1Player.setDrawHud(false);
+
+				game1Player2.setSpawnPosition(startPosition);
+				game1Player2.setBinding(p2Binding);
+				game1Player2.setCoopMode(true);
+				game1Player2.setDrawHud(false);
+				game1Player2Joined = true;
+				game1Player1DetectedSource = p1Binding;
+			}
+
+			game1TeamGameOver = false;
+			game1CameraNeedsSnap = true;
+			GAME1_SurfersQuestAudio::playGameplay();
 			ArcadeInput::consumePressedState();
 			return true;
 		};
@@ -982,21 +1055,26 @@ int main()
 			const float windowHeight = static_cast<float>(window.getSize().y);
 			const bool multiplayer = game1Player2Joined;
 
-			auto FruitRows = [](std::size_t count) -> int
+			auto FruitRows = [](const GAME1_PlayerScoreState& scoreState) -> int
 				{
-					return count == 0 ? 1 : static_cast<int>((count + 3) / 4);
+					if (scoreState.forceStatsNA || scoreState.collectedFruits.empty())
+						return 1;
+
+					return static_cast<int>((scoreState.collectedFruits.size() + 3) / 4);
 				};
 
 			int collectedRows;
 			if (multiplayer)
 			{
 				collectedRows = std::max(
-					FruitRows(game1Scores[0].collectedFruits.size()),
-					FruitRows(game1Scores[1].collectedFruits.size()));
+					FruitRows(game1Scores[0]),
+					FruitRows(game1Scores[1]));
 			}
 			else
 			{
-				collectedRows = FruitRows(game1RunCollectedFruits.size());
+				collectedRows = game1RunCollectedFruits.empty()
+					? 1
+					: static_cast<int>((game1RunCollectedFruits.size() + 3) / 4);
 			}
 
 			const float panelWidth = multiplayer
@@ -1256,6 +1334,195 @@ int main()
 			return ClampGame1CoopPosition(position);
 		};
 
+	auto IsGame1SafeRespawnPosition = [&game1Level](
+		sf::Vector2f position,
+		sf::Vector2f playerSize) -> bool
+		{
+			if (playerSize.x <= 0.f || playerSize.y <= 0.f)
+				return false;
+
+			if (position.x < 0.f || position.y < 0.f)
+				return false;
+
+			if (position.x + playerSize.x > game1Level.getPixelWidth() ||
+				position.y + playerSize.y > game1Level.getPixelHeight())
+			{
+				return false;
+			}
+
+			const float tileSize = static_cast<float>(GAME1_Level::TileSize);
+			const sf::FloatRect playerBounds(position, playerSize);
+			const int leftTile = static_cast<int>(std::floor(playerBounds.position.x / tileSize));
+			const int rightTile = static_cast<int>(std::floor(
+				(playerBounds.position.x + playerBounds.size.x - 0.1f) / tileSize));
+			const int topTile = static_cast<int>(std::floor(playerBounds.position.y / tileSize));
+			const int bottomTile = static_cast<int>(std::floor(
+				(playerBounds.position.y + playerBounds.size.y - 0.1f) / tileSize));
+
+			for (int row = topTile; row <= bottomTile; ++row)
+			{
+				for (int col = leftTile; col <= rightTile; ++col)
+				{
+					if (game1Level.isSolidTile(col, row) ||
+						game1Level.isSpikeTrapTile(col, row) ||
+						game1Level.isOneWayPlatformTile(col, row))
+					{
+						return false;
+					}
+				}
+			}
+
+			if (game1Level.getActiveFireDamageBounds(playerBounds).has_value() ||
+				game1Level.getSpikeHeadDamageBounds(playerBounds).has_value() ||
+				game1Level.getSawDamageBounds(playerBounds).has_value())
+			{
+				return false;
+			}
+
+			return true;
+		};
+
+	auto GetGame1SafeRespawnPositionAround = [&IsGame1SafeRespawnPosition](
+		const GAME1_Player& respawningPlayer,
+		sf::Vector2f preferredPosition) -> std::optional<sf::Vector2f>
+		{
+			const float tileSize = static_cast<float>(GAME1_Level::TileSize);
+			const sf::Vector2f playerSize = respawningPlayer.getBounds().size;
+			const int preferredCol = static_cast<int>(std::floor(preferredPosition.x / tileSize));
+			const int preferredRow = static_cast<int>(std::floor(preferredPosition.y / tileSize));
+
+			for (int radius = 0; radius <= 5; ++radius)
+			{
+				std::optional<sf::Vector2f> bestPosition;
+				int bestScore = 0;
+
+				for (int row = preferredRow - radius; row <= preferredRow + radius; ++row)
+				{
+					for (int col = preferredCol - radius; col <= preferredCol + radius; ++col)
+					{
+						if (std::max(std::abs(col - preferredCol), std::abs(row - preferredRow)) != radius)
+							continue;
+
+						const sf::Vector2f candidate(
+							static_cast<float>(col * GAME1_Level::TileSize),
+							static_cast<float>(row * GAME1_Level::TileSize));
+
+						if (!IsGame1SafeRespawnPosition(candidate, playerSize))
+							continue;
+
+						const int score =
+							(col - preferredCol) * (col - preferredCol) +
+							(row - preferredRow) * (row - preferredRow);
+
+						if (!bestPosition.has_value() || score < bestScore)
+						{
+							bestPosition = candidate;
+							bestScore = score;
+						}
+					}
+				}
+
+				if (bestPosition.has_value())
+					return bestPosition;
+			}
+
+			return std::nullopt;
+		};
+
+	auto GetGame1SafeRespawnPositionNear = [&IsGame1SafeRespawnPosition](
+		const GAME1_Player& respawningPlayer,
+		const GAME1_Player& anchorPlayer) -> std::optional<sf::Vector2f>
+		{
+			const float tileSize = static_cast<float>(GAME1_Level::TileSize);
+			const sf::FloatRect anchorBounds = anchorPlayer.getBounds();
+			const sf::Vector2f playerSize = respawningPlayer.getBounds().size;
+
+			const int anchorCol = static_cast<int>(std::floor(anchorBounds.position.x / tileSize));
+			const int anchorRow = static_cast<int>(std::floor(anchorBounds.position.y / tileSize));
+			const int preferredCol = anchorCol - 1;
+			const int preferredRow = anchorRow - 1;
+
+			for (int radius = 0; radius <= 5; ++radius)
+			{
+				std::optional<sf::Vector2f> bestPosition;
+				int bestScore = 0;
+
+				for (int row = preferredRow - radius; row <= preferredRow + radius; ++row)
+				{
+					for (int col = preferredCol - radius; col <= preferredCol + radius; ++col)
+					{
+						if (std::max(std::abs(col - preferredCol), std::abs(row - preferredRow)) != radius)
+							continue;
+
+						const sf::Vector2f candidate(
+							static_cast<float>(col * GAME1_Level::TileSize),
+							static_cast<float>(row * GAME1_Level::TileSize));
+
+						if (!IsGame1SafeRespawnPosition(candidate, playerSize))
+							continue;
+
+						const int distToAnchor =
+							(col - anchorCol) * (col - anchorCol) +
+							(row - anchorRow) * (row - anchorRow);
+						const int belowAnchorPenalty = row > anchorRow ? 32 : 0;
+						const int score =
+							distToAnchor * 4 +
+							std::abs(col - preferredCol) +
+							std::abs(row - preferredRow) +
+							belowAnchorPenalty;
+
+						if (!bestPosition.has_value() || score < bestScore)
+						{
+							bestPosition = candidate;
+							bestScore = score;
+						}
+					}
+				}
+
+				if (bestPosition.has_value())
+					return bestPosition;
+			}
+
+			return std::nullopt;
+		};
+
+	auto MoveGame1RespawningPlayerToward = [&IsGame1SafeRespawnPosition, &GetGame1SafeRespawnPositionNear](
+		GAME1_Player& respawningPlayer,
+		const GAME1_Player& anchorPlayer,
+		float frameDeltaTime)
+		{
+			if (!respawningPlayer.isRespawning())
+				return;
+
+			if (anchorPlayer.isGameOver() ||
+				anchorPlayer.isRespawning() ||
+				anchorPlayer.hasLevelFinishFailed())
+			{
+				return;
+			}
+
+			const std::optional<sf::Vector2f> targetPosition =
+				GetGame1SafeRespawnPositionNear(respawningPlayer, anchorPlayer);
+			if (!targetPosition.has_value())
+				return;
+
+			const sf::Vector2f currentPosition = respawningPlayer.getPosition();
+			const float followRate = 12.f;
+			const float followT =
+				1.f - std::exp(-followRate * std::max(0.f, frameDeltaTime));
+
+			sf::Vector2f nextPosition(
+				currentPosition.x + (targetPosition->x - currentPosition.x) * followT,
+				currentPosition.y + (targetPosition->y - currentPosition.y) * followT);
+
+			const sf::Vector2f playerSize = respawningPlayer.getBounds().size;
+			if (!IsGame1SafeRespawnPosition(nextPosition, playerSize))
+				nextPosition = *targetPosition;
+
+			respawningPlayer.setPosition(nextPosition);
+			respawningPlayer.setNextRespawnPosition(nextPosition);
+		};
+
 	auto TryJoinGame1Player2 = [&](GAME1_PlayerBinding p2Binding) -> bool
 		{
 			if (appState != AppState::GAME1_Game)
@@ -1324,31 +1591,9 @@ int main()
 			return true;
 		};
 
-	auto RestartGame1Team = [&]()
+	auto RestartGame1Team = [&]() -> bool
 		{
-			game1Player.resetGame();
-			game1Player.setSpawnPosition(game1Level.getPlayerSpawnPosition());
-			game1Player.setPosition(game1Level.getPlayerSpawnPosition());
-
-			if (game1Player2Joined)
-			{
-				const sf::Vector2f p2Spawn = GetGame1CoopOffsetPosition(
-					game1Level.getPlayerSpawnPosition(),
-					-kGame1CoopJoinSpawnOffsetX);
-
-				game1Player2.resetGame();
-				game1Player2.setSpawnPosition(game1Level.getPlayerSpawnPosition());
-				game1Player2.setPosition(p2Spawn);
-			}
-
-			game1TeamGameOver = false;
-			game1LastCheckpointOrder = -1;
-			game1CameraNeedsSnap = true;
-			ResetGame1CollectiblesAndScores();
-			game1Level.resetTraps();
-			ResetGame1RunState();
-
-			GAME1_SurfersQuestAudio::playGameplay();
+			return TryRestartGame1CurrentLevel();
 		};
 
 	auto TryStartBombermanLevel = [&](const std::string& mapPath) -> bool
@@ -2090,9 +2335,15 @@ int main()
 						}
 						else if (keyReleased->code == sf::Keyboard::Key::Enter)
 						{
-							if (game1TeamGameOver)
+							if (!game1Player2Joined && game1Player.isGameOver())
 							{
-								RestartGame1Team();
+								if (!TryRestartGame1CurrentLevel())
+									return -1;
+							}
+							else if (game1TeamGameOver)
+							{
+								if (!RestartGame1Team())
+									return -1;
 							}
 							else if (!game1Player2Joined &&
 								!game1Player1DetectedSource.singlePlayer &&
@@ -2416,9 +2667,17 @@ int main()
 			{
 				OpenPauseMenu();
 			}
+			else if (!game1Player2Joined &&
+				game1Player.isGameOver() &&
+				ArcadeInput::isRestartPressed())
+			{
+				if (!TryRestartGame1CurrentLevel())
+					return -1;
+			}
 			else if (game1TeamGameOver && ArcadeInput::isRestartPressed())
 			{
-				RestartGame1Team();
+				if (!RestartGame1Team())
+					return -1;
 			}
 			else if (!game1Player2Joined)
 			{
@@ -2574,15 +2833,50 @@ int main()
 			const bool game1Paused = game1OverlayPaused || game1RunFinished || game1VictoryPopupOpen;
 			window.setMouseCursorVisible(game1OverlayPaused || game1VictoryPopupOpen);
 
-			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player)
+			auto ReviveGame1PlayerAtCheckpoint = [&](GAME1_Player& player,
+				sf::Vector2f checkpointSpawn)
 				{
+					const sf::Vector2f revivePosition =
+						GetGame1SafeRespawnPositionAround(player, checkpointSpawn)
+							.value_or(checkpointSpawn);
+
+					player.setSpawnPosition(checkpointSpawn);
+					player.reviveWithOneLifeAt(revivePosition);
+				};
+
+			auto TryReviveGame1PartnerAtCheckpoint = [&](int triggeringPlayerIndex,
+				sf::Vector2f checkpointSpawn)
+				{
+					if (!p2Joined || game1TeamGameOver || game1RunFinished)
+						return;
+
+					const bool p1Out =
+						game1Player.isGameOver() && game1Player.getLives() <= 0;
+					const bool p2Out =
+						game1Player2.isGameOver() && game1Player2.getLives() <= 0;
+
+					if (p1Out && p2Out)
+						return;
+
+					if (triggeringPlayerIndex == 0 && game1Player.isActive() && p2Out)
+					{
+						ReviveGame1PlayerAtCheckpoint(game1Player2, checkpointSpawn);
+					}
+					else if (triggeringPlayerIndex == 1 && game1Player2.isActive() && p1Out)
+					{
+						ReviveGame1PlayerAtCheckpoint(game1Player, checkpointSpawn);
+					}
+				};
+
+			auto TriggerCheckpointsForPlayer = [&](const GAME1_Player& player, int playerIndex)
+				{
+					if (!player.isActive() || game1TeamGameOver || game1RunFinished)
+						return;
+
 					const sf::FloatRect playerBounds = player.getBounds();
 
 					for (int i = 0; i < game1Level.getCheckpointCount(); ++i)
 					{
-						if (game1Level.isCheckpointTriggered(i))
-							continue;
-
 						const sf::FloatRect checkpointBounds = game1Level.getCheckpointBounds(i);
 
 						const bool overlaps =
@@ -2594,22 +2888,27 @@ int main()
 						if (!overlaps)
 							continue;
 
+						const bool alreadyTriggered = game1Level.isCheckpointTriggered(i);
 						const int order = game1Level.getCheckpointOrderIndex(i);
-
-						if (order <= game1LastCheckpointOrder)
-							continue;
-
-						game1Level.triggerCheckpoint(i);
-						game1LastCheckpointOrder = order;
-
 						const sf::Vector2f cpSpawn =
 							game1Level.getCheckpointSpawnPosition(i);
 
-						game1Player.setSpawnPosition(cpSpawn);
-						if (p2Joined)
-							game1Player2.setSpawnPosition(cpSpawn);
+						if (!alreadyTriggered && order <= game1LastCheckpointOrder)
+							continue;
 
-						GAME1_SurfersQuestAudio::playCheckpoint();
+						if (!alreadyTriggered)
+						{
+							game1Level.triggerCheckpoint(i);
+							game1LastCheckpointOrder = order;
+
+							game1Player.setSpawnPosition(cpSpawn);
+							if (p2Joined)
+								game1Player2.setSpawnPosition(cpSpawn);
+
+							GAME1_SurfersQuestAudio::playCheckpoint();
+						}
+
+						TryReviveGame1PartnerAtCheckpoint(playerIndex, cpSpawn);
 					}
 				};
 
@@ -2692,6 +2991,40 @@ int main()
 						ArcadeInput::isSecondaryHeld();
 				};
 
+			auto MarkGame1PlayerFinished = [&](GAME1_Player& player, int playerIndex)
+				{
+					if (playerIndex < 0 ||
+						playerIndex >= static_cast<int>(game1Scores.size()))
+					{
+						return;
+					}
+
+					GAME1_PlayerScoreState& scoreState =
+						game1Scores[static_cast<std::size_t>(playerIndex)];
+					scoreState.reachedEnd = true;
+					scoreState.forceStatsNA = false;
+					scoreState.completionTimeSeconds = game1RunTimerSeconds;
+					player.setLevelFinished(true);
+				};
+
+			auto MarkGame1PlayerFinishFailed = [&](GAME1_Player& player, int playerIndex)
+				{
+					if (playerIndex < 0 ||
+						playerIndex >= static_cast<int>(game1Scores.size()))
+					{
+						return;
+					}
+
+					GAME1_PlayerScoreState& scoreState =
+						game1Scores[static_cast<std::size_t>(playerIndex)];
+					if (scoreState.reachedEnd)
+						return;
+
+					scoreState.forceStatsNA = true;
+					scoreState.completionTimeSeconds = 0.f;
+					player.setLevelFinishFailed(true);
+				};
+
 			auto FinishGame1Run = [&](int endTileIndex)
 				{
 					if (game1RunFinished)
@@ -2725,7 +3058,7 @@ int main()
 					return -1;
 				};
 
-			auto TryTriggerEndTileForPlayer = [&](const GAME1_Player& player, int playerIndex)
+			auto TryTriggerEndTileForPlayer = [&](GAME1_Player& player, int playerIndex)
 				{
 					if (game1RunFinished || !player.isActive())
 						return;
@@ -2742,14 +3075,7 @@ int main()
 					if (!game1Level.isEndTileTriggered(tileIndex))
 						game1Level.triggerEndTile(tileIndex);
 
-					if (playerIndex >= 0 &&
-						playerIndex < static_cast<int>(game1Scores.size()))
-					{
-						GAME1_PlayerScoreState& scoreState =
-							game1Scores[static_cast<std::size_t>(playerIndex)];
-						scoreState.reachedEnd = true;
-						scoreState.completionTimeSeconds = game1RunTimerSeconds;
-					}
+					MarkGame1PlayerFinished(player, playerIndex);
 
 					if (!p2Joined)
 					{
@@ -2814,19 +3140,30 @@ int main()
 					{
 						game1EndCountdownSeconds = 0.f;
 
-						// Any player who never reached the End Tile gets the level
-						// end time recorded (shown as their completion time).
-						for (GAME1_PlayerScoreState& scoreState : game1Scores)
-						{
-							if (!scoreState.reachedEnd)
-								scoreState.completionTimeSeconds = game1RunTimerSeconds;
-						}
+						MarkGame1PlayerFinishFailed(game1Player, 0);
+						MarkGame1PlayerFinishFailed(game1Player2, 1);
 
 						FinishGame1Run(game1TriggeredEndTileIndex);
 					}
 				}
 
 				game1Level.updateTraps(deltaTime);
+
+				if (p2Joined && !game1TeamGameOver)
+				{
+					MoveGame1RespawningPlayerToward(game1Player, game1Player2, deltaTime);
+					MoveGame1RespawningPlayerToward(game1Player2, game1Player, deltaTime);
+				}
+
+				// Feed the SpikeHead traps the active players' bounds so each can
+				// detect/target the closest one before the players move/collide.
+				std::vector<sf::FloatRect> game1SpikeHeadTargets;
+				if (game1Player.isActive())
+					game1SpikeHeadTargets.push_back(game1Player.getDamageBounds());
+				if (p2Joined && game1Player2.isActive())
+					game1SpikeHeadTargets.push_back(game1Player2.getDamageBounds());
+				game1Level.updateSpikeHeads(deltaTime, game1SpikeHeadTargets);
+				game1Level.updateSaws(deltaTime);
 
 				const bool game1PlayerWasRespawning = game1Player.isRespawning();
 				const bool game1PlayerWasGameOver = game1Player.isGameOver();
@@ -2837,22 +3174,17 @@ int main()
 				}
 				if (!p2Joined && !game1PlayerWasGameOver && game1Player.isGameOver())
 				{
+					ResetGame1CheckpointProgress();
 					ResetGame1RunState();
 				}
-				if (!p2Joined && game1PlayerWasGameOver && !game1Player.isGameOver())
-				{
-					ResetGame1CollectiblesAndScores();
-					game1Level.resetTraps();
-					ResetGame1RunState();
-				}
-				TriggerCheckpointsForPlayer(game1Player);
+				TriggerCheckpointsForPlayer(game1Player, 0);
 				TryCollectPickupsForPlayer(game1Player, 0);
 				TryTriggerEndTileForPlayer(game1Player, 0);
 
 				if (p2Joined && !game1Player2.isGameOver())
 				{
 					game1Player2.update(deltaTime, game1Level);
-					TriggerCheckpointsForPlayer(game1Player2);
+					TriggerCheckpointsForPlayer(game1Player2, 1);
 					TryCollectPickupsForPlayer(game1Player2, 1);
 					TryTriggerEndTileForPlayer(game1Player2, 1);
 				}
@@ -2878,11 +3210,15 @@ int main()
 
 				if (!game1RunFinished)
 				{
+					game1Level.killEnemiesTouchedBySpikeHeads(game1Enemies);
+
 					for (GAME1_Enemy& enemy : game1Enemies)
 					{
 						enemy.update(deltaTime, game1Level, game1Player,
 							p2Joined ? &game1Player2 : nullptr);
 					}
+
+					game1Level.killEnemiesTouchedBySpikeHeads(game1Enemies);
 
 					for (GAME1_Enemy& enemy : game1Enemies)
 					{
@@ -3060,9 +3396,12 @@ int main()
 						if (PlayerCenterX(trailing) >= PlayerCenterX(leading))
 							return;
 
-						const sf::Vector2f respawnNear = GetGame1CoopOffsetPosition(
-							leading.getPosition(),
-							-kGame1CoopRespawnOffsetX);
+						const std::optional<sf::Vector2f> safeRespawnNear =
+							GetGame1SafeRespawnPositionNear(trailing, leading);
+						const sf::Vector2f respawnNear = safeRespawnNear.value_or(
+							GetGame1CoopOffsetPosition(
+								leading.getPosition(),
+								-kGame1CoopRespawnOffsetX));
 
 						trailing.setNextRespawnPosition(respawnNear);
 						trailing.forceDeath();
@@ -3084,6 +3423,7 @@ int main()
 				if (game1Player.isGameOver() && game1Player2.isGameOver())
 				{
 					game1TeamGameOver = true;
+					ResetGame1CheckpointProgress();
 					ResetGame1RunState();
 					GAME1_SurfersQuestAudio::playDeath();
 				}
@@ -3413,8 +3753,9 @@ int main()
 
 							DrawColumnCentered(cx, "Score", 18, y, sf::Color::White);
 							y += 24.f;
-							DrawColumnCentered(cx, std::to_string(stats.score),
-								24, y, GetGame1RainbowColor(totalAppTime));
+							DrawColumnCentered(cx,
+								stats.forceStatsNA ? "N/A" : std::to_string(stats.score),
+								24, y, stats.forceStatsNA ? sf::Color(210, 210, 210) : GetGame1RainbowColor(totalAppTime));
 							y += 40.f;
 
 							DrawColumnCentered(cx, "Collected:", 18, y, sf::Color::White);
@@ -3422,7 +3763,11 @@ int main()
 
 							const float mpIconSize = 36.f;
 							const float mpIconGap = 6.f;
-							if (stats.collectedFruits.empty())
+							if (stats.forceStatsNA)
+							{
+								DrawColumnCentered(cx, "N/A", 18, y + 4.f, sf::Color(210, 210, 210));
+							}
+							else if (stats.collectedFruits.empty())
 							{
 								DrawColumnCentered(cx, "None", 18, y + 4.f, sf::Color(210, 210, 210));
 							}
@@ -3436,7 +3781,7 @@ int main()
 									mpIconGap);
 							}
 
-							const int rows = stats.collectedFruits.empty()
+							const int rows = (stats.forceStatsNA || stats.collectedFruits.empty())
 								? 1
 								: static_cast<int>((stats.collectedFruits.size() + 3) / 4);
 							const float iconsHeight =
@@ -3446,7 +3791,7 @@ int main()
 								y + iconsHeight + 22.f,
 								game1VictoryRetryBounds.position.y - 38.f);
 							DrawColumnCentered(cx,
-								"Time: " + FormatGame1RunTime(stats.completionTimeSeconds),
+								stats.forceStatsNA ? "Time: N/A" : "Time: " + FormatGame1RunTime(stats.completionTimeSeconds),
 								18, timeY, sf::Color::White);
 						}
 					}

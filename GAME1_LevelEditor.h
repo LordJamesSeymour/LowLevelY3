@@ -146,6 +146,11 @@ private:
 	void selectNextLoadLevel();
 	std::string getSelectedLoadLevelName() const;
 
+	bool writeCurrentLevelToFile(const std::filesystem::path& savePath);
+	bool overwriteLoadedLevelFile();
+	bool deleteLoadedLevelFile();
+	bool hasCurrentLoadedLevel() const;
+
 	void selectPreviousWorld();
 	void selectNextWorld();
 	int getHighestAvailableWorldNumber() const;
@@ -233,6 +238,11 @@ private:
 		const sf::FloatRect& bounds,
 		std::uint8_t alpha = 255) const;
 
+	// Grows a single grid-cell rect into the trap's on-grid footprint (2x2 for
+	// SpikeHead, otherwise unchanged) so multi-tile objects preview at true size.
+	sf::FloatRect objectFootprintBounds(GAME1_TrapType type,
+		const sf::FloatRect& tileRect) const;
+
 	void drawLevelObjectPreview(sf::RenderTarget& target,
 		GAME1_LevelObjectType type,
 		const sf::FloatRect& bounds,
@@ -315,6 +325,9 @@ private:
 	sf::FloatRect m_worldSelectorBounds;
 	sf::FloatRect m_worldNextButtonBounds;
 
+	sf::FloatRect m_overwriteButtonBounds;
+	sf::FloatRect m_deleteButtonBounds;
+
 	sf::FloatRect m_saveButtonBounds;
 	sf::FloatRect m_loadButtonBounds;
 	sf::FloatRect m_loadPreviousButtonBounds;
@@ -331,4 +344,5 @@ private:
 
 	std::string m_lastError;
 	std::string m_lastSavedPath;
+	std::string m_currentLoadedLevelPath;
 };

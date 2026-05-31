@@ -5,6 +5,8 @@
 #include "GAME1_ParallaxBackground.h"
 #include "GAME1_LevelObject.h"
 #include "GAME1_Pickup.h"
+#include "GAME1_Saw.h"
+#include "GAME1_SpikeHead.h"
 #include "GAME1_Trap.h"
 
 #include <filesystem>
@@ -13,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+class GAME1_Enemy;
 
 enum class GAME1_LevelEnemyType
 {
@@ -75,6 +79,7 @@ public:
 		sf::Vector2f cameraCenter) const;
 
 	void updateCheckpoints(float deltaTime);
+	void resetCheckpoints();
 	void resetTraps();
 	void updateGoalTiles(float deltaTime);
 	void resetGoalTiles();
@@ -115,6 +120,17 @@ public:
 	sf::Vector2f getFanForceForBounds(const sf::FloatRect& playerBounds) const;
 	std::optional<sf::FloatRect> getActiveFireDamageBounds(const sf::FloatRect& playerBounds) const;
 
+	// SpikeHead 2x2 slam traps. Updated with the active players' bounds so each
+	// can detect/target the closest one; queried for damage like a fire trap.
+	void updateSpikeHeads(float deltaTime, const std::vector<sf::FloatRect>& playerBounds);
+	std::optional<sf::FloatRect> getSpikeHeadDamageBounds(const sf::FloatRect& playerBounds) const;
+	void killEnemiesTouchedBySpikeHeads(std::vector<GAME1_Enemy>& enemies) const;
+
+	// Saw 2x2 chain-riding hazards. They move on their own (no player input
+	// needed); queried for damage like a fire trap.
+	void updateSaws(float deltaTime);
+	std::optional<sf::FloatRect> getSawDamageBounds(const sf::FloatRect& playerBounds) const;
+
 	int getWidthInTiles() const;
 	int getHeightInTiles() const;
 	float getPixelWidth() const;
@@ -145,15 +161,25 @@ private:
 	bool isSupportedSpecialTileCode(char tile) const;
 	const sf::Texture* getTextureForTile(char tile) const;
 	void rebuildTrapRuntime();
+	void rebuildSpikeHeadRuntime();
+	void rebuildSawRuntime();
 	void configureMovingPlatformPaths();
+	void configureSawTracks();
 	bool hasChainAt(sf::Vector2i gridPosition) const;
 	// Decoration-only background tiles. Drawn after the parallax background but
 	// behind every solid/foreground tile. They have no collision or gameplay
 	// effect (gameplay queries only read m_rows).
 	void drawBackgroundTiles(sf::RenderWindow& window) const;
 	void drawTraps(sf::RenderWindow& window) const;
+	void drawSpikeHeads(sf::RenderWindow& window) const;
+	void drawSaws(sf::RenderWindow& window) const;
 	void drawGoalTiles(sf::RenderWindow& window) const;
 	static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b);
+	// Rejects degenerate, oversized, or body-mismatched hazard rectangles so a
+	// mispositioned/stale trap rect can never damage a player.
+	static bool isPlausibleHazardRect(
+		const sf::FloatRect& rect,
+		const sf::FloatRect& body);
 
 private:
 	std::vector<std::string> m_rows;
@@ -168,6 +194,16 @@ private:
 	std::vector<GAME1_PickupSpawn> m_pickupSpawns;
 	std::vector<GAME1_TrapSpawn> m_trapSpawns;
 	std::vector<GAME1_Trap> m_traps;
+	// SpikeHead spawns (2x2 top-left grid cells) are parsed out of the OBJECT
+	// section separately from m_trapSpawns and driven by their own runtime list.
+	std::vector<sf::Vector2i> m_spikeHeadSpawns;
+	std::vector<GAME1_SpikeHead> m_spikeHeads;
+	GAME1_SpikeHeadAssets m_spikeHeadAssets;
+	// Saw spawns (anchor chain-tile cells) parsed out of the OBJECT section and
+	// driven by their own 2x2 runtime list, riding the chain underneath.
+	std::vector<sf::Vector2i> m_sawSpawns;
+	std::vector<GAME1_Saw> m_saws;
+	GAME1_SawAssets m_sawAssets;
 	// Grid cells occupied by the solid base block of a Fire trap.  Packed
 	// as (col * 65536 + row) for O(1) lookup from isSolidTile().
 	std::unordered_set<long long> m_fireBaseTileCells;

@@ -1,5 +1,7 @@
 #include "GAME1_Level.h"
 
+#include "GAME1_Enemy.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -402,6 +404,10 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	m_pickupSpawns.clear();
 	m_trapSpawns.clear();
 	m_traps.clear();
+	m_spikeHeadSpawns.clear();
+	m_spikeHeads.clear();
+	m_sawSpawns.clear();
+	m_saws.clear();
 	m_checkpoints.clear();
 	m_checkpointActivationFrames.clear();
 	m_checkpointLoopFrames.clear();
@@ -498,7 +504,16 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 				return false;
 			}
 
-			m_trapSpawns.push_back(trapSpawn);
+			// SpikeHead and Saw are serialized as trap objects ("OBJECT SpikeHead
+			// col row 0" / "OBJECT Saw col row 0") but driven by their own 2x2
+			// runtimes, so they are kept out of the generic per-tile trap list.
+			if (trapSpawn.type == GAME1_TrapType::SpikeHead)
+				m_spikeHeadSpawns.push_back(trapSpawn.gridPosition);
+			else if (trapSpawn.type == GAME1_TrapType::Saw)
+				m_sawSpawns.push_back(trapSpawn.gridPosition);
+			else
+				m_trapSpawns.push_back(trapSpawn);
+
 			continue;
 		}
 
@@ -541,6 +556,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 	loadWorldBackgroundTileTextures(worldTilesDirectory);
 
 	m_trapAssets.load(resourcesPath.string());
+	m_spikeHeadAssets.load(resourcesPath.string());
+	m_sawAssets.load(resourcesPath.string());
 	loadSpecialTileTextures(resourcesPath);
 	loadCheckpointTextures(resourcesPath);
 	loadGoalTileTextures(resourcesPath);
@@ -677,6 +694,8 @@ bool GAME1_Level::loadFromFileInternal(const std::string& mapPath,
 		m_checkpoints[i].orderIndex = static_cast<int>(i);
 
 	rebuildTrapRuntime();
+	rebuildSpikeHeadRuntime();
+	rebuildSawRuntime();
 	return true;
 }
 
@@ -748,11 +767,12 @@ void GAME1_Level::loadSpecialTileTextures(const std::filesystem::path& resources
 
 	const fs::path tilesDirectory = resourcesDirectory / "Tiles";
 
-	// Spikes are expected at Resources/Tiles/Traps/Spikes_0.png, but this also
-	// searches the Tiles folder recursively for any PNG with "spike" in its name.
+	// Spikes are expected at Resources/Tiles/Traps/Spikes/Spikes_0.png, but this
+	// also searches the Tiles folder recursively for any PNG with "spike" in its
+	// name.
 	{
 		sf::Texture spikeTexture;
-		const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes_0.png";
+		const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes" / "Spikes_0.png";
 
 		if (LoadTextureIfFileExists(spikeTexture, preferredSpikePath))
 		{
@@ -1060,9 +1080,21 @@ void GAME1_Level::updateCheckpoints(float deltaTime)
 	}
 }
 
+void GAME1_Level::resetCheckpoints()
+{
+	for (CheckpointInstance& checkpoint : m_checkpoints)
+	{
+		checkpoint.phase = CheckpointPhase::NoFlag;
+		checkpoint.frameIndex = 0;
+		checkpoint.frameTimer = 0.f;
+	}
+}
+
 void GAME1_Level::resetTraps()
 {
 	rebuildTrapRuntime();
+	rebuildSpikeHeadRuntime();
+	rebuildSawRuntime();
 }
 
 void GAME1_Level::updateGoalTiles(float deltaTime)
@@ -1350,6 +1382,8 @@ void GAME1_Level::draw(sf::RenderWindow& window) const
 	}
 
 	drawTraps(window);
+	drawSpikeHeads(window);
+	drawSaws(window);
 
 	for (std::size_t i = 0; i < m_checkpoints.size(); ++i)
 	{
@@ -1635,6 +1669,81 @@ std::optional<sf::FloatRect> GAME1_Level::getActiveFireDamageBounds(const sf::Fl
 	return std::nullopt;
 }
 
+void GAME1_Level::updateSpikeHeads(float deltaTime,
+	const std::vector<sf::FloatRect>& playerBounds)
+{
+	for (GAME1_SpikeHead& spikeHead : m_spikeHeads)
+		spikeHead.update(deltaTime, *this, playerBounds);
+}
+
+std::optional<sf::FloatRect> GAME1_Level::getSpikeHeadDamageBounds(
+	const sf::FloatRect& playerBounds) const
+{
+	for (const GAME1_SpikeHead& spikeHead : m_spikeHeads)
+	{
+		// Only the 2x2 body hitbox can damage - never the detection cross.
+		const sf::FloatRect body = spikeHead.getBodyBounds();
+		const sf::FloatRect hazard = spikeHead.getHazardBounds();
+
+		if (!isPlausibleHazardRect(hazard, body))
+			continue;
+
+		if (rectsIntersect(playerBounds, hazard))
+			return hazard;
+	}
+
+	return std::nullopt;
+}
+
+void GAME1_Level::killEnemiesTouchedBySpikeHeads(std::vector<GAME1_Enemy>& enemies) const
+{
+	for (GAME1_Enemy& enemy : enemies)
+	{
+		if (!enemy.isActive() || !enemy.isAlive())
+			continue;
+
+		const sf::FloatRect enemyBounds = enemy.getBounds();
+
+		for (const GAME1_SpikeHead& spikeHead : m_spikeHeads)
+		{
+			const sf::FloatRect body = spikeHead.getBodyBounds();
+
+			if (!isPlausibleHazardRect(body, body))
+				continue;
+
+			if (!rectsIntersect(enemyBounds, body))
+				continue;
+
+			enemy.killInstantly();
+			break;
+		}
+	}
+}
+
+void GAME1_Level::updateSaws(float deltaTime)
+{
+	for (GAME1_Saw& saw : m_saws)
+		saw.update(deltaTime);
+}
+
+std::optional<sf::FloatRect> GAME1_Level::getSawDamageBounds(
+	const sf::FloatRect& playerBounds) const
+{
+	for (const GAME1_Saw& saw : m_saws)
+	{
+		const sf::FloatRect body = saw.getBodyBounds();
+		const sf::FloatRect hazard = saw.getHazardBounds();
+
+		if (!isPlausibleHazardRect(hazard, body))
+			continue;
+
+		if (rectsIntersect(playerBounds, hazard))
+			return hazard;
+	}
+
+	return std::nullopt;
+}
+
 int GAME1_Level::getWidthInTiles() const
 {
 	if (m_rows.empty())
@@ -1721,6 +1830,77 @@ void GAME1_Level::rebuildTrapRuntime()
 	}
 
 	configureMovingPlatformPaths();
+}
+
+void GAME1_Level::rebuildSpikeHeadRuntime()
+{
+	m_spikeHeads.clear();
+	m_spikeHeads.reserve(m_spikeHeadSpawns.size());
+
+	for (const sf::Vector2i& gridPosition : m_spikeHeadSpawns)
+		m_spikeHeads.emplace_back(gridPosition);
+
+	for (GAME1_SpikeHead& spikeHead : m_spikeHeads)
+		spikeHead.setAssets(&m_spikeHeadAssets);
+}
+
+void GAME1_Level::rebuildSawRuntime()
+{
+	m_saws.clear();
+	m_saws.reserve(m_sawSpawns.size());
+
+	for (const sf::Vector2i& anchor : m_sawSpawns)
+		m_saws.emplace_back(anchor);
+
+	for (GAME1_Saw& saw : m_saws)
+		saw.setAssets(&m_sawAssets);
+
+	configureSawTracks();
+}
+
+void GAME1_Level::configureSawTracks()
+{
+	// Scan the connected chain segment around each saw's anchor tile (mirrors
+	// the moving-platform chain scan) and hand it to the saw as its
+	// back-and-forth track. The chain traps live in m_traps, so this must run
+	// after rebuildTrapRuntime().
+	const int width = getWidthInTiles();
+	const int height = getHeightInTiles();
+
+	for (GAME1_Saw& saw : m_saws)
+	{
+		const sf::Vector2i anchor = saw.getAnchorGridPosition();
+
+		sf::Vector2i left = anchor;
+		while (hasChainAt({ left.x - 1, left.y }))
+			--left.x;
+
+		sf::Vector2i right = anchor;
+		while (hasChainAt({ right.x + 1, right.y }))
+			++right.x;
+
+		if (left.x != right.x)
+		{
+			saw.configureTrack(left, right, true, width, height);
+			continue;
+		}
+
+		sf::Vector2i top = anchor;
+		while (hasChainAt({ top.x, top.y - 1 }))
+			--top.y;
+
+		sf::Vector2i bottom = anchor;
+		while (hasChainAt({ bottom.x, bottom.y + 1 }))
+			++bottom.y;
+
+		if (top.y != bottom.y)
+		{
+			saw.configureTrack(top, bottom, false, width, height);
+			continue;
+		}
+
+		saw.configureTrack(anchor, anchor, true, width, height);
+	}
 }
 
 void GAME1_Level::configureMovingPlatformPaths()
@@ -1832,6 +2012,18 @@ void GAME1_Level::drawTraps(sf::RenderWindow& window) const
 	}
 }
 
+void GAME1_Level::drawSpikeHeads(sf::RenderWindow& window) const
+{
+	for (const GAME1_SpikeHead& spikeHead : m_spikeHeads)
+		spikeHead.draw(window);
+}
+
+void GAME1_Level::drawSaws(sf::RenderWindow& window) const
+{
+	for (const GAME1_Saw& saw : m_saws)
+		saw.draw(window);
+}
+
 void GAME1_Level::drawGoalTiles(sf::RenderWindow& window) const
 {
 	const float doubleTileSize = static_cast<float>(TileSize) * 2.f;
@@ -1891,6 +2083,49 @@ bool GAME1_Level::rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b)
 		a.position.x + a.size.x > b.position.x &&
 		a.position.y < b.position.y + b.size.y &&
 		a.position.y + a.size.y > b.position.y;
+}
+
+bool GAME1_Level::isPlausibleHazardRect(
+	const sf::FloatRect& rect,
+	const sf::FloatRect& body)
+{
+	const auto finiteRect = [](const sf::FloatRect& value)
+		{
+			return std::isfinite(value.position.x) &&
+				std::isfinite(value.position.y) &&
+				std::isfinite(value.size.x) &&
+				std::isfinite(value.size.y);
+		};
+
+	if (!finiteRect(rect) || !finiteRect(body))
+		return false;
+
+	if (rect.size.x <= 0.f || rect.size.y <= 0.f ||
+		body.size.x <= 0.f || body.size.y <= 0.f)
+	{
+		return false;
+	}
+
+	// SpikeHead and Saw contact is limited to their 2x2 bodies. This rejects the
+	// SpikeHead detection arms, whole-level rectangles, and any
+	// uninitialised/default damage bounds.
+	const float maxTrapSize = static_cast<float>(TileSize) * 2.f + 0.5f;
+	if (rect.size.x > maxTrapSize || rect.size.y > maxTrapSize ||
+		body.size.x > maxTrapSize || body.size.y > maxTrapSize)
+	{
+		return false;
+	}
+
+	const float slack = 1.f;
+	const float rectRight = rect.position.x + rect.size.x;
+	const float rectBottom = rect.position.y + rect.size.y;
+	const float bodyRight = body.position.x + body.size.x;
+	const float bodyBottom = body.position.y + body.size.y;
+
+	return rect.position.x >= body.position.x - slack &&
+		rect.position.y >= body.position.y - slack &&
+		rectRight <= bodyRight + slack &&
+		rectBottom <= bodyBottom + slack;
 }
 
 const sf::Texture* GAME1_Level::getTextureForTile(char tile) const

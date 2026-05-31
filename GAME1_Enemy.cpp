@@ -229,7 +229,7 @@ void GAME1_Enemy::update(float deltaTime, const GAME1_Level& level,
 	// no second player exists.
 	auto isChaseCandidate = [](const GAME1_Player& player)
 		{
-			return !player.isGameOver() && !player.isRespawning();
+			return player.isActive();
 		};
 
 	const GAME1_Player* target = &player1;
@@ -475,7 +475,7 @@ void GAME1_Enemy::updateAnimation(float deltaTime)
 
 bool GAME1_Enemy::canSeePlayer(const GAME1_Level& level, const GAME1_Player& player) const
 {
-	if (!player.isRespawning() && !player.isGameOver())
+	if (player.isActive())
 	{
 		const sf::FloatRect playerBounds = player.getBounds();
 		const sf::FloatRect enemyBounds = getBounds();
@@ -593,6 +593,20 @@ void GAME1_Enemy::snapToGround(const GAME1_Level& level)
 	}
 }
 
+void GAME1_Enemy::beginDeath()
+{
+	if (!m_alive || m_state == BehaviourState::Hit)
+		return;
+
+	GAME1_SurfersQuestAudio::playEnemyDeath();
+	m_health = 0;
+	m_alive = false;
+	m_state = BehaviourState::Hit;
+	m_velocity = { 0.f, 0.f };
+	m_animationTimer = 0.f;
+	m_currentFrameIndex = 0;
+}
+
 void GAME1_Enemy::takeStompDamage()
 {
 	if (!m_alive || m_state == BehaviourState::Hit)
@@ -601,14 +615,12 @@ void GAME1_Enemy::takeStompDamage()
 	--m_health;
 
 	if (m_health <= 0)
-	{
-		GAME1_SurfersQuestAudio::playEnemyDeath();
-		m_alive = false;
-		m_state = BehaviourState::Hit;
-		m_velocity = { 0.f, 0.f };
-		m_animationTimer = 0.f;
-		m_currentFrameIndex = 0;
-	}
+		beginDeath();
+}
+
+void GAME1_Enemy::killInstantly()
+{
+	beginDeath();
 }
 
 bool GAME1_Enemy::handlePlayerCollision(GAME1_Player& player)

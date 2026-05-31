@@ -171,6 +171,8 @@
     <ClInclude Include="GAME1_ParallaxBackground.h" />
     <ClInclude Include="GAME1_Pickup.h" />
     <ClInclude Include="GAME1_Player.h" />
+    <ClInclude Include="GAME1_Saw.h" />
+    <ClInclude Include="GAME1_SpikeHead.h" />
     <ClInclude Include="GAME1_Trap.h" />
     <ClInclude Include="GAME2_BackgroundLayer.h" />
     <ClInclude Include="GAME2_Bullet.h" />
@@ -208,6 +210,8 @@
     <ClCompile Include="GAME1_ParallaxBackground.cpp" />
     <ClCompile Include="GAME1_Pickup.cpp" />
     <ClCompile Include="GAME1_Player.cpp" />
+    <ClCompile Include="GAME1_Saw.cpp" />
+    <ClCompile Include="GAME1_SpikeHead.cpp" />
     <ClCompile Include="GAME1_Trap.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

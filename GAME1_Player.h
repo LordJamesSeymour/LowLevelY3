@@ -32,6 +32,7 @@ public:
 	void stopMusic();
 
 	sf::FloatRect getBounds() const;
+	sf::FloatRect getDamageBounds() const;
 	sf::Vector2f getPosition() const;
 
 	void setSpawnPosition(sf::Vector2f spawnPosition);
@@ -51,10 +52,15 @@ public:
 	int getLives() const;
 	int getMaxLives() const;
 	bool isGameOver() const;
+	void setLevelFinished(bool finished);
+	bool isLevelFinished() const;
+	void setLevelFinishFailed(bool failed);
+	bool hasLevelFinishFailed() const;
+	void clearLevelFinishState();
 
 	// Returns true when the player is still part of the active gameplay (not
-	// permanently out, and not mid-respawn).  Useful for camera/enemy logic in
-	// co-op.
+	// permanently out, mid-respawn, finished, or failed).  Useful for camera/
+	// enemy logic in co-op.
 	bool isActive() const;
 
 	// Co-op support.
@@ -79,6 +85,7 @@ public:
 	// this player only).  Combine with setNextRespawnPosition when the death
 	// is caused by lagging off-screen behind the camera.
 	void forceDeath();
+	void reviveWithOneLifeAt(sf::Vector2f respawnPosition);
 
 	const std::string& getLastError() const;
 
@@ -123,6 +130,8 @@ private:
 	void applyFanForces(float deltaTime, GAME1_Level& level);
 	void checkSpikeTrapCollisions(GAME1_Level& level);
 	void checkFireTrapCollisions(GAME1_Level& level);
+	void checkSpikeHeadCollisions(GAME1_Level& level);
+	void checkSawCollisions(GAME1_Level& level);
 	void takeSpikeDamage(const sf::FloatRect& spikeBounds);
 	void takeTrapDamage(const sf::FloatRect& trapBounds, int damage);
 	void updateMovementSounds(float deltaTime, const GAME1_Level& level);
@@ -144,6 +153,9 @@ private:
 	void beginGameOver();
 	void startRespawn();
 	void updateRespawn(float deltaTime);
+	void updateRespawnFlash(float deltaTime);
+	void resetRespawnFlash();
+	void freezeForLevelEnd();
 
 	const sf::Texture* getCurrentTexture() const;
 	const AnimationSet& getCurrentAnimationSet() const;
@@ -247,6 +259,12 @@ private:
 	bool m_respawning = false;
 	float m_respawnTimer = 0.f;
 	float m_respawnDuration = 2.0f;
+	bool m_respawnVisible = true;
+	float m_respawnFlashTimer = 0.f;
+	float m_respawnFlashInterval = 0.10f;
+
+	bool m_levelFinished = false;
+	bool m_levelFinishFailed = false;
 
 	float m_drawWidth = 48.f;
 	float m_drawHeight = 48.f;

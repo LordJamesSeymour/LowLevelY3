@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <system_error>
 #include <unordered_set>
 
 namespace
@@ -405,6 +406,7 @@ bool GAME1_LevelEditor::initialise(const std::string& fontPath,
 
 	m_lastError.clear();
 	m_lastSavedPath.clear();
+	m_currentLoadedLevelPath.clear();
 	m_popupMessage.clear();
 	m_popupTimer = 0.f;
 	m_popupIsError = false;
@@ -469,6 +471,7 @@ void GAME1_LevelEditor::resetEmpty()
 {
 	m_lastError.clear();
 	m_lastSavedPath.clear();
+	m_currentLoadedLevelPath.clear();
 	m_popupMessage.clear();
 	m_popupTimer = 0.f;
 	m_popupIsError = false;
@@ -569,7 +572,7 @@ void GAME1_LevelEditor::buildTools()
 		};
 
 	std::vector<fs::path> spikePaths;
-	const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes_0.png";
+	const fs::path preferredSpikePath = tilesDirectory / "Traps" / "Spikes" / "Spikes_0.png";
 	if (fs::exists(preferredSpikePath))
 		spikePaths.push_back(preferredSpikePath);
 
@@ -706,6 +709,14 @@ void GAME1_LevelEditor::buildTools()
 
 		case GAME1_TrapType::GreyMovingPlatform:
 			trapTool.description = "Grey moving platform - fast, place on Chain";
+			break;
+
+		case GAME1_TrapType::SpikeHead:
+			trapTool.description = "SpikeHead - 2x2 slam trap, targets players 4 tiles away";
+			break;
+
+		case GAME1_TrapType::Saw:
+			trapTool.description = "Saw - 2x2 hazard, rides horizontal or vertical Chain";
 			break;
 
 		default:
@@ -1000,13 +1011,16 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 	m_worldSelectorBounds = sf::FloatRect({ 52.f, 20.f }, { 126.f, 34.f });
 	m_worldNextButtonBounds = sf::FloatRect({ 182.f, 20.f }, { 36.f, 34.f });
 
-	const float rightButtonX = windowWidth - 150.f;
+	const sf::Vector2f loadedLevelActionButtonSize{ 132.f, 30.f };
+	const float loadedLevelActionButtonX =
+		m_worldSelectorBounds.position.x +
+		(m_worldSelectorBounds.size.x - loadedLevelActionButtonSize.x) * 0.5f;
 
-	m_saveButtonBounds = sf::FloatRect({ rightButtonX, 18.f }, { 132.f, 34.f });
-	m_loadButtonBounds = sf::FloatRect({ rightButtonX, 58.f }, { 132.f, 30.f });
+	m_overwriteButtonBounds = sf::FloatRect({ loadedLevelActionButtonX, 58.f }, loadedLevelActionButtonSize);
+	m_deleteButtonBounds = sf::FloatRect({ loadedLevelActionButtonX, 94.f }, loadedLevelActionButtonSize);
 
-	const float loadArrowSize = 30.f;
-	const float loadSelectorWidth = 76.f;
+	const float loadArrowSize = 36.f;
+	const float loadSelectorWidth = 126.f;
 	const float loadGap = 4.f;
 	const float loadTotalWidth =
 		loadArrowSize +
@@ -1015,12 +1029,20 @@ void GAME1_LevelEditor::layout(const sf::RenderWindow& window)
 		loadGap +
 		loadArrowSize;
 
-	const float loadStartX = windowWidth - loadTotalWidth - 18.f;
-	const float loadY = 94.f;
+	const float loadStartX = windowWidth - loadTotalWidth - 12.f;
+	const float loadY = 20.f;
 
-	m_loadPreviousButtonBounds = sf::FloatRect({ loadStartX, loadY }, { loadArrowSize, loadArrowSize });
-	m_loadLevelSelectorBounds = sf::FloatRect({ loadStartX + loadArrowSize + loadGap, loadY }, { loadSelectorWidth, loadArrowSize });
-	m_loadNextButtonBounds = sf::FloatRect({ loadStartX + loadArrowSize + loadGap + loadSelectorWidth + loadGap, loadY }, { loadArrowSize, loadArrowSize });
+	m_loadPreviousButtonBounds = sf::FloatRect({ loadStartX, loadY }, { loadArrowSize, 34.f });
+	m_loadLevelSelectorBounds = sf::FloatRect({ loadStartX + loadArrowSize + loadGap, loadY }, { loadSelectorWidth, 34.f });
+	m_loadNextButtonBounds = sf::FloatRect({ loadStartX + loadArrowSize + loadGap + loadSelectorWidth + loadGap, loadY }, { loadArrowSize, 34.f });
+
+	const sf::Vector2f rightActionButtonSize{ 132.f, 30.f };
+	const float rightActionButtonX =
+		m_loadLevelSelectorBounds.position.x +
+		(m_loadLevelSelectorBounds.size.x - rightActionButtonSize.x) * 0.5f;
+
+	m_loadButtonBounds = sf::FloatRect({ rightActionButtonX, 58.f }, rightActionButtonSize);
+	m_saveButtonBounds = sf::FloatRect({ rightActionButtonX, 94.f }, rightActionButtonSize);
 
 	m_toolbarSlotSize = 48.f;
 	m_toolbarSlotGap = 6.f;
@@ -1131,6 +1153,18 @@ void GAME1_LevelEditor::handleMousePressed(sf::Mouse::Button button, sf::Vector2
 		if (const std::optional<sf::Vector2i> tile = getTileAtPixel(mousePixelPosition))
 			pasteClipboardAt(tile->x, tile->y);
 
+		return;
+	}
+
+	if (containsPoint(m_overwriteButtonBounds, mousePosition))
+	{
+		overwriteLoadedLevelFile();
+		return;
+	}
+
+	if (containsPoint(m_deleteButtonBounds, mousePosition))
+	{
+		deleteLoadedLevelFile();
 		return;
 	}
 
@@ -1394,6 +1428,18 @@ void GAME1_LevelEditor::paintAtPixel(sf::Vector2i mousePixelPosition)
 		static_cast<float>(mousePixelPosition.x),
 		static_cast<float>(mousePixelPosition.y));
 
+	if (containsPoint(m_overwriteButtonBounds, mousePosition))
+	{
+		overwriteLoadedLevelFile();
+		return;
+	}
+
+	if (containsPoint(m_deleteButtonBounds, mousePosition))
+	{
+		deleteLoadedLevelFile();
+		return;
+	}
+
 	if (containsPoint(m_saveButtonBounds, mousePosition))
 	{
 		saveToNextLevelFile();
@@ -1603,81 +1649,8 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 
 		const fs::path savePath = getMapsDirectory() / fileNameStream.str();
 
-		std::ofstream file(savePath);
-
-		if (!file.is_open())
+		if (!writeCurrentLevelToFile(savePath))
 		{
-			m_lastError = "Failed to create file: " + savePath.string();
-			m_popupMessage = "Save failed";
-			m_popupTimer = m_popupDuration;
-			m_popupIsError = true;
-			return false;
-		}
-
-		syncBackgroundLayerSize();
-
-		file << "#WORLD=" << m_worldNumber << '\n';
-
-		for (std::size_t row = 0; row < m_rows.size(); ++row)
-		{
-			file << m_rows[row];
-
-			if (row + 1 < m_rows.size())
-				file << '\n';
-		}
-
-		// Background-decoration layer, written only when at least one tile is
-		// placed so existing-style maps stay byte-identical when unused.
-		bool hasBackgroundTiles = false;
-		for (const std::string& bgRow : m_bgRows)
-		{
-			if (bgRow.find_first_not_of('O') != std::string::npos)
-			{
-				hasBackgroundTiles = true;
-				break;
-			}
-		}
-
-		if (hasBackgroundTiles)
-		{
-			file << '\n' << "#BACKGROUND" << '\n';
-
-			for (std::size_t row = 0; row < m_bgRows.size(); ++row)
-			{
-				file << m_bgRows[row];
-
-				if (row + 1 < m_bgRows.size())
-					file << '\n';
-			}
-		}
-
-		if (!m_objects.empty())
-		{
-			file << '\n' << "#OBJECTS" << '\n';
-
-			for (const EditorObject& object : m_objects)
-			{
-				if (object.kind == ToolKind::LevelObject)
-				{
-					GAME1_LevelObjectSpawn spawn;
-					spawn.type = object.levelObjectType;
-					spawn.gridPosition = object.gridPosition;
-					file << GAME1_BuildLevelObjectLine(spawn) << '\n';
-				}
-				else
-				{
-					GAME1_TrapSpawn spawn;
-					spawn.type = object.trapType;
-					spawn.gridPosition = object.gridPosition;
-					spawn.orientation = object.orientation;
-					file << GAME1_BuildTrapObjectLine(spawn) << '\n';
-				}
-			}
-		}
-
-		if (!file.good())
-		{
-			m_lastError = "Failed while writing file: " + savePath.string();
 			m_popupMessage = "Save failed";
 			m_popupTimer = m_popupDuration;
 			m_popupIsError = true;
@@ -1700,6 +1673,235 @@ bool GAME1_LevelEditor::saveToNextLevelFile()
 		m_popupIsError = true;
 		return false;
 	}
+}
+
+bool GAME1_LevelEditor::writeCurrentLevelToFile(const std::filesystem::path& savePath)
+{
+	m_lastError.clear();
+
+	std::ofstream file(savePath);
+
+	if (!file.is_open())
+	{
+		m_lastError = "Failed to open file for writing: " + savePath.string();
+		return false;
+	}
+
+	syncBackgroundLayerSize();
+
+	file << "#WORLD=" << m_worldNumber << '\n';
+
+	for (std::size_t row = 0; row < m_rows.size(); ++row)
+	{
+		file << m_rows[row];
+
+		if (row + 1 < m_rows.size())
+			file << '\n';
+	}
+
+	// Background-decoration layer, written only when at least one tile is
+	// placed so existing-style maps stay byte-identical when unused.
+	bool hasBackgroundTiles = false;
+	for (const std::string& bgRow : m_bgRows)
+	{
+		if (bgRow.find_first_not_of('O') != std::string::npos)
+		{
+			hasBackgroundTiles = true;
+			break;
+		}
+	}
+
+	if (hasBackgroundTiles)
+	{
+		file << '\n' << "#BACKGROUND" << '\n';
+
+		for (std::size_t row = 0; row < m_bgRows.size(); ++row)
+		{
+			file << m_bgRows[row];
+
+			if (row + 1 < m_bgRows.size())
+				file << '\n';
+		}
+	}
+
+	if (!m_objects.empty())
+	{
+		file << '\n' << "#OBJECTS" << '\n';
+
+		for (const EditorObject& object : m_objects)
+		{
+			if (object.kind == ToolKind::LevelObject)
+			{
+				GAME1_LevelObjectSpawn spawn;
+				spawn.type = object.levelObjectType;
+				spawn.gridPosition = object.gridPosition;
+				file << GAME1_BuildLevelObjectLine(spawn) << '\n';
+			}
+			else
+			{
+				GAME1_TrapSpawn spawn;
+				spawn.type = object.trapType;
+				spawn.gridPosition = object.gridPosition;
+				spawn.orientation = object.orientation;
+				file << GAME1_BuildTrapObjectLine(spawn) << '\n';
+			}
+		}
+	}
+
+	if (!file.good())
+	{
+		m_lastError = "Failed while writing file: " + savePath.string();
+		return false;
+	}
+
+	return true;
+}
+
+bool GAME1_LevelEditor::overwriteLoadedLevelFile()
+{
+	namespace fs = std::filesystem;
+
+	m_lastError.clear();
+	m_lastSavedPath.clear();
+
+	if (!hasCurrentLoadedLevel())
+	{
+		m_lastError = "No SurfersQuest level is currently loaded to overwrite.";
+		m_popupMessage = "No loaded level to overwrite";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	const fs::path overwritePath(m_currentLoadedLevelPath);
+
+	if (!isValidLevelFile(overwritePath))
+	{
+		m_lastError = "Refusing to overwrite invalid level path: " + overwritePath.string();
+		m_currentLoadedLevelPath.clear();
+		m_popupMessage = "Overwrite failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	std::error_code error;
+	if (!fs::exists(overwritePath, error) || error)
+	{
+		m_lastError = "Loaded SurfersQuest level file is missing: " + overwritePath.string();
+		m_currentLoadedLevelPath.clear();
+		refreshSavedLevelList();
+		m_popupMessage = "Loaded file missing";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	error.clear();
+	if (!fs::is_regular_file(overwritePath, error) || error)
+	{
+		m_lastError = "Loaded SurfersQuest level path is not a file: " + overwritePath.string();
+		m_currentLoadedLevelPath.clear();
+		m_popupMessage = "Overwrite failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	if (!writeCurrentLevelToFile(overwritePath))
+	{
+		m_popupMessage = "Overwrite failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	m_lastSavedPath = overwritePath.string();
+	m_popupMessage = "Level overwritten";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+
+	refreshSavedLevelList();
+	return true;
+}
+
+bool GAME1_LevelEditor::deleteLoadedLevelFile()
+{
+	namespace fs = std::filesystem;
+
+	m_lastError.clear();
+	m_lastSavedPath.clear();
+
+	if (!hasCurrentLoadedLevel())
+	{
+		m_lastError = "No SurfersQuest level is currently loaded to delete.";
+		m_popupMessage = "No loaded level to delete";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	const fs::path deletePath(m_currentLoadedLevelPath);
+
+	if (!isValidLevelFile(deletePath))
+	{
+		m_lastError = "Refusing to delete invalid level path: " + deletePath.string();
+		m_currentLoadedLevelPath.clear();
+		m_popupMessage = "Delete failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	std::error_code error;
+	if (!fs::exists(deletePath, error) || error)
+	{
+		m_lastError = "Loaded SurfersQuest level file is missing: " + deletePath.string();
+		m_currentLoadedLevelPath.clear();
+		refreshSavedLevelList();
+		m_popupMessage = "Loaded file missing";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	error.clear();
+	if (!fs::is_regular_file(deletePath, error) || error)
+	{
+		m_lastError = "Loaded SurfersQuest level path is not a file: " + deletePath.string();
+		m_currentLoadedLevelPath.clear();
+		m_popupMessage = "Delete failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	error.clear();
+	if (!fs::remove(deletePath, error) || error)
+	{
+		m_lastError = "Failed to delete SurfersQuest level file: " + deletePath.string();
+
+		if (error)
+			m_lastError += "\n" + error.message();
+
+		m_popupMessage = "Delete failed";
+		m_popupTimer = m_popupDuration;
+		m_popupIsError = true;
+		return false;
+	}
+
+	resetEmpty();
+	refreshSavedLevelList();
+
+	m_popupMessage = "Level deleted";
+	m_popupTimer = m_popupDuration;
+	m_popupIsError = false;
+	return true;
+}
+
+bool GAME1_LevelEditor::hasCurrentLoadedLevel() const
+{
+	return !m_currentLoadedLevelPath.empty();
 }
 
 bool GAME1_LevelEditor::loadRowsFromFile(const std::string& mapPath)
@@ -1962,6 +2164,7 @@ bool GAME1_LevelEditor::loadSelectedLevelIntoEditor()
 {
 	m_lastError.clear();
 	m_lastSavedPath.clear();
+	m_currentLoadedLevelPath.clear();
 
 	refreshSavedLevelList();
 
@@ -1980,7 +2183,9 @@ bool GAME1_LevelEditor::loadSelectedLevelIntoEditor()
 		m_selectedLoadLevelIndex = 0;
 	}
 
-	if (!loadRowsFromFile(m_savedLevelPaths[m_selectedLoadLevelIndex]))
+	const std::string selectedLevelPath = m_savedLevelPaths[m_selectedLoadLevelIndex];
+
+	if (!loadRowsFromFile(selectedLevelPath))
 	{
 		m_popupMessage = "Load failed";
 		m_popupTimer = m_popupDuration;
@@ -1988,9 +2193,11 @@ bool GAME1_LevelEditor::loadSelectedLevelIntoEditor()
 		return false;
 	}
 
+	m_currentLoadedLevelPath = selectedLevelPath;
+
 	m_popupMessage =
 		"Loaded: " +
-		std::filesystem::path(m_savedLevelPaths[m_selectedLoadLevelIndex]).filename().string();
+		std::filesystem::path(selectedLevelPath).filename().string();
 
 	m_popupTimer = m_popupDuration;
 	m_popupIsError = false;
@@ -2291,6 +2498,47 @@ void GAME1_LevelEditor::placeTrapObjectAt(int col, int row, GAME1_TrapType type)
 
 	if (col < 0 || col >= static_cast<int>(m_rows[row].size()))
 		return;
+
+	// SpikeHead occupies a 2x2 footprint anchored at (col,row); reject placement
+	// that would push the bottom-right cell outside the level bounds.
+	if (type == GAME1_TrapType::SpikeHead)
+	{
+		const int width = static_cast<int>(m_rows[row].size());
+		const int height = static_cast<int>(m_rows.size());
+
+		if (col + 1 >= width || row + 1 >= height)
+		{
+			m_popupMessage = "SpikeHead needs 2x2 space";
+			m_popupTimer = m_popupDuration;
+			m_popupIsError = true;
+			return;
+		}
+	}
+
+	// Saw rides a chain track: it must be dropped on a Chain object, and its 2x2
+	// body (centred on the anchor tile) must stay inside the level bounds. The
+	// chain underneath is deliberately left untouched as the visible track.
+	if (type == GAME1_TrapType::Saw)
+	{
+		if (!hasChainAt(col, row))
+		{
+			m_popupMessage = "Place Saw on Chain";
+			m_popupTimer = m_popupDuration;
+			m_popupIsError = true;
+			return;
+		}
+
+		const int width = static_cast<int>(m_rows[row].size());
+		const int height = static_cast<int>(m_rows.size());
+
+		if (col < 1 || col + 1 >= width || row < 1 || row + 1 >= height)
+		{
+			m_popupMessage = "Saw needs 2x2 space";
+			m_popupTimer = m_popupDuration;
+			m_popupIsError = true;
+			return;
+		}
+	}
 
 	if (GAME1_IsMovingPlatformTrapType(type) && !hasChainAt(col, row))
 	{
@@ -3047,6 +3295,42 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		drawTextCentered(window, ">", 28, m_worldNextButtonBounds, sf::Color::White, 2.f);
 	}
 
+	const bool loadedLevelAvailable = hasCurrentLoadedLevel();
+	const auto drawLoadedLevelActionButton =
+		[&](const sf::FloatRect& bounds,
+			const std::string& label,
+			sf::Color fillColor,
+			bool enabled)
+		{
+			sf::RectangleShape box;
+			box.setPosition(bounds.position);
+			box.setSize(bounds.size);
+			box.setFillColor(enabled ? fillColor : sf::Color(38, 38, 42));
+			box.setOutlineColor(sf::Color::White);
+			box.setOutlineThickness(2.f);
+			window.draw(box);
+
+			drawTextCentered(
+				window,
+				label,
+				15,
+				bounds,
+				enabled ? sf::Color::White : sf::Color(150, 150, 155),
+				1.5f);
+		};
+
+	drawLoadedLevelActionButton(
+		m_overwriteButtonBounds,
+		"OVERWRITE",
+		sf::Color(255, 145, 45),
+		loadedLevelAvailable);
+
+	drawLoadedLevelActionButton(
+		m_deleteButtonBounds,
+		"DELETE",
+		sf::Color(230, 60, 60),
+		loadedLevelAvailable);
+
 	{
 		sf::RectangleShape box;
 		box.setPosition(m_saveButtonBounds.position);
@@ -3068,7 +3352,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineThickness(2.f);
 		window.draw(box);
 
-		drawTextCentered(window, "<Load>", 15, m_loadButtonBounds, sf::Color::White, 2.f);
+		drawTextCentered(window, "LOAD", 19, m_loadButtonBounds, sf::Color::White, 2.f);
 	}
 
 	{
@@ -3080,7 +3364,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineThickness(2.f);
 		window.draw(box);
 
-		drawTextCentered(window, "<", 22, m_loadPreviousButtonBounds, sf::Color::White, 2.f);
+		drawTextCentered(window, "<", 28, m_loadPreviousButtonBounds, sf::Color::White, 2.f);
 	}
 
 	{
@@ -3092,7 +3376,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineThickness(2.f);
 		window.draw(box);
 
-		drawTextCentered(window, getSelectedLoadLevelName(), 12, m_loadLevelSelectorBounds, sf::Color(255, 230, 120), 1.5f);
+		drawTextCentered(window, getSelectedLoadLevelName(), 15, m_loadLevelSelectorBounds, sf::Color(255, 230, 120), 1.5f);
 	}
 
 	{
@@ -3104,7 +3388,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		box.setOutlineThickness(2.f);
 		window.draw(box);
 
-		drawTextCentered(window, ">", 22, m_loadNextButtonBounds, sf::Color::White, 2.f);
+		drawTextCentered(window, ">", 28, m_loadNextButtonBounds, sf::Color::White, 2.f);
 	}
 
 	const Tool* selectedTool = getSelectedTool();
@@ -3115,7 +3399,7 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			window,
 			"Selected: " + selectedTool->label + " - " + selectedTool->description,
 			17,
-			sf::FloatRect({ 0.f, 58.f }, { windowWidth, 26.f }),
+			sf::FloatRect({ titleLeft, 58.f }, { std::max(160.f, titleRight - titleLeft), 26.f }),
 			sf::Color(255, 230, 120),
 			1.5f);
 	}
@@ -3194,7 +3478,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 						object.kind == ToolKind::TrapObject &&
 						object.trapType == GAME1_TrapType::Chain)
 					{
-						drawObjectPreview(window, object.trapType, object.orientation, tileRect);
+						drawObjectPreview(window, object.trapType, object.orientation,
+							objectFootprintBounds(object.trapType, tileRect));
 					}
 				}
 
@@ -3207,7 +3492,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 					{
 						if (object.kind == ToolKind::TrapObject)
 						{
-							drawObjectPreview(window, object.trapType, object.orientation, tileRect);
+							drawObjectPreview(window, object.trapType, object.orientation,
+								objectFootprintBounds(object.trapType, tileRect));
 						}
 						else if (object.kind == ToolKind::LevelObject)
 						{
@@ -3350,16 +3636,23 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 			});
 
 		const Tool* selectedPreviewTool = getSelectedTool();
+
+		// Multi-tile trap objects (SpikeHead) preview and highlight at their full
+		// on-grid footprint so the placed size is obvious before clicking.
+		sf::FloatRect hoverFootprint = hoveredTileRect;
+
 		if (selectedPreviewTool != nullptr &&
 			selectedPreviewTool->kind == ToolKind::TrapObject)
 		{
+			hoverFootprint = objectFootprintBounds(selectedPreviewTool->trapType, hoveredTileRect);
+
 			drawObjectPreview(
 				window,
 				selectedPreviewTool->trapType,
 				GAME1_IsRotatableTrapType(selectedPreviewTool->trapType)
 					? m_objectPreviewOrientation
 					: GAME1_TrapOrientation::Up,
-				hoveredTileRect);
+				hoverFootprint);
 		}
 		else if (selectedPreviewTool != nullptr &&
 			selectedPreviewTool->kind == ToolKind::LevelObject)
@@ -3368,8 +3661,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 		}
 
 		sf::RectangleShape hoverRect;
-		hoverRect.setPosition(hoveredTileRect.position);
-		hoverRect.setSize({ m_tileSize, m_tileSize });
+		hoverRect.setPosition(hoverFootprint.position);
+		hoverRect.setSize(hoverFootprint.size);
 		hoverRect.setFillColor(sf::Color::Transparent);
 		hoverRect.setOutlineColor(sf::Color::Yellow);
 		hoverRect.setOutlineThickness(3.f);
@@ -3444,7 +3737,8 @@ void GAME1_LevelEditor::draw(sf::RenderWindow& window, sf::Vector2i mousePixelPo
 					continue;
 
 				if (object.kind == ToolKind::TrapObject)
-					drawObjectPreview(window, object.trapType, object.orientation, cellRect, 150);
+					drawObjectPreview(window, object.trapType, object.orientation,
+						objectFootprintBounds(object.trapType, cellRect), 150);
 				else if (object.kind == ToolKind::LevelObject)
 					drawLevelObjectPreview(window, object.levelObjectType, cellRect, 150);
 			}
@@ -3724,6 +4018,30 @@ void GAME1_LevelEditor::drawObjectPreview(sf::RenderTarget& target,
 	fallback.setOutlineColor(sf::Color(255, 255, 255, alpha));
 	fallback.setOutlineThickness(1.f);
 	target.draw(fallback);
+}
+
+sf::FloatRect GAME1_LevelEditor::objectFootprintBounds(GAME1_TrapType type,
+	const sf::FloatRect& tileRect) const
+{
+	// SpikeHead anchors its 2x2 at the placed (top-left) cell.
+	if (type == GAME1_TrapType::SpikeHead)
+	{
+		return sf::FloatRect(
+			tileRect.position,
+			{ tileRect.size.x * 2.f, tileRect.size.y * 2.f });
+	}
+
+	// Saw centres its 2x2 on the anchor (chain) tile, so the preview grows half a
+	// tile up/left and spans 2x2 - matching how it rides the chain in gameplay.
+	if (type == GAME1_TrapType::Saw)
+	{
+		return sf::FloatRect(
+			{ tileRect.position.x - tileRect.size.x * 0.5f,
+				tileRect.position.y - tileRect.size.y * 0.5f },
+			{ tileRect.size.x * 2.f, tileRect.size.y * 2.f });
+	}
+
+	return tileRect;
 }
 
 void GAME1_LevelEditor::drawLevelObjectPreview(sf::RenderTarget& target,
