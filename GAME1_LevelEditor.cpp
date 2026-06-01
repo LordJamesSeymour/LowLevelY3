@@ -4234,7 +4234,7 @@ int GAME1_LevelEditor::extractLevelNumber(const std::filesystem::path& path) con
 
 const std::string& GAME1_LevelEditor::getLastError() const
 {
-	return m_lastError;
+	return m_lastError; 
 }
 
 const std::string& GAME1_LevelEditor::getLastSavedPath() const
