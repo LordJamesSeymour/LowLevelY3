@@ -3183,13 +3183,8 @@ int main()
 				game1Level.updateSpikeHeads(deltaTime, game1SpikeHeadTargets);
 				game1Level.updateSaws(deltaTime);
 
-				const bool game1PlayerWasRespawning = game1Player.isRespawning();
 				const bool game1PlayerWasGameOver = game1Player.isGameOver();
 				game1Player.update(deltaTime, game1Level);
-				if (!p2Joined && !game1PlayerWasRespawning && game1Player.isRespawning())
-				{
-					ResetGame1RunState();
-				}
 				if (!p2Joined && !game1PlayerWasGameOver && game1Player.isGameOver())
 				{
 					ResetGame1CheckpointProgress();
