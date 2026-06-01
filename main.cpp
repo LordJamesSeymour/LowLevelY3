@@ -2331,7 +2331,17 @@ int main()
 					{
 						if (keyReleased->code == sf::Keyboard::Key::Escape)
 						{
-							OpenPauseMenu();
+							if ((!game1Player2Joined && game1Player.isGameOver()) ||
+								game1TeamGameOver)
+							{
+								ArcadeUISounds::playUIClick();
+								SetAppState(AppState::GAME1_Menu);
+								ArcadeInput::consumePressedState();
+							}
+							else
+							{
+								OpenPauseMenu();
+							}
 						}
 						else if (keyReleased->code == sf::Keyboard::Key::Enter)
 						{
@@ -2663,9 +2673,13 @@ int main()
 			{
 				ArcadeInput::consumePressedState();
 			}
-			else if (ArcadeInput::isControllerBackPressed())
+			else if (((!game1Player2Joined && game1Player.isGameOver()) ||
+				game1TeamGameOver) &&
+				ArcadeInput::isControllerBackPressed())
 			{
-				OpenPauseMenu();
+				ArcadeUISounds::playUIClick();
+				SetAppState(AppState::GAME1_Menu);
+				ArcadeInput::consumePressedState();
 			}
 			else if (!game1Player2Joined &&
 				game1Player.isGameOver() &&
@@ -2678,6 +2692,10 @@ int main()
 			{
 				if (!RestartGame1Team())
 					return -1;
+			}
+			else if (ArcadeInput::isControllerBackPressed())
+			{
+				OpenPauseMenu();
 			}
 			else if (!game1Player2Joined)
 			{
@@ -3973,8 +3991,8 @@ int main()
 				{
 					const float windowHeight = static_cast<float>(window.getSize().y);
 					const sf::FloatRect popupRect(
-						{ windowWidth * 0.5f - 250.f, windowHeight * 0.5f - 90.f },
-						{ 500.f, 180.f });
+						{ windowWidth * 0.5f - 280.f, windowHeight * 0.5f - 100.f },
+						{ 560.f, 200.f });
 
 					sf::RectangleShape popupBox;
 					popupBox.setPosition(popupRect.position);
@@ -4003,9 +4021,10 @@ int main()
 						};
 
 					const float centerX = popupRect.position.x + popupRect.size.x * 0.5f;
-					DrawCentered("TEAM OUT OF LIVES", 32, { centerX, popupRect.position.y + 42.f }, sf::Color::White);
-					DrawCentered("ENTER  -  RESTART", 22, { centerX, popupRect.position.y + 100.f }, sf::Color(255, 230, 120));
-					DrawCentered("ESC  -  BACK TO MENU", 22, { centerX, popupRect.position.y + 138.f }, sf::Color(230, 230, 230));
+					DrawCentered("GAME OVER", 34, { centerX, popupRect.position.y + 38.f }, sf::Color::White);
+					DrawCentered("OUT OF LIVES!", 20, { centerX, popupRect.position.y + 78.f }, sf::Color(230, 230, 230));
+					DrawCentered("ENTER/START - RESTART", 20, { centerX, popupRect.position.y + 126.f }, sf::Color(255, 230, 120));
+					DrawCentered("ESC/SELECT - BACK TO THE MENU", 20, { centerX, popupRect.position.y + 162.f }, sf::Color(230, 230, 230));
 				}
 
 				// Restore single-player default size for the next respawn render.

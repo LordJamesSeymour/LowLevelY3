@@ -1453,8 +1453,8 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 		if (m_gameOver)
 		{
 			const sf::FloatRect popupRect(
-				{ topLeft.x + viewSize.x * 0.5f - 245.f, topLeft.y + viewSize.y * 0.5f - 82.f },
-				{ 490.f, 164.f });
+				{ topLeft.x + viewSize.x * 0.5f - 270.f, topLeft.y + viewSize.y * 0.5f - 98.f },
+				{ 540.f, 196.f });
 
 			sf::RectangleShape popupBox;
 			popupBox.setPosition(popupRect.position);
@@ -1483,9 +1483,10 @@ void GAME1_Player::draw(sf::RenderTarget& target) const
 				};
 
 			const float centerX = popupRect.position.x + popupRect.size.x * 0.5f;
-			drawCenteredText("OUT OF LIVES", 34, { centerX, popupRect.position.y + 38.f }, sf::Color::White);
-			drawCenteredText("ENTER  -  RESTART", 22, { centerX, popupRect.position.y + 91.f }, sf::Color(255, 230, 120));
-			drawCenteredText("ESC  -  BACK TO MENU", 22, { centerX, popupRect.position.y + 127.f }, sf::Color(230, 230, 230));
+			drawCenteredText("GAME OVER", 34, { centerX, popupRect.position.y + 36.f }, sf::Color::White);
+			drawCenteredText("OUT OF LIVES!", 20, { centerX, popupRect.position.y + 74.f }, sf::Color(230, 230, 230));
+			drawCenteredText("ENTER/START - RESTART", 20, { centerX, popupRect.position.y + 120.f }, sf::Color(255, 230, 120));
+			drawCenteredText("ESC/SELECT - BACK TO THE MENU", 20, { centerX, popupRect.position.y + 156.f }, sf::Color(230, 230, 230));
 		}
 	}
 }
