@@ -58,6 +58,7 @@ namespace
 
 	const std::filesystem::path kGame1RootDirectory = "assets/Game#1/SurfersQuest";
 	const std::filesystem::path kGame1ResourcesDirectory = kGame1RootDirectory / "Resources";
+	const std::filesystem::path kGame1UiDirectory = kGame1ResourcesDirectory / "UI";
 	const std::filesystem::path kGame1MapsDirectory = kGame1RootDirectory / "Maps";
 	const std::filesystem::path kGame1SplashStillImagePath = "assets/Game#1/SplashScreen/SidescrollerSplashScreen.png";
 	const std::filesystem::path kGame1SplashFramesDirectory = "assets/Game#1/SplashScreen/GIFs";
@@ -97,6 +98,304 @@ namespace
 		int points = 0;
 		float age = 0.f;
 		float lifetime = 0.75f;
+	};
+
+	enum class GAME1_HudHeartState
+	{
+		Empty,
+		Half,
+		Full
+	};
+
+	constexpr float kGame1HudFlashStepSeconds = 0.11f;
+	constexpr int kGame1HudHeartFlashSteps = 16;
+	constexpr int kGame1HudLifeFlashSteps = 8;
+
+	std::array<GAME1_HudHeartState, 2> BuildGame1HudHeartStates(int health)
+	{
+		const int safeHealth = std::max(0, health);
+		const int filledHalves = std::clamp((safeHealth + 24) / 25, 0, 4);
+
+		auto HeartFromHalves = [](int halves)
+			{
+				if (halves >= 2)
+					return GAME1_HudHeartState::Full;
+				if (halves == 1)
+					return GAME1_HudHeartState::Half;
+				return GAME1_HudHeartState::Empty;
+			};
+
+		return {
+			HeartFromHalves(std::min(2, filledHalves)),
+			HeartFromHalves(std::clamp(filledHalves - 2, 0, 2))
+		};
+	}
+
+	struct GAME1_HudAssets
+	{
+		sf::Texture heartFullTexture;
+		sf::Texture heartHalfTexture;
+		sf::Texture heartEmptyTexture;
+		sf::Texture player1LifeTexture;
+		sf::Texture player2LifeTexture;
+
+		bool heartFullLoaded = false;
+		bool heartHalfLoaded = false;
+		bool heartEmptyLoaded = false;
+		bool player1LifeLoaded = false;
+		bool player2LifeLoaded = false;
+
+		void load(const std::filesystem::path& uiDirectory)
+		{
+			loadTexture(heartFullTexture, heartFullLoaded,
+				uiDirectory / "PlayerHeart_Full.png",
+				"PlayerHeart_Full.png");
+			loadTexture(heartHalfTexture, heartHalfLoaded,
+				uiDirectory / "PlayerHeart_Half.png",
+				"PlayerHeart_Half.png");
+			loadTexture(heartEmptyTexture, heartEmptyLoaded,
+				uiDirectory / "PlayerHeart_Empty.png",
+				"PlayerHeart_Empty.png");
+			loadTexture(player1LifeTexture, player1LifeLoaded,
+				uiDirectory / "PlayerLife.png",
+				"PlayerLife.png");
+			loadTexture(player2LifeTexture, player2LifeLoaded,
+				uiDirectory / "Player2Life.png",
+				"Player2Life.png");
+		}
+
+		bool hasHeartTextures() const
+		{
+			return heartFullLoaded && heartHalfLoaded && heartEmptyLoaded;
+		}
+
+		const sf::Texture* getHeartTexture(GAME1_HudHeartState state) const
+		{
+			switch (state)
+			{
+			case GAME1_HudHeartState::Full:
+				return heartFullLoaded ? &heartFullTexture : nullptr;
+			case GAME1_HudHeartState::Half:
+				return heartHalfLoaded ? &heartHalfTexture : nullptr;
+			case GAME1_HudHeartState::Empty:
+			default:
+				return heartEmptyLoaded ? &heartEmptyTexture : nullptr;
+			}
+		}
+
+		const sf::Texture* getLifeTexture(int playerIndex) const
+		{
+			if (playerIndex == 1)
+				return player2LifeLoaded ? &player2LifeTexture : nullptr;
+
+			return player1LifeLoaded ? &player1LifeTexture : nullptr;
+		}
+
+	private:
+		void loadTexture(sf::Texture& texture,
+			bool& loaded,
+			const std::filesystem::path& path,
+			const std::string& readableName)
+		{
+			loaded = texture.loadFromFile(path.string());
+			if (!loaded)
+			{
+				std::cerr << "Surfers Quest UI texture failed to load: "
+					<< readableName << " at " << path.string() << std::endl;
+				return;
+			}
+
+			texture.setSmooth(false);
+		}
+	};
+
+	struct GAME1_HudHeartFlash
+	{
+		bool active = false;
+		float timer = 0.f;
+		int step = 0;
+		GAME1_HudHeartState oldState = GAME1_HudHeartState::Empty;
+		GAME1_HudHeartState newState = GAME1_HudHeartState::Empty;
+
+		void start(GAME1_HudHeartState from, GAME1_HudHeartState to)
+		{
+			if (from == to)
+				return;
+
+			active = true;
+			timer = 0.f;
+			step = 0;
+			oldState = from;
+			newState = to;
+		}
+
+		void clear()
+		{
+			active = false;
+			timer = 0.f;
+			step = 0;
+		}
+
+		void update(float deltaTime)
+		{
+			if (!active)
+				return;
+
+			timer += std::max(0.f, deltaTime);
+			while (active && timer >= kGame1HudFlashStepSeconds)
+			{
+				timer -= kGame1HudFlashStepSeconds;
+				++step;
+
+				if (step >= kGame1HudHeartFlashSteps)
+					clear();
+			}
+		}
+
+		std::optional<GAME1_HudHeartState> getVisibleState(GAME1_HudHeartState settledState) const
+		{
+			if (!active)
+				return settledState;
+
+			const int phase = step % 4;
+			if (phase == 0)
+				return oldState;
+			if (phase == 2)
+				return newState;
+
+			return std::nullopt;
+		}
+	};
+
+	struct GAME1_HudLifeFlash
+	{
+		bool active = false;
+		bool gaining = false;
+		float timer = 0.f;
+		int step = 0;
+		int iconIndex = 0;
+
+		void start(int changedIconIndex, bool isGaining)
+		{
+			if (changedIconIndex < 0)
+				return;
+
+			active = true;
+			gaining = isGaining;
+			timer = 0.f;
+			step = 0;
+			iconIndex = changedIconIndex;
+		}
+
+		void clear()
+		{
+			active = false;
+			gaining = false;
+			timer = 0.f;
+			step = 0;
+			iconIndex = 0;
+		}
+
+		void update(float deltaTime)
+		{
+			if (!active)
+				return;
+
+			timer += std::max(0.f, deltaTime);
+			while (active && timer >= kGame1HudFlashStepSeconds)
+			{
+				timer -= kGame1HudFlashStepSeconds;
+				++step;
+
+				if (step >= kGame1HudLifeFlashSteps)
+					clear();
+			}
+		}
+
+		bool shouldDrawIcon(int index, bool settledVisible) const
+		{
+			if (!active || index != iconIndex)
+				return settledVisible;
+
+			if (gaining)
+				return (step % 2) == 1;
+
+			return (step % 2) == 0;
+		}
+	};
+
+	struct GAME1_PlayerHudState
+	{
+		bool initialized = false;
+		int currentHealth = 0;
+		int currentMaxHealth = 100;
+		int currentLives = 0;
+		int currentMaxLives = 3;
+		std::array<GAME1_HudHeartState, 2> heartStates{
+			GAME1_HudHeartState::Empty,
+			GAME1_HudHeartState::Empty
+		};
+		std::array<GAME1_HudHeartFlash, 2> heartFlashes;
+		GAME1_HudLifeFlash lifeFlash;
+
+		void sync(int health, int maxHealth, int lives, int maxLives)
+		{
+			initialized = true;
+			currentHealth = std::max(0, health);
+			currentMaxHealth = std::max(0, maxHealth);
+			currentLives = std::max(0, lives);
+			currentMaxLives = std::max(0, maxLives);
+			heartStates = BuildGame1HudHeartStates(currentHealth);
+
+			for (GAME1_HudHeartFlash& flash : heartFlashes)
+			{
+				flash.clear();
+			}
+			lifeFlash.clear();
+		}
+
+		void update(float deltaTime, int health, int maxHealth, int lives, int maxLives)
+		{
+			if (!initialized)
+			{
+				sync(health, maxHealth, lives, maxLives);
+				return;
+			}
+
+			const int safeHealth = std::max(0, health);
+			const int safeMaxHealth = std::max(0, maxHealth);
+			const int safeLives = std::max(0, lives);
+			const int safeMaxLives = std::max(0, maxLives);
+			const std::array<GAME1_HudHeartState, 2> nextHeartStates =
+				BuildGame1HudHeartStates(safeHealth);
+
+			for (std::size_t i = 0; i < heartStates.size(); ++i)
+			{
+				if (nextHeartStates[i] != heartStates[i])
+					heartFlashes[i].start(heartStates[i], nextHeartStates[i]);
+			}
+
+			if (safeLives != currentLives)
+			{
+				const bool gainingLife = safeLives > currentLives;
+				const int changedIconIndex = gainingLife
+					? safeLives - 1
+					: currentLives - 1;
+				lifeFlash.start(changedIconIndex, gainingLife);
+			}
+
+			currentHealth = safeHealth;
+			currentMaxHealth = safeMaxHealth;
+			currentLives = safeLives;
+			currentMaxLives = safeMaxLives;
+			heartStates = nextHeartStates;
+
+			for (GAME1_HudHeartFlash& flash : heartFlashes)
+			{
+				flash.update(deltaTime);
+			}
+			lifeFlash.update(deltaTime);
+		}
 	};
 
 	std::string FormatGame1RunTime(float seconds)
@@ -620,8 +919,11 @@ int main()
 	std::vector<GAME1_Enemy> game1Enemies;
 	GAME1_PickupAssets game1PickupAssets;
 	game1PickupAssets.load(kGame1ResourcesDirectory.string());
+	GAME1_HudAssets game1HudAssets;
+	game1HudAssets.load(kGame1UiDirectory);
 	std::vector<GAME1_Pickup> game1Pickups;
 	std::array<GAME1_PlayerScoreState, 2> game1Scores;
+	std::array<GAME1_PlayerHudState, 2> game1HudStates;
 	std::vector<GAME1_FloatingScorePopup> game1ScorePopups;
 	std::string game1CurrentLevelPath;
 	int game1RunScore = 0;
@@ -658,6 +960,39 @@ int main()
 	// Remains singlePlayer=true until P1 makes their first movement/action input.
 	// Used to assign P1's binding correctly when P2 joins.
 	GAME1_PlayerBinding game1Player1DetectedSource{};
+
+	auto SyncGame1HudPlayer = [&](int playerIndex)
+		{
+			if (playerIndex < 0 || playerIndex >= static_cast<int>(game1HudStates.size()))
+				return;
+
+			const GAME1_Player& player = playerIndex == 0 ? game1Player : game1Player2;
+			game1HudStates[static_cast<std::size_t>(playerIndex)].sync(
+				player.getHealth(),
+				player.getMaxHealth(),
+				player.getLives(),
+				player.getMaxLives());
+		};
+
+	auto SyncGame1HudState = [&]()
+		{
+			SyncGame1HudPlayer(0);
+			SyncGame1HudPlayer(1);
+		};
+
+	auto UpdateGame1HudPlayer = [&](int playerIndex, float frameDeltaTime)
+		{
+			if (playerIndex < 0 || playerIndex >= static_cast<int>(game1HudStates.size()))
+				return;
+
+			const GAME1_Player& player = playerIndex == 0 ? game1Player : game1Player2;
+			game1HudStates[static_cast<std::size_t>(playerIndex)].update(
+				frameDeltaTime,
+				player.getHealth(),
+				player.getMaxHealth(),
+				player.getLives(),
+				player.getMaxLives());
+		};
 
 	GAME2_Menu game2Menu;
 	if (!game2Menu.load(
@@ -829,10 +1164,11 @@ int main()
 
 				game1Player.setBinding(GAME1_PlayerBinding{});
 				game1Player.setCoopMode(false);
-				game1Player.setDrawHud(true);
+				game1Player.setDrawHud(false);
 				game1Player.clearLevelFinishState();
 				game1Player2.clearLevelFinishState();
 				game1Player1DetectedSource = GAME1_PlayerBinding{};
+				SyncGame1HudState();
 			}
 		};
 
@@ -947,6 +1283,7 @@ int main()
 
 			game1CurrentLevelPath = mapPath;
 			ResetGame1FullAttemptState();
+			SyncGame1HudState();
 			return true;
 		};
 
@@ -1019,6 +1356,7 @@ int main()
 				game1Player2.setDrawHud(false);
 				game1Player2Joined = true;
 				game1Player1DetectedSource = p1Binding;
+				SyncGame1HudState();
 			}
 
 			game1TeamGameOver = false;
@@ -1588,6 +1926,7 @@ int main()
 
 			game1Player2Joined = true;
 			game1Scores[1].reset();
+			SyncGame1HudPlayer(1);
 			return true;
 		};
 
@@ -3442,6 +3781,10 @@ int main()
 				}
 			}
 
+			UpdateGame1HudPlayer(0, deltaTime);
+			if (p2Joined)
+				UpdateGame1HudPlayer(1, deltaTime);
+
 			worldView.setCenter({
 				targetViewCenterX,
 				game1CameraCenterY
@@ -3515,6 +3858,46 @@ int main()
 					window.draw(sprite);
 				};
 
+			auto DrawGame1TextureContained = [&](const sf::Texture& texture, const sf::FloatRect& bounds)
+				{
+					sf::Sprite sprite(texture);
+					const sf::FloatRect localBounds = sprite.getLocalBounds();
+
+					if (localBounds.size.x <= 0.f || localBounds.size.y <= 0.f ||
+						bounds.size.x <= 0.f || bounds.size.y <= 0.f)
+					{
+						return;
+					}
+
+					const float scale = std::min(
+						bounds.size.x / localBounds.size.x,
+						bounds.size.y / localBounds.size.y);
+					const sf::Vector2f drawnSize(
+						localBounds.size.x * scale,
+						localBounds.size.y * scale);
+
+					sprite.setScale({ scale, scale });
+					sprite.setPosition({
+						bounds.position.x + (bounds.size.x - drawnSize.x) * 0.5f - localBounds.position.x * scale,
+						bounds.position.y + (bounds.size.y - drawnSize.y) * 0.5f - localBounds.position.y * scale
+						});
+					window.draw(sprite);
+				};
+
+			auto DrawGame1HudText = [&](const std::string& value,
+				unsigned int size,
+				sf::Vector2f position)
+				{
+					sf::Text text(game1UiFont);
+					text.setString(value);
+					text.setCharacterSize(size);
+					text.setFillColor(sf::Color::White);
+					text.setOutlineColor(sf::Color::Black);
+					text.setOutlineThickness(2.f);
+					text.setPosition(position);
+					window.draw(text);
+				};
+
 			auto DrawGame1FruitIconList = [&](const std::vector<GAME1_FruitType>& fruits,
 				sf::Vector2f topLeft,
 				float iconSize,
@@ -3556,6 +3939,93 @@ int main()
 				sf::Vector2f topLeft)
 				{
 					DrawGame1FruitIconList(scoreState.collectedFruits, topLeft, 66.f, 6.f);
+				};
+
+			auto DrawGame1PlayerVitals = [&](const std::string& title,
+				int playerIndex,
+				const GAME1_PlayerHudState& hudState,
+				sf::Vector2f topLeft)
+				{
+					DrawGame1HudText(title, 20, topLeft);
+
+					const float labelX = topLeft.x;
+					const float valueX = topLeft.x + 66.f;
+					const float healthY = topLeft.y + 25.f;
+					const float livesY = topLeft.y + 54.f;
+
+					DrawGame1HudText("HP:", 20, { labelX, healthY });
+
+					if (game1HudAssets.hasHeartTextures())
+					{
+						const float heartSize = 28.f;
+						const float heartGap = 6.f;
+
+						for (std::size_t i = 0; i < hudState.heartStates.size(); ++i)
+						{
+							const std::optional<GAME1_HudHeartState> visibleState =
+								hudState.heartFlashes[i].getVisibleState(hudState.heartStates[i]);
+							if (!visibleState.has_value())
+								continue;
+
+							const sf::Texture* heartTexture =
+								game1HudAssets.getHeartTexture(visibleState.value());
+							if (heartTexture == nullptr)
+								continue;
+
+							DrawGame1TextureContained(
+								*heartTexture,
+								sf::FloatRect(
+									{
+										valueX + static_cast<float>(i) * (heartSize + heartGap),
+										healthY - 3.f
+									},
+									{ heartSize, heartSize }));
+						}
+					}
+					else
+					{
+						DrawGame1HudText(
+							std::to_string(hudState.currentHealth) + " / " +
+							std::to_string(hudState.currentMaxHealth),
+							20,
+							{ valueX, healthY });
+					}
+
+					DrawGame1HudText("Lives:", 20, { labelX, livesY });
+
+					const sf::Texture* lifeTexture = game1HudAssets.getLifeTexture(playerIndex);
+					if (lifeTexture != nullptr)
+					{
+						const float lifeSize = 32.f;
+						const float lifeGap = 5.f;
+						int iconSlots = std::max(hudState.currentMaxLives, hudState.currentLives);
+						if (hudState.lifeFlash.active)
+							iconSlots = std::max(iconSlots, hudState.lifeFlash.iconIndex + 1);
+
+						for (int i = 0; i < iconSlots; ++i)
+						{
+							const bool settledVisible = i < hudState.currentLives;
+							if (!hudState.lifeFlash.shouldDrawIcon(i, settledVisible))
+								continue;
+
+							DrawGame1TextureContained(
+								*lifeTexture,
+								sf::FloatRect(
+									{
+										valueX + static_cast<float>(i) * (lifeSize + lifeGap),
+										livesY - 5.f
+									},
+									{ lifeSize, lifeSize }));
+						}
+					}
+					else
+					{
+						DrawGame1HudText(
+							std::to_string(hudState.currentLives) + " / " +
+							std::to_string(hudState.currentMaxLives),
+							20,
+							{ valueX, livesY });
+					}
 				};
 
 			auto DrawGame1ScoreHud = [&](const GAME1_PlayerScoreState& scoreState,
@@ -3895,7 +4365,8 @@ int main()
 
 			if (!p2Joined)
 			{
-				DrawGame1ScoreHud(game1Scores[0], { 18.f, 86.f });
+				DrawGame1PlayerVitals("Player 1", 0, game1HudStates[0], { 18.f, 14.f });
+				DrawGame1ScoreHud(game1Scores[0], { 18.f, 102.f });
 
 				if (game1Player.isRespawning())
 				{
@@ -3917,52 +4388,25 @@ int main()
 				const float windowWidth = static_cast<float>(window.getSize().x);
 
 				auto DrawPlayerStats = [&](const std::string& title,
-					int health,
-					int maxHealth,
-					int lives,
-					int maxLives,
+					int playerIndex,
 					const GAME1_PlayerScoreState& scoreState,
 					sf::Vector2f topLeft)
 					{
-						sf::Text titleText(game1UiFont);
-						titleText.setString(title);
-						titleText.setCharacterSize(20);
-						titleText.setFillColor(sf::Color::White);
-						titleText.setOutlineColor(sf::Color::Black);
-						titleText.setOutlineThickness(2.f);
-						titleText.setPosition(topLeft);
-						window.draw(titleText);
+						if (playerIndex < 0 || playerIndex >= static_cast<int>(game1HudStates.size()))
+							return;
 
-						sf::Text healthText(game1UiFont);
-						healthText.setString("Health: " + std::to_string(health) + " / " + std::to_string(maxHealth));
-						healthText.setCharacterSize(20);
-						healthText.setFillColor(sf::Color::White);
-						healthText.setOutlineColor(sf::Color::Black);
-						healthText.setOutlineThickness(2.f);
-						healthText.setPosition({ topLeft.x, topLeft.y + 24.f });
-						window.draw(healthText);
-
-						sf::Text livesText(game1UiFont);
-						livesText.setString("Lives: " + std::to_string(lives) + " / " + std::to_string(maxLives));
-						livesText.setCharacterSize(20);
-						livesText.setFillColor(sf::Color::White);
-						livesText.setOutlineColor(sf::Color::Black);
-						livesText.setOutlineThickness(2.f);
-						livesText.setPosition({ topLeft.x, topLeft.y + 48.f });
-						window.draw(livesText);
-
-						DrawGame1ScoreHud(scoreState, { topLeft.x, topLeft.y + 72.f });
+						DrawGame1PlayerVitals(title,
+							playerIndex,
+							game1HudStates[static_cast<std::size_t>(playerIndex)],
+							topLeft);
+						DrawGame1ScoreHud(scoreState, { topLeft.x, topLeft.y + 88.f });
 					};
 
-				DrawPlayerStats("Player 1",
-					game1Player.getHealth(), game1Player.getMaxHealth(),
-					game1Player.getLives(), game1Player.getMaxLives(),
+				DrawPlayerStats("Player 1", 0,
 					game1Scores[0],
 					{ 18.f, 14.f });
 
-				DrawPlayerStats("Player 2",
-					game1Player2.getHealth(), game1Player2.getMaxHealth(),
-					game1Player2.getLives(), game1Player2.getMaxLives(),
+				DrawPlayerStats("Player 2", 1,
 					game1Scores[1],
 					{ windowWidth - 380.f, 14.f });
 
@@ -3970,7 +4414,7 @@ int main()
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P1 respawn: " + std::to_string(game1Player.getRespawnCountdown()));
-					respawnText.setPosition({ 18.f, 186.f });
+					respawnText.setPosition({ 18.f, 206.f });
 					window.draw(respawnText);
 				}
 
@@ -3978,7 +4422,7 @@ int main()
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P2 respawn: " + std::to_string(game1Player2.getRespawnCountdown()));
-					respawnText.setPosition({ windowWidth - 380.f, 186.f });
+					respawnText.setPosition({ windowWidth - 380.f, 206.f });
 					window.draw(respawnText);
 				}
 
