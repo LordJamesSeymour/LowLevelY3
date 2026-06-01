@@ -3841,6 +3841,21 @@ int main()
 			}
 
 			ApplyWindowView(window);
+			const sf::Vector2f game1UiSize = window.getView().getSize();
+
+			constexpr float kGame1HudMarginX = 18.f;
+			constexpr float kGame1HudTopY = 14.f;
+			constexpr float kGame1HudValueOffsetX = 66.f;
+			constexpr float kGame1HudHealthOffsetY = 25.f;
+			constexpr float kGame1HudLivesOffsetY = 54.f;
+			constexpr float kGame1HudScoreOffsetY = 88.f;
+			constexpr float kGame1HudRespawnOffsetY = 206.f;
+			constexpr float kGame1HudHeartSize = 28.f;
+			constexpr float kGame1HudHeartGap = 6.f;
+			constexpr float kGame1HudLifeSize = 32.f;
+			constexpr float kGame1HudLifeGap = 5.f;
+			constexpr float kGame1HudFruitIconSize = 66.f;
+			constexpr float kGame1HudFruitIconGap = 6.f;
 
 			auto DrawGame1TextureFitted = [&](const sf::Texture& texture, const sf::FloatRect& bounds)
 				{
@@ -3898,6 +3913,151 @@ int main()
 					window.draw(text);
 				};
 
+			auto MeasureGame1HudTextWidth = [&](const std::string& value,
+				unsigned int size) -> float
+				{
+					sf::Text text(game1UiFont);
+					text.setString(value);
+					text.setCharacterSize(size);
+					text.setOutlineThickness(2.f);
+
+					const sf::FloatRect bounds = text.getLocalBounds();
+					return bounds.size.x;
+				};
+
+			auto MeasureGame1IconRowWidth = [](int iconCount,
+				float iconSize,
+				float iconGap) -> float
+				{
+					if (iconCount <= 0)
+						return 0.f;
+
+					return static_cast<float>(iconCount) * iconSize +
+						static_cast<float>(iconCount - 1) * iconGap;
+				};
+
+			auto GetGame1HudLifeIconSlots = [](const GAME1_PlayerHudState& hudState) -> int
+				{
+					int iconSlots = std::max(hudState.currentMaxLives, hudState.currentLives);
+					if (hudState.lifeFlash.active)
+						iconSlots = std::max(iconSlots, hudState.lifeFlash.iconIndex + 1);
+
+					return iconSlots;
+				};
+
+			auto MeasureGame1FruitIconListWidth = [&](const std::vector<GAME1_FruitType>& fruits,
+				float iconSize,
+				float iconGap) -> float
+				{
+					const int columns = std::min(
+						static_cast<int>(fruits.size()),
+						4);
+					return MeasureGame1IconRowWidth(columns, iconSize, iconGap);
+				};
+
+			auto MeasureGame1PlayerVitalsWidth = [&](const std::string& title,
+				int playerIndex,
+				const GAME1_PlayerHudState& hudState) -> float
+				{
+					float width = MeasureGame1HudTextWidth(title, 20);
+					width = std::max(width, MeasureGame1HudTextWidth("HP:", 20));
+					width = std::max(width, MeasureGame1HudTextWidth("Lives:", 20));
+
+					if (game1HudAssets.hasHeartTextures())
+					{
+						width = std::max(width,
+							kGame1HudValueOffsetX +
+							MeasureGame1IconRowWidth(2, kGame1HudHeartSize, kGame1HudHeartGap));
+					}
+					else
+					{
+						width = std::max(width,
+							kGame1HudValueOffsetX +
+							MeasureGame1HudTextWidth(
+								std::to_string(hudState.currentHealth) + " / " +
+								std::to_string(hudState.currentMaxHealth),
+								20));
+					}
+
+					if (game1HudAssets.getLifeTexture(playerIndex) != nullptr)
+					{
+						width = std::max(width,
+							kGame1HudValueOffsetX +
+							MeasureGame1IconRowWidth(
+								GetGame1HudLifeIconSlots(hudState),
+								kGame1HudLifeSize,
+								kGame1HudLifeGap));
+					}
+					else
+					{
+						width = std::max(width,
+							kGame1HudValueOffsetX +
+							MeasureGame1HudTextWidth(
+								std::to_string(hudState.currentLives) + " / " +
+								std::to_string(hudState.currentMaxLives),
+								20));
+					}
+
+					return width;
+				};
+
+			auto MeasureGame1ScoreHudWidth = [&](const GAME1_PlayerScoreState& scoreState) -> float
+				{
+					float width = MeasureGame1HudTextWidth(
+						"Score: " + std::to_string(scoreState.score),
+						20);
+					width = std::max(width,
+						MeasureGame1FruitIconListWidth(
+							scoreState.collectedFruits,
+							kGame1HudFruitIconSize,
+							kGame1HudFruitIconGap));
+
+					return width;
+				};
+
+			auto MeasureGame1PlayerHudGroupWidth = [&](const std::string& title,
+				int playerIndex,
+				const GAME1_PlayerScoreState& scoreState) -> float
+				{
+					if (playerIndex < 0 || playerIndex >= static_cast<int>(game1HudStates.size()))
+						return 0.f;
+
+					const GAME1_PlayerHudState& hudState =
+						game1HudStates[static_cast<std::size_t>(playerIndex)];
+					return std::max(
+						MeasureGame1PlayerVitalsWidth(title, playerIndex, hudState),
+						MeasureGame1ScoreHudWidth(scoreState));
+				};
+
+			struct Game1HudGroupLayout
+			{
+				sf::Vector2f topLeft{ 0.f, 0.f };
+				float width = 0.f;
+			};
+
+			auto LayoutGame1PlayerHudGroup = [&](const std::string& title,
+				int playerIndex,
+				const GAME1_PlayerScoreState& scoreState,
+				bool anchorRight) -> Game1HudGroupLayout
+				{
+					Game1HudGroupLayout layout;
+					layout.width = MeasureGame1PlayerHudGroupWidth(
+						title,
+						playerIndex,
+						scoreState);
+
+					const float leftX = kGame1HudMarginX;
+					const float rightX = std::max(
+						kGame1HudMarginX,
+						game1UiSize.x - kGame1HudMarginX - layout.width);
+
+					layout.topLeft = {
+						anchorRight ? rightX : leftX,
+						kGame1HudTopY
+					};
+					return layout;
+				};
+
 			auto DrawGame1FruitIconList = [&](const std::vector<GAME1_FruitType>& fruits,
 				sf::Vector2f topLeft,
 				float iconSize,
@@ -3938,7 +4098,11 @@ int main()
 			auto DrawGame1FruitIcons = [&](const GAME1_PlayerScoreState& scoreState,
 				sf::Vector2f topLeft)
 				{
-					DrawGame1FruitIconList(scoreState.collectedFruits, topLeft, 66.f, 6.f);
+					DrawGame1FruitIconList(
+						scoreState.collectedFruits,
+						topLeft,
+						kGame1HudFruitIconSize,
+						kGame1HudFruitIconGap);
 				};
 
 			auto DrawGame1PlayerVitals = [&](const std::string& title,
@@ -3949,17 +4113,14 @@ int main()
 					DrawGame1HudText(title, 20, topLeft);
 
 					const float labelX = topLeft.x;
-					const float valueX = topLeft.x + 66.f;
-					const float healthY = topLeft.y + 25.f;
-					const float livesY = topLeft.y + 54.f;
+					const float valueX = topLeft.x + kGame1HudValueOffsetX;
+					const float healthY = topLeft.y + kGame1HudHealthOffsetY;
+					const float livesY = topLeft.y + kGame1HudLivesOffsetY;
 
 					DrawGame1HudText("HP:", 20, { labelX, healthY });
 
 					if (game1HudAssets.hasHeartTextures())
 					{
-						const float heartSize = 28.f;
-						const float heartGap = 6.f;
-
 						for (std::size_t i = 0; i < hudState.heartStates.size(); ++i)
 						{
 							const std::optional<GAME1_HudHeartState> visibleState =
@@ -3976,10 +4137,10 @@ int main()
 								*heartTexture,
 								sf::FloatRect(
 									{
-										valueX + static_cast<float>(i) * (heartSize + heartGap),
+										valueX + static_cast<float>(i) * (kGame1HudHeartSize + kGame1HudHeartGap),
 										healthY - 3.f
 									},
-									{ heartSize, heartSize }));
+									{ kGame1HudHeartSize, kGame1HudHeartSize }));
 						}
 					}
 					else
@@ -3996,11 +4157,7 @@ int main()
 					const sf::Texture* lifeTexture = game1HudAssets.getLifeTexture(playerIndex);
 					if (lifeTexture != nullptr)
 					{
-						const float lifeSize = 32.f;
-						const float lifeGap = 5.f;
-						int iconSlots = std::max(hudState.currentMaxLives, hudState.currentLives);
-						if (hudState.lifeFlash.active)
-							iconSlots = std::max(iconSlots, hudState.lifeFlash.iconIndex + 1);
+						const int iconSlots = GetGame1HudLifeIconSlots(hudState);
 
 						for (int i = 0; i < iconSlots; ++i)
 						{
@@ -4012,10 +4169,10 @@ int main()
 								*lifeTexture,
 								sf::FloatRect(
 									{
-										valueX + static_cast<float>(i) * (lifeSize + lifeGap),
+										valueX + static_cast<float>(i) * (kGame1HudLifeSize + kGame1HudLifeGap),
 										livesY - 5.f
 									},
-									{ lifeSize, lifeSize }));
+									{ kGame1HudLifeSize, kGame1HudLifeSize }));
 						}
 					}
 					else
@@ -4056,7 +4213,7 @@ int main()
 
 					const sf::FloatRect bounds = timerText.getLocalBounds();
 					timerText.setPosition({
-						(static_cast<float>(window.getSize().x) - bounds.size.x) * 0.5f - bounds.position.x,
+						(game1UiSize.x - bounds.size.x) * 0.5f - bounds.position.x,
 						14.f - bounds.position.y
 						});
 					window.draw(timerText);
@@ -4073,8 +4230,8 @@ int main()
 					sf::RectangleShape dim;
 					dim.setPosition({ 0.f, 0.f });
 					dim.setSize({
-						static_cast<float>(window.getSize().x),
-						static_cast<float>(window.getSize().y)
+						game1UiSize.x,
+						game1UiSize.y
 						});
 					dim.setFillColor(sf::Color(0, 0, 0, 165));
 					window.draw(dim);
@@ -4365,8 +4522,14 @@ int main()
 
 			if (!p2Joined)
 			{
-				DrawGame1PlayerVitals("Player 1", 0, game1HudStates[0], { 18.f, 14.f });
-				DrawGame1ScoreHud(game1Scores[0], { 18.f, 102.f });
+				const Game1HudGroupLayout player1HudLayout =
+					LayoutGame1PlayerHudGroup("Player 1", 0, game1Scores[0], false);
+
+				DrawGame1PlayerVitals("Player 1", 0, game1HudStates[0], player1HudLayout.topLeft);
+				DrawGame1ScoreHud(game1Scores[0], {
+					player1HudLayout.topLeft.x,
+					player1HudLayout.topLeft.y + kGame1HudScoreOffsetY
+					});
 
 				if (game1Player.isRespawning())
 				{
@@ -4375,7 +4538,7 @@ int main()
 
 					const sf::FloatRect textBounds = respawnText.getLocalBounds();
 					respawnText.setPosition({
-						(static_cast<float>(window.getSize().x) - textBounds.size.x) * 0.5f - textBounds.position.x,
+						(game1UiSize.x - textBounds.size.x) * 0.5f - textBounds.position.x,
 						80.f - textBounds.position.y
 						});
 
@@ -4385,12 +4548,12 @@ int main()
 			else
 			{
 				// Dual-player HUD.
-				const float windowWidth = static_cast<float>(window.getSize().x);
+				const float windowWidth = game1UiSize.x;
 
 				auto DrawPlayerStats = [&](const std::string& title,
 					int playerIndex,
 					const GAME1_PlayerScoreState& scoreState,
-					sf::Vector2f topLeft)
+					const Game1HudGroupLayout& layout)
 					{
 						if (playerIndex < 0 || playerIndex >= static_cast<int>(game1HudStates.size()))
 							return;
@@ -4398,23 +4561,34 @@ int main()
 						DrawGame1PlayerVitals(title,
 							playerIndex,
 							game1HudStates[static_cast<std::size_t>(playerIndex)],
-							topLeft);
-						DrawGame1ScoreHud(scoreState, { topLeft.x, topLeft.y + 88.f });
+							layout.topLeft);
+						DrawGame1ScoreHud(scoreState, {
+							layout.topLeft.x,
+							layout.topLeft.y + kGame1HudScoreOffsetY
+							});
 					};
+
+				const Game1HudGroupLayout player1HudLayout =
+					LayoutGame1PlayerHudGroup("Player 1", 0, game1Scores[0], false);
+				const Game1HudGroupLayout player2HudLayout =
+					LayoutGame1PlayerHudGroup("Player 2", 1, game1Scores[1], true);
 
 				DrawPlayerStats("Player 1", 0,
 					game1Scores[0],
-					{ 18.f, 14.f });
+					player1HudLayout);
 
 				DrawPlayerStats("Player 2", 1,
 					game1Scores[1],
-					{ windowWidth - 380.f, 14.f });
+					player2HudLayout);
 
 				if (game1Player.isRespawning() && !game1Player.isGameOver())
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P1 respawn: " + std::to_string(game1Player.getRespawnCountdown()));
-					respawnText.setPosition({ 18.f, 206.f });
+					respawnText.setPosition({
+						player1HudLayout.topLeft.x,
+						player1HudLayout.topLeft.y + kGame1HudRespawnOffsetY
+						});
 					window.draw(respawnText);
 				}
 
@@ -4422,13 +4596,16 @@ int main()
 				{
 					respawnText.setCharacterSize(22);
 					respawnText.setString("P2 respawn: " + std::to_string(game1Player2.getRespawnCountdown()));
-					respawnText.setPosition({ windowWidth - 380.f, 206.f });
+					respawnText.setPosition({
+						player2HudLayout.topLeft.x,
+						player2HudLayout.topLeft.y + kGame1HudRespawnOffsetY
+						});
 					window.draw(respawnText);
 				}
 
 				if (game1TeamGameOver)
 				{
-					const float windowHeight = static_cast<float>(window.getSize().y);
+					const float windowHeight = game1UiSize.y;
 					const sf::FloatRect popupRect(
 						{ windowWidth * 0.5f - 280.f, windowHeight * 0.5f - 100.f },
 						{ 560.f, 200.f });
@@ -4503,13 +4680,10 @@ int main()
 						alpha = 1.f - (localTime - growPhase) / (1.f - growPhase);
 					}
 
-					const float windowWidth = static_cast<float>(window.getSize().x);
-					const float windowHeight = static_cast<float>(window.getSize().y);
-
 					const float floatUp = growT * 70.f;
-					const float centerX = windowWidth * 0.5f;
+					const float centerX = game1UiSize.x * 0.5f;
 					// Slightly above the exact centre.
-					const float centerY = windowHeight * 0.42f - floatUp;
+					const float centerY = game1UiSize.y * 0.42f - floatUp;
 
 					const unsigned int minSize = 80;
 					const unsigned int maxSize = 190;
