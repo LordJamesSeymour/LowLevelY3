@@ -1,0 +1,14 @@
+#WORLD=3
+DQTTTTTTTTTTTTTYD
+HL             RG
+GL P         O RV
+FL             RJ
+JL             RD
+DL   M M M M   RI
+IL             RD
+HL   M M M M   RG
+GL             RF
+FL             RV
+JL           O RN
+DL             RJ
+IZSSSSSSSSSSSSSCD

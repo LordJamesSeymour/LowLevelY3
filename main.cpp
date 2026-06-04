@@ -937,6 +937,9 @@ int main()
 	int game1VictorySelectedButton = 0;
 	sf::FloatRect game1VictoryRetryBounds;
 	sf::FloatRect game1VictoryNextBounds;
+	int game1GameOverSelectedButton = 0;
+	sf::FloatRect game1GameOverRetryBounds;
+	sf::FloatRect game1GameOverMenuBounds;
 
 	// Surfers Quest multiplayer end-tile countdown. Only used in co-op:
 	// when the first player reaches the End Tile, the other player gets a
@@ -1193,6 +1196,7 @@ int main()
 			game1VictoryPopupOpen = false;
 			game1TriggeredEndTileIndex = -1;
 			game1VictorySelectedButton = 0;
+			game1GameOverSelectedButton = 0;
 			game1EndCountdownActive = false;
 			game1EndCountdownSeconds = 0.f;
 			game1EndCountdownFirstFinisher = -1;
@@ -1587,10 +1591,20 @@ int main()
 				state == AppState::GAME1_Game;
 		};
 
+	auto IsGame1GameOverPopupOpen = [&]() -> bool
+		{
+			return (!game1Player2Joined && game1Player.isGameOver()) ||
+				game1TeamGameOver;
+		};
+
 	auto UpdateMouseCursorVisibility = [&]()
 		{
 			const bool gameplayCursorHidden = IsPausableGameplayState(appState);
-			const bool menuCursorVisible = pauseMenu.isOpen() || hubOptions.isOpen();
+			const bool surfersQuestModalOpen =
+				appState == AppState::GAME1_Game &&
+				(game1VictoryPopupOpen || IsGame1GameOverPopupOpen());
+			const bool menuCursorVisible =
+				pauseMenu.isOpen() || hubOptions.isOpen() || surfersQuestModalOpen;
 
 			window.setMouseCursorVisible(!gameplayCursorHidden || menuCursorVisible);
 		};
@@ -1933,6 +1947,68 @@ int main()
 	auto RestartGame1Team = [&]() -> bool
 		{
 			return TryRestartGame1CurrentLevel();
+		};
+
+	auto LayoutGame1GameOverPopup = [&]() -> sf::FloatRect
+		{
+			const float windowWidth = static_cast<float>(window.getSize().x);
+			const float windowHeight = static_cast<float>(window.getSize().y);
+			const float panelWidth = std::min(620.f, std::max(460.f, windowWidth - 96.f));
+			const float panelHeight = std::min(280.f, std::max(230.f, windowHeight - 80.f));
+
+			const sf::FloatRect panelBounds(
+				{ (windowWidth - panelWidth) * 0.5f, (windowHeight - panelHeight) * 0.5f },
+				{ panelWidth, panelHeight });
+
+			const float buttonWidth = std::min(200.f, (panelWidth - 112.f) * 0.5f);
+			const float buttonHeight = 54.f;
+			const float buttonGap = 28.f;
+			const float buttonsWidth = buttonWidth * 2.f + buttonGap;
+			const float buttonsX = panelBounds.position.x + (panelBounds.size.x - buttonsWidth) * 0.5f;
+			const float buttonsY = panelBounds.position.y + panelBounds.size.y - buttonHeight - 82.f;
+
+			game1GameOverRetryBounds = sf::FloatRect(
+				{ buttonsX, buttonsY },
+				{ buttonWidth, buttonHeight });
+			game1GameOverMenuBounds = sf::FloatRect(
+				{ buttonsX + buttonWidth + buttonGap, buttonsY },
+				{ buttonWidth, buttonHeight });
+
+			game1GameOverSelectedButton = std::clamp(game1GameOverSelectedButton, 0, 1);
+
+			return panelBounds;
+		};
+
+	auto SelectGame1GameOverButton = [&](int buttonIndex)
+		{
+			game1GameOverSelectedButton = std::clamp(buttonIndex, 0, 1);
+		};
+
+	auto MoveGame1GameOverSelection = [&](int direction)
+		{
+			if (direction == 0)
+				return;
+
+			const int buttonCount = 2;
+			game1GameOverSelectedButton =
+				(game1GameOverSelectedButton + direction + buttonCount) % buttonCount;
+			ArcadeUISounds::playUIClick();
+		};
+
+	auto ActivateGame1GameOverButton = [&](int buttonIndex) -> bool
+		{
+			ArcadeUISounds::playUIClick();
+
+			if (buttonIndex == 0)
+			{
+				return game1TeamGameOver
+					? RestartGame1Team()
+					: TryRestartGame1CurrentLevel();
+			}
+
+			SetAppState(AppState::GAME1_Menu);
+			ArcadeInput::consumePressedState();
+			return true;
 		};
 
 	auto TryStartBombermanLevel = [&](const std::string& mapPath) -> bool
@@ -2664,6 +2740,46 @@ int main()
 				{
 					// Wait for the End Tile animation to finish before accepting menu input.
 				}
+				else if (IsGame1GameOverPopupOpen())
+				{
+					LayoutGame1GameOverPopup();
+
+					if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+					{
+						if (mousePressed->button == sf::Mouse::Button::Left)
+						{
+							const sf::Vector2f mousePosition(
+								static_cast<float>(mousePressed->position.x),
+								static_cast<float>(mousePressed->position.y));
+
+							if (PointInRect(game1GameOverRetryBounds, mousePosition))
+							{
+								SelectGame1GameOverButton(0);
+								if (!ActivateGame1GameOverButton(0))
+									return -1;
+							}
+							else if (PointInRect(game1GameOverMenuBounds, mousePosition))
+							{
+								SelectGame1GameOverButton(1);
+								if (!ActivateGame1GameOverButton(1))
+									return -1;
+							}
+						}
+					}
+
+					if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>())
+					{
+						const sf::Vector2f mousePosition(
+							static_cast<float>(mouseMoved->position.x),
+							static_cast<float>(mouseMoved->position.y));
+
+						if (PointInRect(game1GameOverRetryBounds, mousePosition))
+							SelectGame1GameOverButton(0);
+						else if (PointInRect(game1GameOverMenuBounds, mousePosition))
+							SelectGame1GameOverButton(1);
+					}
+
+				}
 				else
 				{
 					if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>())
@@ -3012,25 +3128,38 @@ int main()
 			{
 				ArcadeInput::consumePressedState();
 			}
-			else if (((!game1Player2Joined && game1Player.isGameOver()) ||
-				game1TeamGameOver) &&
-				ArcadeInput::isControllerBackPressed())
+			else if (IsGame1GameOverPopupOpen())
 			{
-				ArcadeUISounds::playUIClick();
-				SetAppState(AppState::GAME1_Menu);
-				ArcadeInput::consumePressedState();
-			}
-			else if (!game1Player2Joined &&
-				game1Player.isGameOver() &&
-				ArcadeInput::isRestartPressed())
-			{
-				if (!TryRestartGame1CurrentLevel())
-					return -1;
-			}
-			else if (game1TeamGameOver && ArcadeInput::isRestartPressed())
-			{
-				if (!RestartGame1Team())
-					return -1;
+				LayoutGame1GameOverPopup();
+
+				if (ArcadeInput::isMoveLeftPressed() ||
+					ArcadeInput::isMoveUpPressed())
+				{
+					MoveGame1GameOverSelection(-1);
+					ArcadeInput::consumePressedState();
+				}
+				else if (ArcadeInput::isMoveRightPressed() ||
+					ArcadeInput::isMoveDownPressed())
+				{
+					MoveGame1GameOverSelection(1);
+					ArcadeInput::consumePressedState();
+				}
+				else if (ArcadeInput::isBackPressed())
+				{
+					if (!ActivateGame1GameOverButton(1))
+						return -1;
+				}
+				else if (ArcadeInput::isRestartPressed())
+				{
+					if (!ActivateGame1GameOverButton(0))
+						return -1;
+				}
+				else if (ArcadeInput::isConfirmPressed() ||
+					ArcadeInput::isPrimaryPressed())
+				{
+					if (!ActivateGame1GameOverButton(game1GameOverSelectedButton))
+						return -1;
+				}
 			}
 			else if (ArcadeInput::isControllerBackPressed())
 			{
@@ -3187,8 +3316,14 @@ int main()
 		{
 			const bool p2Joined = game1Player2Joined;
 			const bool game1OverlayPaused = pauseMenu.isOpen() || hubOptions.isOpen();
-			const bool game1Paused = game1OverlayPaused || game1RunFinished || game1VictoryPopupOpen;
-			window.setMouseCursorVisible(game1OverlayPaused || game1VictoryPopupOpen);
+			const bool game1GameOverPopupOpen = IsGame1GameOverPopupOpen();
+			const bool game1Paused =
+				game1OverlayPaused ||
+				game1RunFinished ||
+				game1VictoryPopupOpen ||
+				game1GameOverPopupOpen;
+			window.setMouseCursorVisible(
+				game1OverlayPaused || game1VictoryPopupOpen || game1GameOverPopupOpen);
 
 			auto ReviveGame1PlayerAtCheckpoint = [&](GAME1_Player& player,
 				sf::Vector2f checkpointSpawn)
@@ -4518,6 +4653,102 @@ int main()
 						hasNextLevel);
 				};
 
+			auto DrawGame1GameOverPopup = [&]()
+				{
+					if (!IsGame1GameOverPopupOpen())
+						return;
+
+					const sf::FloatRect panelBounds = LayoutGame1GameOverPopup();
+
+					sf::RectangleShape dim;
+					dim.setPosition({ 0.f, 0.f });
+					dim.setSize({ game1UiSize.x, game1UiSize.y });
+					dim.setFillColor(sf::Color(0, 0, 0, 165));
+					window.draw(dim);
+
+					sf::RectangleShape panel;
+					panel.setPosition(panelBounds.position);
+					panel.setSize(panelBounds.size);
+					panel.setFillColor(sf::Color(130, 45, 45, 240));
+					panel.setOutlineColor(sf::Color(245, 245, 245));
+					panel.setOutlineThickness(3.f);
+					window.draw(panel);
+
+					auto DrawCenteredText = [&](const std::string& value,
+						unsigned int size,
+						float y,
+						sf::Color fill)
+						{
+							sf::Text text(game1UiFont);
+							text.setString(value);
+							text.setCharacterSize(size);
+							text.setFillColor(fill);
+							text.setOutlineColor(sf::Color::Black);
+							text.setOutlineThickness(2.f);
+
+							const sf::FloatRect bounds = text.getLocalBounds();
+							text.setPosition({
+								panelBounds.position.x + (panelBounds.size.x - bounds.size.x) * 0.5f - bounds.position.x,
+								y - bounds.position.y
+								});
+							window.draw(text);
+						};
+
+					auto DrawGameOverButton = [&](const sf::FloatRect& bounds,
+						const std::string& label,
+						sf::Color baseColor,
+						bool selected)
+						{
+							sf::RectangleShape box;
+							box.setPosition(bounds.position);
+							box.setSize(bounds.size);
+							box.setFillColor(baseColor);
+							box.setOutlineColor(selected ? sf::Color(255, 230, 120) : sf::Color(230, 230, 230));
+							box.setOutlineThickness(selected ? 4.f : 2.f);
+							window.draw(box);
+
+							sf::Text text(game1UiFont);
+							text.setString(label);
+							text.setCharacterSize(26);
+							text.setFillColor(sf::Color::White);
+							text.setOutlineColor(sf::Color::Black);
+							text.setOutlineThickness(2.f);
+
+							const sf::FloatRect textBounds = text.getLocalBounds();
+							text.setPosition({
+								bounds.position.x + (bounds.size.x - textBounds.size.x) * 0.5f - textBounds.position.x,
+								bounds.position.y + (bounds.size.y - textBounds.size.y) * 0.5f - textBounds.position.y
+								});
+							window.draw(text);
+						};
+
+					DrawCenteredText("GAME OVER", 38, panelBounds.position.y + 34.f, sf::Color::White);
+					DrawCenteredText("OUT OF LIVES!", 21, panelBounds.position.y + 78.f, sf::Color(235, 235, 235));
+
+					DrawGameOverButton(
+						game1GameOverRetryBounds,
+						"Retry",
+						sf::Color(210, 105, 35, 245),
+						game1GameOverSelectedButton == 0);
+
+					DrawGameOverButton(
+						game1GameOverMenuBounds,
+						"Menu",
+						sf::Color(45, 80, 150, 245),
+						game1GameOverSelectedButton == 1);
+
+					DrawCenteredText(
+						"ENTER/A - SELECT    START/R - RETRY",
+						18,
+						panelBounds.position.y + panelBounds.size.y - 58.f,
+						sf::Color(255, 230, 120));
+					DrawCenteredText(
+						"ESC/SELECT - MENU",
+						18,
+						panelBounds.position.y + panelBounds.size.y - 32.f,
+						sf::Color(230, 230, 230));
+				};
+
 			DrawGame1TimerHud();
 
 			if (!p2Joined)
@@ -4718,6 +4949,7 @@ int main()
 				}
 			}
 
+			DrawGame1GameOverPopup();
 			DrawGame1VictoryPopup();
 
 			pauseMenu.layout(window);
